@@ -1,5 +1,111 @@
 *.log
+# =========================
+# Core LaTeX auxiliary files
+# =========================
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+*.lb
+
+# =========================
+# Intermediate / build files
+# =========================
+*.fdb_latexmk
+*.synctex.gz
+*.synctex(busy)
+*.xdv
+
+# =========================
+# Bibliography (BibTeX/Biber)
+# =========================
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+
+# =========================
+# Glossaries / Acronyms
+# =========================
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.glsdefs
+
+# =========================
+# Index files
+# =========================
+*.idx
+*.ilg
+*.ind
+
+# =========================
+# Listings / minted (code highlighting)
+# =========================
+_minted*
+*.pyg
+
+# =========================
+# TikZ / PGF
+# =========================
+*.dpth
+*.md5
+
+# =========================
+# Beamer
+# =========================
+*.nav
+*.snm
+
+# =========================
+# Latexmk
+# =========================
+*.latexmk
+
+# =========================
+# PDF output (optional!)
+# =========================
+# Wenn du PDFs NICHT versionieren willst:
+# *.pdf
+
+# =========================
+# Editor / OS files
+# =========================
+
 # Emacs
 *~
-#*#
-.#*
+\#*\#
+.\#*
+
+# Vim
+*.swp
+*.swo
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+
+# =========================
+# Custom build directories
+# =========================
+build/
+dist/
+out/

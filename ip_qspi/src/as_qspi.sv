@@ -162,23 +162,33 @@ module as_qspi (
   logic       sck_fall_s, sck_rise_s;
   logic       sck_drive_s, sck_sample_s;
 
+  // ... set sck enable
   always_comb
     case (state_r)
       CMD_ST, ADDR_ST, DUM_ST, DAT_ST : sck_en_s = 1'b1;
-      default                         : sck_en_s = 1'b0;
+      default                         : sck_en_s = 1'b0; // IDLE, DONE
     endcase
 
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
+  // ... sck counter
+  always_ff @(posedge clk_i, posedge rst_i) 
+  begin
+    if (rst_i) 
+    begin
       sck_cnt_r <= '0;
       sck_r     <= 1'b0;
-    end else if (!sck_en_s) begin
+    end 
+    else if (!sck_en_s) // IDLE, DONE
+    begin
       sck_cnt_r <= '0;
       sck_r     <= ctrl_reg_i.cpol; 
-    end else if (sck_cnt_r >= clkdiv_reg_i) begin
+    end 
+    else if (sck_cnt_r >= clkdiv_reg_i) 
+    begin
       sck_cnt_r <= '0;
       sck_r     <= ~sck_r;
-    end else begin
+    end 
+    else 
+    begin
       sck_cnt_r <= sck_cnt_r + 8'd1;
     end
   end
