@@ -1,0 +1,491 @@
+`timescale 1ns/1ps
+
+import as_pack::*;
+
+module as_cpu (input  logic                          clk_i,
+               input  logic                          rst_i,
+               // Scan Chain
+               output logic                          sc01_tdo_o,   // scan: serial out
+               input  logic                          sc01_tdi_i,   // scan: serial in
+               input  logic                          sc01_shift_i, // scan: shift enable
+               input  logic                          sc01_clock_i, // scan: clock enabe
+               // Instruction bus
+               input  logic [instr_width-1:0]        wbiBusDataRd_i, // data out from imem
+               output logic [instr_width-1:0]        wbiBusDataWr_o, // data in to imem            -- not connected
+               output logic [iaddr_width-1:0]        wbiBusAddr_o,   // address for imem
+               output logic                          wbiBusWe_o,     // we for mem                 -- not needed
+               output logic [7:0]                    wbiBusSel_o,    // sel for mem                -- not needed
+               output logic                          wbiBusStb_o,    // stb for mem                -- not needed
+               input  logic                          wbiBusAck_i,    // ack for mem                -- not used
+               output logic                          wbiBusCyc_o,    // cyc for mem                -- not needed
+               // Data bus
+               input  logic [reg_width-1:0]          wbdBusDataRd_i, // data out from dmem
+               output logic [reg_width-1:0]          wbdBusDataWr_o, // data in to dmem
+               output logic [daddr_width-1:0]        wbdBusAddr_o,   // address for dmem
+               output logic                          wbdBusWe_o,     // we for mem
+               output logic [7:0]                    wbdBusSel_o,    // sel for mem
+               output logic                          wbdBusStb_o,    // stb for mem
+               input  logic                          wbdBusAck_i,    // ack for mem
+               output logic                          wbdBusCyc_o,    // cyc for mem
+               output logic                          dMemRd_o,       // read enable for dmem ---replace
+               output logic                          dMemWr_o,        // write enable for dmem ---replace
+               // IRQ
+               input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts
+              );
+
+
+  // Umbau
+  logic aluSrcA_s,aluSrcB_s,regWr_s,jump_s,zero_s,PCsrc_s;
+  logic [dmuxsel_width-1:0]  resultSrc_s;
+  logic [immsrc_width-1:0]   immSrc_s;
+  logic [aluselrv_width-1:0] aluSel_s;
+
+  // instruction
+  logic [instr_width-1:0]     iBusDataRd_s; // data out from imem
+  //logic [instr_width-1:0]     iBusDataWr_s; // data in to imem            -- not connected
+  logic [iaddr_width-1:0]     iBusAddr_s;   // address for imem
+
+  // data
+  logic [reg_width-1:0]       dBusDataRd_s; // data out from dmem
+  logic [reg_width-1:0]       dBusDataWr_s; // data in to dmem
+  logic [daddr_width-1:0]     dBusAddr_s;   // address for dmem
+  logic                       dMemRd_s;     // read enable for dmem
+  logic                       dMemWr_s;     // write enable for dmem
+
+  // PC
+  logic [iaddr_width-1:0] PCnext_s;      // next PC
+  logic [iaddr_width-1:0] PCnext_irq_s;  // next PC
+  logic [iaddr_width-1:0] PCnext_mux_s;  // next PC
+  logic [iaddr_width-1:0] PCnext_2mux_s; // next PC
+  logic [iaddr_width-1:0] PCp4_s;   // linear code
+  logic [iaddr_width-1:0] PCbr_s;   // branch target; PCTarget
+  logic	[iaddr_width-1:0] PCorRS1_s;
+
+  // Immediate extention
+  logic [reg_width-1:0] immExt_s;
+  // Register file
+  logic [reg_width-1:0] srcA_s, regA_s;
+  logic [reg_width-1:0] srcB_s;
+
+  // D-Mem
+  logic [reg_width-1:0] result_s;
+  // ALU
+  logic                 nega_s,carry_s,overflow_s;
+
+  logic	and_in01_s;
+  logic	sc01_01_s;
+  logic	sc01_02_s;
+  logic	sc01_03_s;
+  logic	and_in02_s;
+  logic	and_out_s;
+  logic	to_some_pin1_s;
+  logic	to_some_pin2_s;
+
+  //IRQ
+  logic [63:0] csr_mepc_s;
+  logic [63:0] csr_mcause_s;
+  logic [63:0] csr_mtvec_s;
+  logic [63:0] csr_mstatus_s;
+  logic [63:0] csr_mie_s;
+  logic [63:0] csr_mip_s;
+  logic [63:0] csr_miemip_s;
+  logic	       csr_miemip_or_s;
+  logic	       csr_we_s;
+  logic	       csr_s;
+  logic	[irq_total_num_ext_c-1:0]  irq_ext_s;
+  logic	[nr_gpios-1:0]		   irq_gpio_s;
+  logic				   irq_gpio_or_s;
+  logic [reg_width-1:0] csr_data_s;
+  logic [reg_width-1:0] regfile_data_w_s;
+  logic			csr_mstatus_mpie;
+  logic			csr_mstatus_mie;
+  logic [15:0]		csr_control_s;
+  logic			irq_taken_s;
+  logic			regWr_final_s;
+  
+  //--------------------------------------------
+  // Master BPI Instruction Bus
+  //--------------------------------------------
+  as_master_bpi #(1, 64, 32) mInstrBpi(
+                                   .rst_i(rst_i),
+                                   .clk_i(clk_i),
+                                   .addr_i(iBusAddr_s),
+                                   .dat_from_core_i('b0),         // not connected
+                                   .dat_to_core_o(iBusDataRd_s),
+                                   .wr_i(1'b0),
+                                   .wb_m_addr_o(wbiBusAddr_o),
+                                   .wb_m_dat_i(wbiBusDataRd_i),
+                                   .wb_m_dat_o(wbiBusDataWr_o),  // not connected
+                                   .wb_m_we_o(wbiBusWe_o),       // not needed
+                                   .wb_m_sel_o(wbiBusSel_o),     // not needed
+                                   .wb_m_stb_o(wbiBusStb_o),     // not needed
+                                   .wb_m_ack_i(wbiBusAck_i),     // not used
+                                   .wb_m_cyc_o(wbiBusCyc_o)      // not needed
+                                  );
+
+  //--------------------------------------------
+  // Master BPI Data Bus
+  //--------------------------------------------
+  as_master_bpi #(2, 64, 64) mDataBpi(
+                                   .rst_i(rst_i),
+                                   .clk_i(clk_i),
+                                   .addr_i(dBusAddr_s),
+                                   .dat_from_core_i(dBusDataWr_s),
+                                   .dat_to_core_o(dBusDataRd_s),
+                                   .wr_i(dMemWr_s),
+                                   .wb_m_addr_o(wbdBusAddr_o),
+                                   .wb_m_dat_i(wbdBusDataRd_i),
+                                   .wb_m_dat_o(wbdBusDataWr_o),
+                                   .wb_m_we_o(wbdBusWe_o),
+                                   .wb_m_sel_o(wbdBusSel_o),
+                                   .wb_m_stb_o(wbdBusStb_o),
+                                   .wb_m_ack_i(wbdBusAck_i),
+                                   .wb_m_cyc_o(wbdBusCyc_o)
+                                  );
+  assign dMemRd_o = dMemRd_s;
+  assign dMemWr_o = dMemWr_s;
+
+  //--------------------------------------------
+  // PC, Program Counter
+  //--------------------------------------------
+  assign PCnext_2mux_s = (irq_taken_s) ? PCnext_irq_s : PCnext_mux_s;
+  assign PCnext_s      = ( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b000) ) ? csr_mepc_s : PCnext_2mux_s;  
+  as_pc pc (.clk_i(clk_i),
+            .rst_i(rst_i),
+            .PCnext_i(PCnext_s),
+            .PC_o(iBusAddr_s) // PC
+           );
+
+  //--------------------------------------------
+  // Adder +4 for the address of the next instruction
+  //--------------------------------------------
+  as_adder add4 (.a_i(iBusAddr_s), // PC
+                 .b_i(64'd4),
+                 .sum_o(PCp4_s)
+                );
+
+  //--------------------------------------------
+  // Mux for jumps of jalr instruction or normal branches.
+  //         - pc_o   : jalr
+  //         - regA_s : normal branch
+  //--------------------------------------------
+  as_mux2 jalrmux(.d0_i(iBusAddr_s), // PC
+                  .d1_i(regA_s),
+                  .sel_i(jump_s),
+                  .y_o(PCorRS1_s)
+                 );
+
+  //--------------------------------------------
+  // Adder for the branch targets
+  //--------------------------------------------
+  as_adder addbranch (.a_i(PCorRS1_s),
+                      .b_i(immExt_s),
+                      .sum_o(PCbr_s)
+                     );
+
+  //--------------------------------------------
+  // Mux for the PC, either +4 or branch target
+  //--------------------------------------------
+  as_mux2 pcmux (.d0_i(PCp4_s),
+                 .d1_i(PCbr_s),
+                 .sel_i(PCsrc_s),
+                 .y_o(PCnext_mux_s)
+                );
+
+  //--------------------------------------------
+  // Register file
+  //--------------------------------------------
+  // CSR or result
+  assign regfile_data_w_s = (csr_s) ? csr_data_s : result_s;
+  assign regWr_final_s    = regWr_s & ~irq_taken_s;
+  as_regfile regfile (.clk_i(clk_i),
+                      .rst_i(rst_i),
+                      .we_i(regWr_final_s),
+                      .raddr01_i(iBusDataRd_s[19:15]),
+                      .raddr02_i(iBusDataRd_s[24:20]),
+                      .waddr01_i(iBusDataRd_s[11:7]),
+                      .wdata01_i(regfile_data_w_s),
+                      .rdata01_o(regA_s),
+                      .rdata02_o(dBusDataWr_s)
+                     );
+
+  //--------------------------------------------
+  // Immediate generation
+  //--------------------------------------------
+  as_immgen extend (.instr_i(iBusDataRd_s[instr_width-1:7]),
+                    .sel_i(immSrc_s),
+                    .imm_o(immExt_s)
+                   );
+
+  //--------------------------------------------
+  // ALU: input mux for regB or immediate
+  //--------------------------------------------
+  as_mux2 alumuxB (.d0_i(dBusDataWr_s),
+                   .d1_i(immExt_s),
+                   .sel_i(aluSrcB_s),
+                   .y_o(srcB_s)
+                  );
+
+  //--------------------------------------------
+  // ALU: input mux for regA or PC
+  //--------------------------------------------
+  as_mux2 alumuxA (.d0_i(regA_s),
+                   .d1_i(iBusAddr_s), // PC
+                   .sel_i(aluSrcA_s),
+                   .y_o(srcA_s)
+                  );
+
+  //--------------------------------------------
+  // ALU
+  //--------------------------------------------
+  as_alurv alu (.data01_i(srcA_s),
+                .data02_i(srcB_s),
+                .aluSel_i(aluSel_s),
+                .aluZero_o(zero_s),
+                .aluNega_o(nega_s),
+                .aluCarr_o(carry_s),
+                .aluOver_o(overflow_s),
+                .aluResult_o(dBusAddr_s)
+               );
+
+  //--------------------------------------------
+  // Mux for aluResult, dmem or PC+4 to register file
+  //--------------------------------------------
+  as_mux3 dmmux (.d0_i(dBusAddr_s),
+                 .d1_i(dBusDataRd_s),
+                 .d2_i(PCp4_s),
+                 .sel_i(resultSrc_s),
+                 .y_o(result_s)
+                );
+
+  //--------------------------------------------
+  // Instruction decoder
+  //--------------------------------------------
+  as_controlall control (.opcode_i(iBusDataRd_s[6:0]),
+                      .func3_i(iBusDataRd_s[14:12]),
+                      .func7b5_i(iBusDataRd_s[30]),
+                      .zero_i(zero_s),
+                      .resultSrc_o(resultSrc_s),
+                      .dMemWr_o(dMemWr_s),
+                      .dMemRd_o(dMemRd_s),
+                      .PCSrc_o(PCsrc_s),
+                      .aluSrcB_o(aluSrcB_s),
+                      .aluSrcA_o(aluSrcA_s),
+                      .regWr_o(regWr_s),
+                      .jump_o(jump_s),
+                      .immSrc_o(immSrc_s),
+                      .aluSel_o(aluSel_s),
+		      .branch_s_o(),
+                      .jump_s_o(),
+                      .csr_o(csr_s)
+                      );
+  
+  //--------------------------------------------
+  // IRQ; 2do: make a block
+  //--------------------------------------------
+                         // csr  csr-instr            csr-address
+  assign csr_control_s   = {csr_s, iBusDataRd_s[14:12], iBusDataRd_s[31:20]};
+  assign csr_miemip_s    = csr_mie_s & csr_mip_s;
+  assign csr_miemip_or_s =| csr_miemip_s;
+  //assign irq_taken_s     = csr_mstatus_s[3] && (| csr_mie_s & csr_mip_s);
+  assign irq_taken_s     = csr_mstatus_mie & csr_miemip_or_s;
+  assign irq_gpio_s      = irq_ext_i[7:0];
+  assign irq_gpio_or_s   =| irq_gpio_s; // can't be the final solution
+
+  // Write the CSRs
+  // MIP: 64 bit, r, h344; OK (only GPIO IRQs)
+  /*always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mip_s <= 0;
+    else
+      csr_mip_s[11] <= irq_gpio_or_s;
+  end*/ // UNMATCHED !!
+  assign csr_mip_s[63:12] = 0;
+  assign csr_mip_s[11]    = irq_gpio_or_s;
+  assign csr_mip_s[10:0]  = 0;
+  
+  // MIE: 64 bit, rw, h304); OK
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mie_s <= 64'h0000000000000800;
+    else
+    begin
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b001) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrw
+        csr_mie_s <= regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b010) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrs
+	csr_mie_s <= csr_mie_s | regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b011) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrc
+	csr_mie_s <= csr_mie_s & ~regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b101) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrwi
+	csr_mie_s <= {{52{1'b0}},iBusDataRd_s[31:20]};
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b110) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrsi
+	csr_mie_s <= csr_mie_s | {{52{1'b0}},iBusDataRd_s[31:20]};
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b111) && (iBusDataRd_s[31:20] == 12'h304) ) // csrrci
+	csr_mie_s <= csr_mie_s & ~{{52{1'b0}},iBusDataRd_s[31:20]};
+    end
+  end
+
+  // MSTATUS: 64 bit, rw/r, h300
+  assign csr_mstatus_mpie = csr_mstatus_s[7];
+  assign csr_mstatus_mie  = csr_mstatus_s[3];
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mstatus_s <= 64'h0000000000001808;
+    else
+    begin
+      if( irq_taken_s ) // IRQ
+      begin
+        csr_mstatus_s[7] <= csr_mstatus_mie;
+        csr_mstatus_s[3] <= 0;
+      end
+      else
+      begin
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b001) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrw
+          csr_mstatus_s <= regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b010) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrs
+          csr_mstatus_s <= csr_mstatus_s | regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b011) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrc
+          csr_mstatus_s <= csr_mstatus_s & ~regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b101) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrwi
+          csr_mstatus_s <= {{52{1'b0}},iBusDataRd_s[31:20]};
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b110) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrsi
+          csr_mstatus_s <= csr_mstatus_s | {{52{1'b0}},iBusDataRd_s[31:20]};
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b111) && (iBusDataRd_s[31:20] == 12'h300) ) // csrrci
+          csr_mstatus_s <= csr_mstatus_s & ~{{52{1'b0}},iBusDataRd_s[31:20]};
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b000) ) // mret
+          csr_mstatus_s[3] <= csr_mstatus_mpie;
+      end
+    end
+  end
+  
+  // MEPC: 64 bit, WARL, h341, OK
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mepc_s <= 0;
+    else
+    begin
+      if( irq_taken_s )
+        csr_mepc_s <= iBusAddr_s + 64'd4; // csr_mepc_s <= PCp4_s;
+      else
+      begin
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b001) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrw
+          csr_mepc_s <= regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b010) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrs
+          csr_mepc_s <= csr_mepc_s | regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b011) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrc
+          csr_mepc_s <= csr_mepc_s & ~regA_s;
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b101) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrwi
+          csr_mepc_s <= {{52{1'b0}},iBusDataRd_s[31:20]};
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b110) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrsi
+          csr_mepc_s <= csr_mepc_s | {{52{1'b0}},iBusDataRd_s[31:20]};
+        if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b111) && (iBusDataRd_s[31:20] == 12'h341) ) // csrrci
+          csr_mepc_s <= csr_mepc_s & ~{{52{1'b0}},iBusDataRd_s[31:20]};
+      end
+    end
+  end
+  
+  // MTVEC: 64 bit, WARL, h305; OK
+  // MTVEC[1:0] = 0 => direct mode
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mtvec_s <= 64'h0000000000007F00; // set the ISR address by reset!!!!!
+    else
+    begin
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b001) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrw
+	csr_mtvec_s <= regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b010) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrs
+	csr_mtvec_s <= csr_mtvec_s | regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b011) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrc
+	csr_mtvec_s <= csr_mtvec_s & ~regA_s;
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b101) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrwi
+	csr_mtvec_s <= {{52{1'b0}},iBusDataRd_s[31:20]};
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b110) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrsi
+	csr_mtvec_s <= csr_mtvec_s | {{52{1'b0}},iBusDataRd_s[31:20]};
+      if( (csr_s == 1'b1) && (iBusDataRd_s[14:12] == 3'b111) && (iBusDataRd_s[31:20] == 12'h305) ) // csrrci
+	csr_mtvec_s <= csr_mtvec_s & ~{{52{1'b0}},iBusDataRd_s[31:20]};
+    end
+  end
+  //assign PCnext_irq_s = csr_mtvec_s;
+  assign PCnext_irq_s = {csr_mtvec_s[63:2], 2'b00}; // Direct-IRQ-Mode only
+  
+  // MCAUSE: 64 bit, rw/WLRL, h342; OK
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      csr_mcause_s <= 0;
+    else
+      if( irq_taken_s )
+	csr_mcause_s <= {1'b1, 63'd11};
+  end
+  
+  // Read the CSRs, copy from csr to reg_file
+  always_comb
+  begin
+    case (csr_control_s)
+      16'h9304 : csr_data_s = csr_mie_s;     // csrrw MIE
+      16'hA304 : csr_data_s = csr_mie_s;     // csrrs MIE
+      16'hB304 : csr_data_s = csr_mie_s;     // csrrc MIE
+      16'hD304 : csr_data_s = csr_mie_s;     // csrrwi MIE
+      16'hE304 : csr_data_s = csr_mie_s;     // csrrsi MIE
+      16'hF304 : csr_data_s = csr_mie_s;     // csrrci MIE
+      16'h9344 : csr_data_s = csr_mip_s;     // csrrw MIP
+      16'hA344 : csr_data_s = csr_mip_s;     // csrrs MIP
+      16'hB344 : csr_data_s = csr_mip_s;     // csrrc MIP
+      16'hD344 : csr_data_s = csr_mip_s;     // csrrwi MIP
+      16'hE344 : csr_data_s = csr_mip_s;     // csrrsi MIP
+      16'hF344 : csr_data_s = csr_mip_s;     // csrrci MIP
+      16'h9300 : csr_data_s = csr_mstatus_s; // csrrw MSTATUS
+      16'hA300 : csr_data_s = csr_mstatus_s; // csrrs MSTATUS
+      16'hB300 : csr_data_s = csr_mstatus_s; // csrrc MSTATUS
+      16'hD300 : csr_data_s = csr_mstatus_s; // csrrwi MSTATUS
+      16'hE300 : csr_data_s = csr_mstatus_s; // csrrsi MSTATUS
+      16'hF300 : csr_data_s = csr_mstatus_s; // csrrci MSTATUS
+      16'h9341 : csr_data_s = csr_mepc_s;    // csrrw MEPC
+      16'hA341 : csr_data_s = csr_mepc_s;    // csrrs MEPC
+      16'hB341 : csr_data_s = csr_mepc_s;    // csrrc MEPC
+      16'hD341 : csr_data_s = csr_mepc_s;    // csrrwi MEPC
+      16'hE341 : csr_data_s = csr_mepc_s;    // csrrsi MEPC
+      16'hF341 : csr_data_s = csr_mepc_s;    // csrrci MEPC
+      16'h9305 : csr_data_s = csr_mtvec_s;   // csrrw MTVEC
+      16'hA305 : csr_data_s = csr_mtvec_s;   // csrrs MTVEC
+      16'hB305 : csr_data_s = csr_mtvec_s;   // csrrc MTVEC
+      16'hD305 : csr_data_s = csr_mtvec_s;   // csrrwi MTVEC
+      16'hE305 : csr_data_s = csr_mtvec_s;   // csrrsi MTVEC
+      16'hF305 : csr_data_s = csr_mtvec_s;   // csrrci MTVEC
+      16'h9342 : csr_data_s = csr_mcause_s;  // csrrw MCAUSE
+      16'hA342 : csr_data_s = csr_mcause_s;  // csrrs MCAUSE
+      16'hB342 : csr_data_s = csr_mcause_s;  // csrrc MCAUSE
+      16'hD342 : csr_data_s = csr_mcause_s;  // csrrwi MCAUSE
+      16'hE342 : csr_data_s = csr_mcause_s;  // csrrsi MCAUSE
+      16'hF342 : csr_data_s = csr_mcause_s;  // csrrci MCAUSE
+      default  : csr_data_s = 0;
+    endcase 
+  end // always_comb
+
+  
+
+  // 2Do: - mret einbauen                                (done)
+  //      - PC-Mux: ISR-Zieladresse einbauen             (done)
+  //      - die restlichen csrxx Instruktionen einbauen
+  //      - mehr IRQ-Quellen, Exceptions ud Traps
+  //      - Assembler-Testprogramm schreiben             (done)
+
+  //--------------------------------------------
+  // Test Scan Chain
+  //--------------------------------------------
+  //assign clk_mux_s = (sc01_clock_i == 1) ? tck_i : clk_i;
+  scan_cell sc01 (clk_i, rst_i, sc01_shift_i, 1'b0, sc01_tdi_i, and_in01_s, sc01_01_s);
+  scan_cell sc02 (clk_i, rst_i, sc01_shift_i, 1'b0, sc01_01_s, and_in02_s, sc01_02_s);
+  assign and_out_s = and_in01_s & and_in02_s;
+  scan_cell sc03 (clk_i, rst_i, sc01_shift_i, and_out_s, sc01_02_s, to_some_pin1_s, sc01_03_s);
+  scan_cell sc04 (clk_i, rst_i, sc01_shift_i, 1'b0, sc01_03_s, to_some_pin2_s, sc01_tdo_o);
+
+
+ 
+endmodule : as_cpu
+

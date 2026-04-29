@@ -1,0 +1,101 @@
+The following list (Table) shows the internal signals of the ALU. The table shows the signal name, the width, the driver, the target and a short explanation.
+\begin{itemize}
+  \item Signal: data01\_s
+  \begin{itemize}
+    \item Width: 64\,bit, signed
+    \item Source: data01\_i
+    \item Destination: aluResult\_o, aluZero\_o
+    \item Explanation: It is the signed interpretation of data01\_i. It is needed for some branches (BLT, BGE) and SRA.\[ \mbox{logic signed [reg\_width-1:0] data01\_s;} \]
+  \end{itemize}
+  \item Signal: data02\_s
+  \begin{itemize}
+    \item Width: 64\,bit, signed
+    \item Source: data02\_i
+    \item Destination: aluResult\_o, aluZero\_o
+    \item Explanation: It is the signed interpretation of data02\_i. It is needed for some branches  (BLT, BGE) and SRA.\[ \mbox{logic signed [reg\_width-1:0] data02\_s;} \]
+  \end{itemize}
+  \item Signal: sum\_s
+  \begin{itemize}
+    \item Width: 64\,bit
+    \item Source: data01\_i, cinvb\_s (data02\_i), aluSel\_i[0]
+    \item Destination: aluResult\_o
+    \item Explanation: It is the sum of the two data inputs data01\_i and data02\_i. The second data input could be negative and so 2-complemented. cinvb\_s is the inversion of data02\_e when $aluSel\_i[0] = 1$, aluSel\_i[0] also acts as the plus 1. \[ \mbox{assign \{carry\_s, sum\_s\}   = data01\_i + cinvb\_s + aluSel\_i[0];}  \]
+  \end{itemize}
+  \item Signal: cinvb\_s
+  \begin{itemize}
+    \item Width: 64\,bit
+    \item Source: data02\_e, aluSel\_i[0]
+    \item Destination: sum\_s, carry\_s
+    \item Explanation: cinvb\_s is the inversion of data02\_i when $aluSel\_i[0] = 1$. Together with aluSel\_i[0] ($cinvb\_s + aluSel\_i[0]$) it is the 2-complement of data02\_i. \[ \mbox{assign cinvb\_s = aluSel\_i[0] ? ~data02\_i : data02\_i;} \]
+  \end{itemize}
+  \item Signal: carry\_s
+  \begin{itemize}
+    \item Width: 1\,bit
+    \item Source: data01\_i, cinvb\_s (data02\_i), aluSel\_i[0]
+    \item Destination: aluCarr\_o (carry flag)
+    \item Explanation: It is the carry of sum\_s. 
+  \end{itemize}
+  \item Signal: sumw\_s
+  \begin{itemize}
+    \item Width: 32\,bit
+    \item Source: data01\_i, cinvb\_s (data02\_i), aluSel\_i[0]
+    \item Destination: aluResult\_o
+    \item Explanation: For add word, etc. It is the sum of the two data inputs data01\_i(31:0) and data02\_i(31:0. The second data input could be negative and so 2-complemented. cinvbw\_s is the inversion of data02\_e(31:0) when $aluSel\_i[0] = 1$, aluSel\_i[0] also acts as the plus 1. 
+  \end{itemize}
+  \item Signal: cinvbw\_s
+  \begin{itemize}
+    \item Width: 32\,bit
+    \item Source: data02\_e, aluSel\_i[0]
+    \item Destination: sum\_s, carry\_s
+    \item Explanation: For add word, etc. cinvbw\_s is the inversion of data02\_i(31:0) when $aluSel\_i[0] = 1$. Together with aluSel\_i[0] ($cinvbw\_s + aluSel\_i[0]$) it is the 2-complement of data02\_i(31:0). 
+  \end{itemize}
+  \item Signal: carryw\_s
+  \begin{itemize}
+    \item Width: 1\,bit
+    \item Source: data01\_i, cinvb\_s (data02\_i), aluSel\_i[0]
+    \item Destination: aluCarr\_o (carry flag)
+    \item Explanation: For add word, etc. It is the carry of sumw\_s. 
+  \end{itemize}
+  \item Signal: sllw\_s
+  \begin{itemize}
+    \item Width: 32\,bit
+    \item Source: data01\_i, data02\_i
+    \item Destination: aluResult\_o
+    \item Explanation: SLLW implementation. $sllw\_s = data01\_i(31:0) << data02\_i(4:0)$. aluResult\_o is sllw\_s sign extended.
+  \end{itemize}
+  \item srlw\_s
+  \begin{itemize}
+    \item Width: 32\,bit
+    \item Source:
+    \item Destination:
+    \item Explanation:
+  \end{itemize}
+  \item sraw\_s
+  \begin{itemize}
+    \item Width: 32\,bit, signed
+    \item Source:
+    \item Destination:
+    \item Explanation:
+  \end{itemize}
+  \item data01w\_s
+  \begin{itemize}
+    \item Width: 32\,bit, signed
+    \item Source:
+    \item Destination:
+    \item Explanation:
+  \end{itemize}
+  \item sltiu\_s
+  \begin{itemize}
+    \item Width: 1\,bit
+    \item Source:
+    \item Destination:
+    \item Explanation:
+  \end{itemize}
+  \item overf\_s
+  \begin{itemize}
+    \item Width: 1\,bit
+    \item Source:
+    \item Destination:
+    \item Explanation:
+  \end{itemize}
+\end{itemize}

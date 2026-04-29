@@ -1,0 +1,6 @@
+`timescale 1ns/1ps
+
+package as_pack;
+
+  localparam int       reg_width        = 64; // = data width
+endpackage

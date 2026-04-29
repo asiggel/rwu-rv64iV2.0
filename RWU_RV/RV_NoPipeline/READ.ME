@@ -1,0 +1,27 @@
+# Scan test example
+- take an arbitrary mem-file, e.g. readgpioid
+- cp tb_rv64i_instr99scantest.sv tb_rv64i.sv
+- run simulation
+
+# Run simulations
+# ... remove old runs
+rm -rf build
+# generate source directory and build directory
+cmake -S . -B build
+# executes a single simulation (For waveform generation, un-comment the line
+#   in the SIM section of CMakeLists.txt. Do not forget to comment
+#   it after the single-run.)
+cmake --build build --target sim_readgpioid
+# executes all simulations as regression
+cmake --build build --target regression
+# executes all simulations as regression and collects the errors
+cmake --build build --target collect_errors
+
+
+2Do:
+- In the design phase of QSPI, many registers where added - check the memory map and the decoder.
+- Add QSPI to the design.
+- Try an XIP-simulation.
+- Adapt the CGU to the real needs (QSPI-XIP <-> core speed)
+  * Define a target clock speed of the external oscillator.
+  * Get the speed of a typical NOR-flash.

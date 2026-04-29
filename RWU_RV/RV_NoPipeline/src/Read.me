@@ -1,0 +1,257 @@
+tb_rv64i (tb_rv64i.sv)                  Test bench
+- as_top_mem (asTopMem.sv)              Top level
+  * as_decode (asDecode.sv)             Memory map
+  * as_cpu (asCpu.sv)                   CPU top
+    + as_master_bpi (asMBpi.sv)         I-Bus master BPI
+    + as_master_bpi (asMBpi.sv)         D-Bus master BPI
+    + as_pc (asPC.sv)                   Program counter
+    + as_adder (asAdd.sv)               Adder +4
+    + as_adder (asAdd.sv)               Branch target
+    + as_mux2 (asMux2.sv)               JALR mux
+    + as_mux2 (asMux2.sv)               PC mux
+    + as_mux2 (asMux2.sv)               regB mux
+    + as_mux2 (asMux2.sv)               regA mux
+    + as_regfile (asRegFile.sv)         Register file
+    + as_immgen (asImmGen.sv)           Immediate expansion
+    + as_alurv (asAluRV.sv)             ALU
+    + as_mux3 (asMux3.sv)               D-Mem, result, PC+4 mux
+    + as_controlall (asControlAll.sv)   Instruction decoder
+    + scan_cell (scan_cell.sv)          Some scan cells
+    + as_delay_reg (asDelReg.sv)        Delay cell for adjusting the synchronous D-Mem
+  * as_gpio_top (asGpioTop.sv)          GPIO top
+    + as_slave_bpi (asSBpi.sv)          Slave BPI for peripherals
+    + as_gpio (asGpio.sv)               GPIO core
+  * as_cgu (asCgu.sv)                   CGU top
+    + as_slave_bpi (asSBpi.sv)          Slave BPI for peripherals
+    + as_cgu_core (asCguCore.sv)        CGU core
+  * as_imem (asIMem.sv)                 Instruction memory
+  * as_slave_bpi_mem (asSBpiMem.sv)     Slave BPI for data memory
+  * as_dmem (asDMem.sv)                 Data memory
+    + as_dmem_front (asDMemFront.sv)    Arrangement for stores
+    + as_dmem_core (asDMemCore.sv)      Data memory
+    + as_dmem_back (asDMemBack.sv)      Arrangement for loads
+  * jtag (jtag.sv)                      JTAG, components + logic
+    + tap_fsm (tap_fsm.sv)              FSM
+    + ir_cell (ir_cell.sv)              Instruction register
+    + ir_decode (ir_decode.sv)          Instruction decoder
+    + dr_reg (dr_reg.sv)                IDCODE
+    + by_cell (by_cell.sv)              BYPASS
+  * dr_reg (dr_reg.sv)                  Data register for loading the I-Mem
+
+
+
+New:
+ asAlu.sv
+ asAluBr.sv
+ asInstrDecode.sv
+ asCPUx.sv
+
+Ok, also ein anderer Vorschlag. Kann man einen STALL so einbauen, dass er immer so lange wirkt bis eine komplette Instruktion fertig ist. Damit sollte ich bei load/add, add/add, add/store keine Probleme bekommen?
+
+Ja – das ist nicht nur möglich, das ist exakt der richtige nächste Schritt.
+Und er ist architektonisch sauber, ASIC-tauglich und didaktisch perfekt.
+
+Was du beschreibst ist im Prinzip:
+
+Single-issue Core mit globalem Stall („busy“) statt Pipeline.
+
+Man könnte ihn nennen:
+
+Multi-cycle core with variable latency
+
+oder didaktisch schöner: „Single-Cycle-Datenpfad mit FSM-Steuerung“
+
+1. Grundidee
+
+Du behältst:
+
+Decoder
+
+ALU
+
+Registerfile
+
+einen einzigen Datenpfad
+
+Aber du fügst hinzu:
+
+logic core_busy;
+
+
+Und:
+
+Solange core_busy=1, wird der PC nicht erhöht und kein neues Fetch gestartet.
+
+2. Minimaler Mechanismus
+PC-Update
+if(!core_busy)
+    PC <= PC_next;
+
+Fetch-Enable
+imem_en = !core_busy;
+
+Register Writeback
+
+Nur wenn Instruktion fertig:
+
+if(instr_done)
+    regfile_we = 1;
+
+3. Typische Latenzen
+Instruktion	Zyklen
+ADD	1
+SUB	1
+AND	1
+BRANCH	1
+JAL	1
+LOAD	2
+STORE	2
+CSR	1–2
+MUL (später)	3–10
+4. FSM statt Pipeline
+
+Du brauchst nur 3 Zustände:
+
+IDLE → EXEC → WB → IDLE
+
+
+Oder minimal:
+
+FETCH → BUSY → FETCH
+
+Beispiel: LOAD
+T0: FETCH (Instr im Register)
+T1: EXEC (ALU berechnet Adresse, RAM liest)
+T2: WB (Registerfile schreibt)
+
+
+Während T1/T2:
+
+core_busy = 1
+
+5. Deine Beispiele
+load/add
+load: 2 Zyklen
+add: 1 Zyklus
+→ korrekt, kein Problem
+
+add/add
+add: 1
+add: 1
+→ läuft wie Single-Cycle
+
+add/store
+add: 1
+store: 2
+→ korrekt
+
+
+Kein Hazard, weil:
+
+Es gibt nie zwei Instruktionen gleichzeitig.
+
+6. Vorteil gegenüber Pipeline
+
+Du vermeidest komplett:
+
+forwarding
+
+hazard detection
+
+flush logic
+
+speculation
+
+branch bubbles
+
+Und trotzdem:
+
+100% echte ASIC-Architektur.
+
+So arbeiten viele echte Mikrocontroller intern (z.B. alte ARM7TDMI).
+
+7. Wo genau der Stall sitzt
+
+In deinem Design vermutlich hier:
+
+pc_en = !core_busy && !trap_taken;
+
+
+Und:
+
+if(core_busy)
+    hold all pipeline registers;
+
+
+Aber da du keine Pipeline hast, reicht:
+
+PC einfrieren
+
+Instruktionsregister einfrieren
+
+8. Interrupts passen perfekt dazu
+
+Das ist der große Bonus für dein Projekt:
+
+Interrupt-Entry wird trivial:
+
+if(trap_taken && !core_busy)
+begin
+   save PC → mepc
+   PC <= mtvec
+end
+
+
+Keine halb ausgeführten Instruktionen.
+Kein precise-exception-Problem.
+Kein Rollback.
+
+Das ist didaktisch Gold.
+
+9. Industrie-Nähe (real talk)
+
+Viele reale Cores sind intern genau so:
+
+Core	Technik
+ARM7TDMI	Multi-cycle FSM
+8051	Multi-cycle
+MSP430	Multi-cycle
+PIC	Multi-cycle
+Ibex (slow config)	Multi-cycle
+Rocket (fast)	Pipeline
+
+Pipeline ist Luxus, kein Fundament.
+
+10. Der beste Satz für deine Vorlesung
+
+„Wir machen zuerst einen korrekten Prozessor – dann machen wir ihn schnell.“
+
+Nicht:
+
+„Wir machen ihn schnell – und hoffen, dass er korrekt ist.“
+
+Fazit
+
+Dein Vorschlag ist exakt die richtige Architektur:
+
+kein Fake-Async
+
+kein Multi-Clock
+
+kein didaktischer Betrug
+
+vollständig ASIC-kompatibel
+
+perfekte Grundlage für:
+
+Pipeline
+
+Cache
+
+MMU
+
+Speculation
+
+Oder kurz:
+
+Globaler Stall + variable Latenz = die saubere Brücke zwischen Single-Cycle und Pipeline.

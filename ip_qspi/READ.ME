@@ -1,0 +1,200 @@
+Der Entwurf eines Quad Serial Peripheral Interface (QSPI) Peripherieblocks in einem ASIC umfasst die Implementierung eines synchronen seriellen Masters, der mit bis zu vier bidirektionalen Datenleitungen (IO0-IO3) arbeitet, um hohe Durchsatzraten bei der Kommunikation mit externen Flash-Speichern zu erreichen
+. 
+Hier ist eine Übersicht des ASIC-Entwurfsflusses für ein QSPI-Peripheral:
+1. Architektur-Komponenten (Block Diagramm)
+Ein typischer QSPI-Controller besteht aus folgenden Hauptmodulen:
+
+    Systembus-Schnittstelle: AMBA AHB-Lite oder APB Slave-Interface für die Konfiguration und Datenübertragung durch die CPU.
+    Command Sequencer/Finite State Machine (FSM): Steuert den Ablauf (Befehl -> Adresse -> Dummy-Zyklen -> Daten).
+    Tx/Rx FIFO Buffers: Pufferspeicher zur Optimierung des Datendurchsatzes, um CPU-Wartezeiten zu minimieren.
+    QSPI Master Core: Erzeugt das synchrone Taktsignal (SCK), Chip Select (CS#) und steuert die vier bidirektionalen Datenleitungen (IO[3:0]).
+    Baud Rate Generator: Einstellbarer Taktteiler für flexible SPI-Geschwindigkeiten (bis zu 100+ MHz).
+    Memory Mapped Interface (Optional): Erlaubt den direkten Zugriff auf den externen Flash-Speicher wie auf internen Speicher, inklusive XIP (Execute-in-Place) Unterstützung. 
+
+2. Funktionalitäten und Betriebsmodi
+
+    Betriebsmodi: Der Controller sollte den klassischen SPI-Modus (1-Bit), Dual-SPI (2-Bit) und Quad-SPI (4-Bit) unterstützen.
+    DDR/DTR Support: Für maximale Performance sollte das Design Double Data Rate (DDR) / Double Transfer Rate (DTR) unterstützen, bei der Daten auf beiden Taktflanken übertragen werden.
+    XIP (Execute-in-Place): Ermöglicht dem Prozessor, Code direkt aus dem externen QSPI-Flash auszuführen, ohne ihn vorher in den RAM laden zu müssen. 
+
+3. ASIC Entwurfsfluss (Design Flow)
+
+    Spezifikation: Definition der maximalen Taktfrequenz, FIFO-Größe, AMBA-Bus-Typ, Unterstützung für 3-Byte/4-Byte Adressierung.
+    RTL-Design (Verilog/VHDL): Implementierung der FSMs und Shift-Register. Bidirektionale Leitungen (IO) erfordern die korrekte Handhabung von Tri-State-Buffern (in der Synthese als inout Ports).
+    Verifikation: Einsatz von SystemVerilog/UVM, um Befehlssequenzen (Read, Write, Erase) gegen Flash-Modelle (z.B. Micron, Winbond) zu testen.
+    Synthese & Timing Constraints: Nutzung von Synopsys Design Constraints (SDC), um die hohen Taktraten (100-133 MHz+) auf den QSPI-Leitungen zu garantieren.
+    Layout (Physical Design): Platzierung der I/O-Treiber für die QSPI-Leitungen, um Signalintegrität bei hohen Frequenzen zu gewährleisten. 
+
+4. Wichtige Design-Überlegungen
+
+    Signalintegrität: QSPI-Signale sollten kurz gehalten werden, um Übersprechen (Crosstalk) zu vermeiden.
+    Flexibilität: Die Konfigurierbarkeit der Anzahl von Dummy-Zyklen ist entscheidend, um verschiedene Flash-Speicher-Hersteller zu unterstützen. 
+
+Der Entwurf kann entweder eigenständig entwickelt oder als IP-Core (z.B. Digital Blocks) lizenziert werden. 
+
+
+Claude, 20.2.2026:
+Ich bin gerade beim SystemVerilog coden. Bein QSPI Kernel. Ich habe die IO-Tabelle aus der Spec etwas angepasst, die breiten der übergebenen Registerslices waren zuvor noch nicht definiert. Ist das so plausibel? Und noch eine Frage zur Interruptgenerierung. Das FIFO und die Register befinden sich im QspiTop.sv, die FSM befindet sich im QspiKernel.sv. Ist es sinnvoll, dass die Interrupt Signale im Kernel generiert werden und die Statusregistersignale oder genügt es, nur die Statusregistersignale (DONE, ERROR, TIMEOUT) an den TopLevel zu übertragen und dann dort die Interruptsignale abzuleiten?
+11:43
+
+Ich lese zuerst die aktualisierte Tabelle.
+Read updated kernel I/O table
+Fertig
+
+Sehr gute Fragen – ich beantworte beide direkt und konkret.
+Frage 1: Sind die Bitbreiten plausibel?
+
+Ja, fast alles stimmt. Aber es gibt einen Punkt der Diskussion wert ist:
+
+ctrl_reg_i(8:0) – 9 Bit: Das passt genau zu den neuen CTRL-Bits aus der Spec-Erweiterung: START(3), QUAD(4), DDR(5), XIP(6), CS_HOLD(7), DUAL(8), CPHA(9), CPOL(10), ADDR_LEN(11) – das wären allerdings Bits 3 bis 11, also 9 Bits wenn du START weglässt (START ist self-clearing, den braucht der Kernel nur als Puls, nicht als Register-Slice). Das ist also plausibel, aber du solltest im Code explizit benennen welche Bits das sind, nicht nur einen anonymen Slice übergeben. Besser wäre ein struct oder packed typedef:
+systemverilog
+
+typedef struct packed {
+    logic       addr_len;   // bit 11 → ctrl_reg_i[8]
+    logic       cpol;       // bit 10 → ctrl_reg_i[7]
+    logic       cpha;       // bit  9 → ctrl_reg_i[6]
+    logic       dual;       // bit  8 → ctrl_reg_i[5]
+    logic       cs_hold;    // bit  7 → ctrl_reg_i[4]
+    logic       xip;        // bit  6 → ctrl_reg_i[3]
+    logic       ddr;        // bit  5 → ctrl_reg_i[2]
+    logic       quad;       // bit  4 → ctrl_reg_i[1]
+    logic       start;      // bit  3 → ctrl_reg_i[0]
+} qspi_ctrl_t;
+```
+
+Dann übergibst du `qspi_ctrl_t ctrl_reg_i` – lesbar, wartbar, kein Magic-Index-Wirrwarr.
+
+**`dummy_reg_i(5:0)` – 6 Bit:** Passt (max. 63 Dummy-Zyklen, laut Spec `DUMMY_CYC[5:0]`). ✓
+
+**`status_reg_o(3:0)` – 4 Bit:** Passt für BUSY(0), DONE(1), ERROR(2(?)), TIMEOUT(3) – aber **Achtung:** In der Tabelle steht noch die alte Bitreihenfolge. Nach der Spec-Erweiterung (Additions-Snippet) hat das STATUS-Register 6 Bits (BU, DO, FU, EM, ER, TI). Du musst entscheiden ob der Kernel nur BUSY/DONE/ERROR/TIMEOUT liefert (4 Bit) und die FIFO-Status-Bits (FU, EM) separat aus dem FIFO kommen – was die sauberere Aufteilung ist. Dazu gleich mehr.
+
+**`len_reg_i(31:0)` – 32 Bit:** Plausibel, aber 32 Bit Länge bedeutet bis zu 4 GB Transfer. Für ein NOR-Flash-QSPI reichen in der Praxis 16 Bit (max. 65535 Bytes = 64 KB Page). Überleg ob du das auf 16 Bit reduzierst um Logik zu sparen.
+
+---
+
+## Frage 2: Wo sollen die Interrupt-Signale generiert werden?
+
+**Deine zweite Option ist die richtige: Nur Statussignale aus dem Kernel, Interrupt-Logik im Top.**
+
+Hier die Begründung und das konkrete Schema:
+
+### Designregel: Kernel kennt keine Interrupts
+
+Der Kernel ist eine reine Datenpfad-FSM. Er weiß nicht, ob Interrupts maskiert sind, wie das Interrupt-System aufgebaut ist, oder ob überhaupt ein ICU angeschlossen ist. Das ist auch eine deiner eigenen Design Rules aus der Spec:
+
+> *"Interrupts never control hardware behavior. No FSM state depends on interrupt signals."*
+
+Konsequent zu Ende gedacht gilt das umgekehrt auch: **Der Kernel generiert keine Interrupts, er generiert nur Status.**
+
+### Konkrete Aufteilung
+```
+QspiKernel.sv                    QspiTop.sv
+─────────────────────────────    ──────────────────────────────────────
+FSM-Zustand → done_o   (1)  ──► RIS.DO  ──► IMSC.DO ──┐
+              error_o  (1)  ──► RIS.ER  ──► IMSC.ER ──┤
+              timeout_o(1)  ──► RIS.TI  ──► IMSC.TI ──┤
+              busy_o   (1)  ──► STATUS.BU              │
+                                                        │ MIS = RIS & IMSC
+FIFO-Status (im Top)                                    │ IRQ = |MIS
+  tx_empty_s          ──────► RIS.TE ──► IMSC.TE ──────┤
+  tx_half_s           ──────► RIS.TH ──► IMSC.TH ──────┤
+  rx_empty_s          ──────► RIS.EM ──► IMSC.EM ──────┤
+  rx_half_s           ──────► RIS.HA ──► IMSC.HA ──────┘
+                                                        │
+                                               qspi_irq_o
+
+Wie werden ERROR und TIMEOUT konkret generiert?
+
+Das ist deine offene Frage in der Tabelle ("How generated???"). Beide entstehen im Kernel als reine Statussignale:
+
+ERROR:
+systemverilog
+
+// Im Kernel: error wird gesetzt wenn...
+always_ff @(posedge clk_i) begin
+    if (rst_i)
+        error_r <= 1'b0;
+    else if (state == IDLE && error_r)
+        error_r <= error_r;          // gehalten bis ICR
+    else begin
+        // FIFO-Underflow: Kernel will senden, TX-FIFO ist leer
+        if (state == DATA_PHASE && tx_flag && tx_empty_i)
+            error_r <= 1'b1;
+        // FIFO-Overflow: Kernel empfängt, RX-FIFO ist voll
+        if (state == DATA_PHASE && !tx_flag && rx_full_i)
+            error_r <= 1'b1;
+        // Illegaler Start: START gesetzt während BUSY
+        // (laut Spec: silent ignore – kein Error, also weglassen)
+    end
+end
+assign error_o = error_r;
+
+Dafür braucht der Kernel also zwei Eingänge zurück vom Top: tx_empty_i und rx_full_i.
+
+TIMEOUT:
+systemverilog
+
+// Im Kernel: Zähler läuft solange die FSM nicht IDLE ist
+logic [31:0] timeout_cnt_r;
+
+always_ff @(posedge clk_i) begin
+    if (rst_i || state == IDLE || state == DONE)
+        timeout_cnt_r <= timeout_reg_i;     // aus TIMEOUT-Register laden
+    else if (timeout_cnt_r != '0)
+        timeout_cnt_r <= timeout_cnt_r - 1;
+end
+
+assign timeout_o = (timeout_cnt_r == '0) && (state != IDLE);
+// timeout_reg_i == 0 → Timeout deaktiviert (Spec: "0x0 = disabled")
+```
+
+Der Kernel braucht also noch einen weiteren Eingang: `timeout_reg_i(31:0)`.
+
+### Aktualisierte Kernel-Schnittstelle (Empfehlung)
+
+Hier was ich empfehle statt der `irq_*_o`-Signale:
+```
+Kernel-Outputs (reine Status-Pulses/Level):
+  busy_o     (1)   – FSM ist aktiv (LEVEL, nicht IDLE)
+  done_o     (1)   – FSM hat DONE-State erreicht (PULSE, 1 Zyklus)
+  error_o    (1)   – Fehler latched (LEVEL, bis ICR)
+  timeout_o  (1)   – Timeout eingetreten (LEVEL, bis ICR oder Reset)
+
+Kernel-Inputs (zusätzlich zu bisherigen):
+  timeout_reg_i(31:0)  – Timeout-Schwelle aus TIMEOUT-Register
+  tx_empty_i   (1)     – TX-FIFO leer (für ERROR-Detektion)
+  rx_full_i    (1)     – RX-FIFO voll (für ERROR-Detektion)
+
+Im Top dann ganz simpel:
+systemverilog
+
+// RIS-Register setzen (level-based, gehalten durch RIS-FF)
+always_ff @(posedge clk_i) begin
+    if (rst_i) ris_r <= '0;
+    else begin
+        if (icr_wr)      ris_r <= ris_r & ~icr_data;   // clear via ICR
+        if (isr_wr)      ris_r <= ris_r | isr_data;    // force via ISR
+        // Quellen
+        ris_r[DO] <= ris_r[DO] | done_s;
+        ris_r[ER] <= ris_r[ER] | error_s;
+        ris_r[TI] <= ris_r[TI] | timeout_s;
+        ris_r[TE] <= tx_empty_s;    // level (kein latch nötig)
+        ris_r[TH] <= tx_half_s;
+        ris_r[EM] <= rx_empty_s;
+        ris_r[HA] <= rx_half_s;
+    end
+end
+
+assign mis_s      = ris_r & imsc_r;
+assign qspi_irq_o = |mis_s;
+
+Fazit auf einen Blick
+	Kernel	Top
+FSM-Zustände	✅	✗
+DONE / BUSY	✅ generieren	✗
+ERROR / TIMEOUT	✅ generieren (als Status)	✗
+RIS / IMSC / MIS	✗	✅
+IRQ-Ausgang	✗	✅
+FIFO-Status→RIS	✗	✅ direkt
+
+Die irq_*_o-Ports aus deiner Tabelle würde ich also umbenennen in done_o, error_o, timeout_o – semantisch Statussignale, nicht Interrupts. Das macht den Kernel wiederverwendbar, auch wenn du später ein anderes Interrupt-System einsetzt.

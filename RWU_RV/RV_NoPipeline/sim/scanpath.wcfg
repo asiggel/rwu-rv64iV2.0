@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="tb_rv64i_snapshot.wdb" id="1">
+         <top_modules>
+            <top_module name="as_pack" />
+            <top_module name="tb_rv64i" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="0.000000 us"></ZoomStartTime>
+      <ZoomEndTime time="136.899634 us"></ZoomEndTime>
+      <Cursor1Time time="8.600000 us"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="241"></NameColumnWidth>
+      <ValueColumnWidth column_width="122"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="50" />
+   <wvobject type="logic" fp_name="/tb_rv64i/clk_s">
+      <obj_property name="ElementShortName">clk_s</obj_property>
+      <obj_property name="ObjectShortName">clk_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/rst_s">
+      <obj_property name="ElementShortName">rst_s</obj_property>
+      <obj_property name="ObjectShortName">rst_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/tck_s">
+      <obj_property name="ElementShortName">tck_s</obj_property>
+      <obj_property name="ObjectShortName">tck_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/trst_s">
+      <obj_property name="ElementShortName">trst_s</obj_property>
+      <obj_property name="ObjectShortName">trst_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/tms_s">
+      <obj_property name="ElementShortName">tms_s</obj_property>
+      <obj_property name="ObjectShortName">tms_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/tdi_s">
+      <obj_property name="ElementShortName">tdi_s</obj_property>
+      <obj_property name="ObjectShortName">tdi_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/tdo_s">
+      <obj_property name="ElementShortName">tdo_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_s</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/gpio_s">
+      <obj_property name="ElementShortName">gpio_s[7:0]</obj_property>
+      <obj_property name="ObjectShortName">gpio_s[7:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/cs_s">
+      <obj_property name="ElementShortName">cs_s</obj_property>
+      <obj_property name="ObjectShortName">cs_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/test_case_s">
+      <obj_property name="ElementShortName">test_case_s</obj_property>
+      <obj_property name="ObjectShortName">test_case_s</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider47" type="divider">
+      <obj_property name="label">TopCore</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/clk_i">
+      <obj_property name="ElementShortName">clk_i</obj_property>
+      <obj_property name="ObjectShortName">clk_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/clk_core_s">
+      <obj_property name="ElementShortName">clk_core_s</obj_property>
+      <obj_property name="ObjectShortName">clk_core_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/dr_cap_s">
+      <obj_property name="ElementShortName">dr_cap_s</obj_property>
+      <obj_property name="ObjectShortName">dr_cap_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/clk_div_s">
+      <obj_property name="ElementShortName">clk_div_s</obj_property>
+      <obj_property name="ObjectShortName">clk_div_s</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider71" type="divider">
+      <obj_property name="label">ScanPath</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/clk_i">
+      <obj_property name="ElementShortName">clk_i</obj_property>
+      <obj_property name="ObjectShortName">clk_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/dr_cap_s">
+      <obj_property name="ElementShortName">dr_cap_s</obj_property>
+      <obj_property name="ObjectShortName">dr_cap_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/gated_clk_s">
+      <obj_property name="ElementShortName">gated_clk_s</obj_property>
+      <obj_property name="ObjectShortName">gated_clk_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/tck_i">
+      <obj_property name="ElementShortName">tck_i</obj_property>
+      <obj_property name="ObjectShortName">tck_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/clk_mux_s">
+      <obj_property name="ElementShortName">clk_mux_s</obj_property>
+      <obj_property name="ObjectShortName">clk_mux_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_tdi_i">
+      <obj_property name="ElementShortName">sc01_tdi_i</obj_property>
+      <obj_property name="ObjectShortName">sc01_tdi_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_shift_i">
+      <obj_property name="ElementShortName">sc01_shift_i</obj_property>
+      <obj_property name="ObjectShortName">sc01_shift_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_clock_i">
+      <obj_property name="ElementShortName">sc01_clock_i</obj_property>
+      <obj_property name="ObjectShortName">sc01_clock_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01/mux_data_s">
+      <obj_property name="ElementShortName">mux_data_s</obj_property>
+      <obj_property name="ObjectShortName">mux_data_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_01_s">
+      <obj_property name="ElementShortName">sc01_01_s</obj_property>
+      <obj_property name="ObjectShortName">sc01_01_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc02/mux_data_s">
+      <obj_property name="ElementShortName">mux_data_s</obj_property>
+      <obj_property name="ObjectShortName">mux_data_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_02_s">
+      <obj_property name="ElementShortName">sc01_02_s</obj_property>
+      <obj_property name="ObjectShortName">sc01_02_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc03/mux_data_s">
+      <obj_property name="ElementShortName">mux_data_s</obj_property>
+      <obj_property name="ObjectShortName">mux_data_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_03_s">
+      <obj_property name="ElementShortName">sc01_03_s</obj_property>
+      <obj_property name="ObjectShortName">sc01_03_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc04/mux_data_s">
+      <obj_property name="ElementShortName">mux_data_s</obj_property>
+      <obj_property name="ObjectShortName">mux_data_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/and_in01_s">
+      <obj_property name="ElementShortName">and_in01_s</obj_property>
+      <obj_property name="ObjectShortName">and_in01_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/and_in02_s">
+      <obj_property name="ElementShortName">and_in02_s</obj_property>
+      <obj_property name="ObjectShortName">and_in02_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/and_out_s">
+      <obj_property name="ElementShortName">and_out_s</obj_property>
+      <obj_property name="ObjectShortName">and_out_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/sc01_tdo_o">
+      <obj_property name="ElementShortName">sc01_tdo_o</obj_property>
+      <obj_property name="ObjectShortName">sc01_tdo_o</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider45" type="divider">
+      <obj_property name="label">JTAG</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/as_jtag/tapc/state_s">
+      <obj_property name="ElementShortName">state_s[3:0]</obj_property>
+      <obj_property name="ObjectShortName">state_s[3:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tap_rst_o">
+      <obj_property name="ElementShortName">tap_rst_o</obj_property>
+      <obj_property name="ObjectShortName">tap_rst_o</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/as_jtag/ir_s">
+      <obj_property name="ElementShortName">ir_s[7:0]</obj_property>
+      <obj_property name="ObjectShortName">ir_s[7:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/sc01_tdi_o">
+      <obj_property name="ElementShortName">sc01_tdi_o</obj_property>
+      <obj_property name="ObjectShortName">sc01_tdi_o</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/sc01_tdo_i">
+      <obj_property name="ElementShortName">sc01_tdo_i</obj_property>
+      <obj_property name="ObjectShortName">sc01_tdo_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/as_jtag/sel_tdo_s">
+      <obj_property name="ElementShortName">sel_tdo_s[4:0]</obj_property>
+      <obj_property name="ObjectShortName">sel_tdo_s[4:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_ir_s">
+      <obj_property name="ElementShortName">tdo_ir_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_ir_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/sc01_tdo_i">
+      <obj_property name="ElementShortName">sc01_tdo_i</obj_property>
+      <obj_property name="ObjectShortName">sc01_tdo_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_1st_s">
+      <obj_property name="ElementShortName">tdo_1st_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_1st_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_2nd_s">
+      <obj_property name="ElementShortName">tdo_2nd_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_2nd_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_3rd_s">
+      <obj_property name="ElementShortName">tdo_3rd_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_3rd_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_ena_s">
+      <obj_property name="ElementShortName">tdo_ena_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_ena_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_ena_n_s">
+      <obj_property name="ElementShortName">tdo_ena_n_s</obj_property>
+      <obj_property name="ObjectShortName">tdo_ena_n_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/as_jtag/tdo_o">
+      <obj_property name="ElementShortName">tdo_o</obj_property>
+      <obj_property name="ObjectShortName">tdo_o</obj_property>
+   </wvobject>
+</wave_config>

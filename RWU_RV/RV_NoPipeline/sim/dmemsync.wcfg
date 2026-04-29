@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="tb_rv64i_snapshot.wdb" id="1">
+         <top_modules>
+            <top_module name="as_pack" />
+            <top_module name="tb_rv64i" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="0.000000 us"></ZoomStartTime>
+      <ZoomEndTime time="139.000001 us"></ZoomEndTime>
+      <Cursor1Time time="98.200000 us"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="159"></NameColumnWidth>
+      <ValueColumnWidth column_width="122"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="62" />
+   <wave_markers>
+      <marker label="" time="47290000" />
+   </wave_markers>
+   <wvobject type="logic" fp_name="/tb_rv64i/clk_s">
+      <obj_property name="ElementShortName">clk_s</obj_property>
+      <obj_property name="ObjectShortName">clk_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/clk_core_s">
+      <obj_property name="ElementShortName">clk_core_s</obj_property>
+      <obj_property name="ObjectShortName">clk_core_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/rst_s">
+      <obj_property name="ElementShortName">rst_s</obj_property>
+      <obj_property name="ObjectShortName">rst_s</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/gpio_s">
+      <obj_property name="ElementShortName">gpio_s[7:0]</obj_property>
+      <obj_property name="ObjectShortName">gpio_s[7:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/cs_s">
+      <obj_property name="ElementShortName">cs_s</obj_property>
+      <obj_property name="ObjectShortName">cs_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/fetch0_phase_s">
+      <obj_property name="ElementShortName">fetch0_phase_s</obj_property>
+      <obj_property name="ObjectShortName">fetch0_phase_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/fetch1_phase_s">
+      <obj_property name="ElementShortName">fetch1_phase_s</obj_property>
+      <obj_property name="ObjectShortName">fetch1_phase_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/exec_phase_s">
+      <obj_property name="ElementShortName">exec_phase_s</obj_property>
+      <obj_property name="ObjectShortName">exec_phase_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/execld_phase_s">
+      <obj_property name="ElementShortName">execld_phase_s</obj_property>
+      <obj_property name="ObjectShortName">execld_phase_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/dMemRd_s">
+      <obj_property name="ElementShortName">dMemRd_s</obj_property>
+      <obj_property name="ObjectShortName">dMemRd_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/instr_commit_s">
+      <obj_property name="ElementShortName">instr_commit_s</obj_property>
+      <obj_property name="ObjectShortName">instr_commit_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/load_pending_s">
+      <obj_property name="ElementShortName">load_pending_s</obj_property>
+      <obj_property name="ObjectShortName">load_pending_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/trap_misaligned_s">
+      <obj_property name="ElementShortName">trap_misaligned_s</obj_property>
+      <obj_property name="ObjectShortName">trap_misaligned_s</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/trap_illegal_instrx_s">
+      <obj_property name="ElementShortName">trap_illegal_instrx_s</obj_property>
+      <obj_property name="ObjectShortName">trap_illegal_instrx_s</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider19" type="divider">
+      <obj_property name="label">D-Mem write</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[2]">
+      <obj_property name="ElementShortName">[2][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[2][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[4]">
+      <obj_property name="ElementShortName">[4][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[4][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[10]">
+      <obj_property name="ElementShortName">[10][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[10][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[7]">
+      <obj_property name="ElementShortName">[7][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[7][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[5]">
+      <obj_property name="ElementShortName">[5][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[5][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[6]">
+      <obj_property name="ElementShortName">[6][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[6][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/opcode_i">
+      <obj_property name="ElementShortName">opcode_i[6:0]</obj_property>
+      <obj_property name="ObjectShortName">opcode_i[6:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/DMem/dmem/wrEn_i">
+      <obj_property name="ElementShortName">wrEn_i</obj_property>
+      <obj_property name="ObjectShortName">wrEn_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/addr_i">
+      <obj_property name="ElementShortName">addr_i[12:0]</obj_property>
+      <obj_property name="ObjectShortName">addr_i[12:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/data_i">
+      <obj_property name="ElementShortName">data_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/wrEn_i">
+      <obj_property name="ElementShortName">wrEn_i</obj_property>
+      <obj_property name="ObjectShortName">wrEn_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/addr_i">
+      <obj_property name="ElementShortName">addr_i[12:3]</obj_property>
+      <obj_property name="ObjectShortName">addr_i[12:3]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/data_i">
+      <obj_property name="ElementShortName">data_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/ram_s[3]">
+      <obj_property name="ElementShortName">[3][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[3][63:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider27" type="divider">
+      <obj_property name="label">D-Mem read</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/DMem/dmem/rdEn_i">
+      <obj_property name="ElementShortName">rdEn_i</obj_property>
+      <obj_property name="ObjectShortName">rdEn_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/data_o">
+      <obj_property name="ElementShortName">data_o[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_o[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/opcode_i">
+      <obj_property name="ElementShortName">opcode_i[6:0]</obj_property>
+      <obj_property name="ObjectShortName">opcode_i[6:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/dataRd_i">
+      <obj_property name="ElementShortName">dataRd_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">dataRd_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/data_o">
+      <obj_property name="ElementShortName">data_o[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_o[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/data_o">
+      <obj_property name="ElementShortName">data_o[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_o[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[6]">
+      <obj_property name="ElementShortName">[6][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[6][63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/wbdBusDataRd_i">
+      <obj_property name="ElementShortName">wbdBusDataRd_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">wbdBusDataRd_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/dBusDataRd_s">
+      <obj_property name="ElementShortName">dBusDataRd_s[63:0]</obj_property>
+      <obj_property name="ObjectShortName">dBusDataRd_s[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/resultSrcx_s">
+      <obj_property name="ElementShortName">resultSrcx_s[1:0]</obj_property>
+      <obj_property name="ObjectShortName">resultSrcx_s[1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/result_s">
+      <obj_property name="ElementShortName">result_s[63:0]</obj_property>
+      <obj_property name="ObjectShortName">result_s[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb_rv64i/DUT/cpu/regWr_final_s">
+      <obj_property name="ElementShortName">regWr_final_s</obj_property>
+      <obj_property name="ObjectShortName">regWr_final_s</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile_data_w_s">
+      <obj_property name="ElementShortName">regfile_data_w_s[63:0]</obj_property>
+      <obj_property name="ObjectShortName">regfile_data_w_s[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/waddr01_i">
+      <obj_property name="ElementShortName">waddr01_i[4:0]</obj_property>
+      <obj_property name="ObjectShortName">waddr01_i[4:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile/regfile_s[10]">
+      <obj_property name="ElementShortName">[10][63:0]</obj_property>
+      <obj_property name="ObjectShortName">[10][63:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="divider65" type="divider">
+      <obj_property name="label">xxxx</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/addr_i">
+      <obj_property name="ElementShortName">addr_i[12:3]</obj_property>
+      <obj_property name="ObjectShortName">addr_i[12:3]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/data_i">
+      <obj_property name="ElementShortName">data_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/asDMem/data_o">
+      <obj_property name="ElementShortName">data_o[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_o[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/addr_i">
+      <obj_property name="ElementShortName">addr_i[12:0]</obj_property>
+      <obj_property name="ObjectShortName">addr_i[12:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/func3_i">
+      <obj_property name="ElementShortName">func3_i[2:0]</obj_property>
+      <obj_property name="ObjectShortName">func3_i[2:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/dataRd_i">
+      <obj_property name="ElementShortName">dataRd_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">dataRd_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/DMem/dmem/dMemLoad/data_o">
+      <obj_property name="ElementShortName">data_o[63:0]</obj_property>
+      <obj_property name="ObjectShortName">data_o[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/wbdBusDataRd_i">
+      <obj_property name="ElementShortName">wbdBusDataRd_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">wbdBusDataRd_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/regfile_data_w_s">
+      <obj_property name="ElementShortName">regfile_data_w_s[63:0]</obj_property>
+      <obj_property name="ObjectShortName">regfile_data_w_s[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/wbiBusDataRd_i">
+      <obj_property name="ElementShortName">wbiBusDataRd_i[31:0]</obj_property>
+      <obj_property name="ObjectShortName">wbiBusDataRd_i[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/ir_s">
+      <obj_property name="ElementShortName">ir_s[31:0]</obj_property>
+      <obj_property name="ObjectShortName">ir_s[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/func3_s">
+      <obj_property name="ElementShortName">func3_s[2:0]</obj_property>
+      <obj_property name="ObjectShortName">func3_s[2:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/opcode_s">
+      <obj_property name="ElementShortName">opcode_s[6:0]</obj_property>
+      <obj_property name="ObjectShortName">opcode_s[6:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/ir_s">
+      <obj_property name="ElementShortName">ir_s[31:0]</obj_property>
+      <obj_property name="ObjectShortName">ir_s[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/ir_o">
+      <obj_property name="ElementShortName">ir_o[31:0]</obj_property>
+      <obj_property name="ObjectShortName">ir_o[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb_rv64i/DUT/cpu/ir_s">
+      <obj_property name="ElementShortName">ir_s[31:0]</obj_property>
+      <obj_property name="ObjectShortName">ir_s[31:0]</obj_property>
+   </wvobject>
+</wave_config>
