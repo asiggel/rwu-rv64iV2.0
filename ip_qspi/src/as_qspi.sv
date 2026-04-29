@@ -66,17 +66,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // FSM: declaration
   // ---------------------------------------------------------------------------
-  typedef enum logic [2:0] {
-    IDLE_ST = 3'd0,
-    CMD_ST  = 3'd1,
-    ADDR_ST = 3'd2,
-    DUM_ST  = 3'd3,
-    DAT_ST  = 3'd4,
-    DONE_ST = 3'd5
-  } state_t;
-
-  state_t state_r, next_s;
-  
   typedef enum logic [2:0] {idle_st, cmd_st, addr_st, dum_st, dat_st, done_st} statetype_t;
   statetype_t state_s, nextstate_s;
 
@@ -116,6 +105,9 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // FSM block 1: nextstate, input CLC
   // ---------------------------------------------------------------------------
+  // cnt_dum_r is registered: it holds the count from the *previous* cycle.
+  // We leave DUM_ST on the sck_rise_s that would push cnt_dum_r to
+  // dummy_reg_i, i.e. when (cnt_dum_r + 1 == dummy_reg_i).
   always_comb 
   begin
     nextstate_s = state_s;
@@ -164,12 +156,12 @@ module as_qspi (
 
   // ... set sck enable
   always_comb
-    case (state_r)
-      CMD_ST, ADDR_ST, DUM_ST, DAT_ST : sck_en_s = 1'b1;
+    case (state_s)
+      cmd_st, addr_st, dum_st, dat_st : sck_en_s = 1'b1;
       default                         : sck_en_s = 1'b0; // IDLE, DONE
     endcase
 
-  // ... sck counter
+  // ... sck counter, spi clock
   always_ff @(posedge clk_i, posedge rst_i) 
   begin
     if (rst_i) 
@@ -180,7 +172,7 @@ module as_qspi (
     else if (!sck_en_s) // IDLE, DONE
     begin
       sck_cnt_r <= '0;
-      sck_r     <= ctrl_reg_i.cpol; 
+      sck_r     <= ctrl_reg_i.cpol; // set clock polarity
     end 
     else if (sck_cnt_r >= clkdiv_reg_i) 
     begin
@@ -213,24 +205,22 @@ module as_qspi (
 
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i)                  cnt_cmd_r <= '0;
-    else if (state_r != CMD_ST) cnt_cmd_r <= '0;
-    else if (sck_drive_s)       cnt_cmd_r <= (cnt_cmd_r >= CMD_MAX) ? '0
-                                             : cnt_cmd_r + 3'd1;
+    else if (state_s != cmd_st) cnt_cmd_r <= '0;
+    else if (sck_drive_s)       cnt_cmd_r <= (cnt_cmd_r >= CMD_MAX) ? '0 : cnt_cmd_r + 3'd1;
 
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i)                   cnt_addr_r <= '0;
-    else if (state_r != ADDR_ST) cnt_addr_r <= '0;
-    else if (sck_drive_s)        cnt_addr_r <= (cnt_addr_r >= addr_max_s) ? '0
-                                               : cnt_addr_r + 5'd1;
+    else if (state_s != addr_st) cnt_addr_r <= '0;
+    else if (sck_drive_s)        cnt_addr_r <= (cnt_addr_r >= addr_max_s) ? '0 : cnt_addr_r + 5'd1;
 
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i)                  cnt_dum_r <= '0;
-    else if (state_r != DUM_ST) cnt_dum_r <= '0;
+    else if (state_s != dum_st) cnt_dum_r <= '0;
     else if (sck_rise_s)        cnt_dum_r <= cnt_dum_r + 6'd1;
 
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i)                  cnt_dat_r <= '0;
-    else if (state_r != DAT_ST) cnt_dat_r <= '0;
+    else if (state_s != dat_st) cnt_dat_r <= '0;
     else if ( tx_flag_r && sck_drive_s)  cnt_dat_r <= cnt_dat_r + {17'd0, bpc_s};
     else if (!tx_flag_r && sck_sample_s) cnt_dat_r <= cnt_dat_r + {17'd0, bpc_s};
 
@@ -239,9 +229,9 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   logic tx_flag_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)                      tx_flag_r <= 1'b0;
+    if (rst_i)                       tx_flag_r <= 1'b0;
     else if (start_i && !tx_empty_i) tx_flag_r <= 1'b1;
-    else if (state_r == IDLE_ST)     tx_flag_r <= 1'b0;
+    else if (state_s == idle_st)     tx_flag_r <= 1'b0;
   end
 
   // ---------------------------------------------------------------------------
@@ -251,10 +241,10 @@ module as_qspi (
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       tx_shift_r <= '0;
-    else if ((state_r == CMD_ST  && next_s == DAT_ST) ||
-             (state_r == ADDR_ST && next_s == DAT_ST))
+    else if ((state_s == cmd_st  && nextstate_s == dat_st) ||
+             (state_s == addr_st && nextstate_s == dat_st))
       tx_shift_r <= tx_data_i;
-    else if (state_r == DAT_ST && tx_flag_r && sck_drive_s)
+    else if (state_s == dat_st && tx_flag_r && sck_drive_s)
       case (bpc_s)
         3'd4:    tx_shift_r <= {tx_shift_r[59:0], 4'b0};
         3'd2:    tx_shift_r <= {tx_shift_r[61:0], 2'b0};
@@ -269,14 +259,13 @@ module as_qspi (
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       rx_shift_r <= '0;
-    else if (state_r == DAT_ST && !tx_flag_r && sck_sample_s)
+    else if (state_s == dat_st && !tx_flag_r && sck_sample_s)
       case (bpc_s)
         3'd4:    rx_shift_r <= {rx_shift_r[59:0], data_io};
         3'd2:    rx_shift_r <= {rx_shift_r[61:0], data_io[1:0]};
         default: rx_shift_r <= {rx_shift_r[62:0], data_io[0]};
       endcase
   end
-
   assign rx_data_o = rx_shift_r;
 
   // ---------------------------------------------------------------------------
@@ -286,7 +275,7 @@ module as_qspi (
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)              xip_active_r <= 1'b0;
     else if (!ctrl_reg_i.xip) xip_active_r <= 1'b0;
-    else if (state_r == DONE_ST) xip_active_r <= 1'b1;
+    else if (state_s == done_st) xip_active_r <= 1'b1;
   end
   assign xip_active_o = xip_active_r;
 
@@ -300,26 +289,26 @@ module as_qspi (
   // cnt_dum_r increments on sck_rise_s (= one cycle after the SCK rising edge
   // fires). So cnt_dum_r==0 covers all drive events of the first dummy cycle.
   logic xip_mb_active_s;
-  assign xip_mb_active_s = xip_active_r && (state_r == DUM_ST) && (cnt_dum_r == 6'd0);
+  assign xip_mb_active_s = xip_active_r && (state_s == dum_st) && (cnt_dum_r == 6'd0);
 
   // Sub-index for mode-bit drive (counts sck_drive_s events in first dummy cycle)
   logic [2:0] xip_sub_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)                           xip_sub_r <= '0;
-    else if (state_r != DUM_ST)          xip_sub_r <= '0;
+    else if (state_s != dum_st)          xip_sub_r <= '0;
     else if (sck_drive_s && xip_mb_active_s) xip_sub_r <= xip_sub_r + 3'd1;
   end
 
   always_comb begin
     dout_s = 4'b0;
     doe_s  = 1'b0;
-    case (state_r)
-      CMD_ST: begin
+    case (state_s)
+      cmd_st: begin
         // Always Single, MSB first on io[0]
         dout_s = {3'b0, cmd_reg_i[3'd7 - cnt_cmd_r]};
         doe_s  = 1'b1;
       end
-      ADDR_ST: begin
+      addr_st: begin
         doe_s = 1'b1;
         case (bpc_s)
           3'd4: dout_s = addr_reg_i[{(addr_max_s - cnt_addr_r), 2'b11} -: 4];
@@ -327,7 +316,7 @@ module as_qspi (
           default: dout_s = {3'b0, addr_reg_i[addr_max_s - cnt_addr_r]};
         endcase
       end
-      DUM_ST: begin
+      dum_st: begin
         if (xip_mb_active_s) begin
           doe_s = 1'b1;
           case (bpc_s)
@@ -344,7 +333,7 @@ module as_qspi (
         end
         // else Hi-Z (doe_s = 0)
       end
-      DAT_ST: begin
+      dat_st: begin
         if (tx_flag_r) begin
           doe_s = 1'b1;
           case (bpc_s)
@@ -363,16 +352,16 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // FIFO strobes
   // ---------------------------------------------------------------------------
-  assign tx_rd_o = (state_r == DAT_ST) &&  tx_flag_r && sck_drive_s  &&
+  assign tx_rd_o = (state_s == dat_st) &&  tx_flag_r && sck_drive_s  &&
                    ((cnt_dat_r + {17'd0,bpc_s}) > dat_max_s);
 
-  assign rx_wr_o = (state_r == DAT_ST) && !tx_flag_r && sck_sample_s &&
+  assign rx_wr_o = (state_s == dat_st) && !tx_flag_r && sck_sample_s &&
                    ((cnt_dat_r + {17'd0,bpc_s}) > dat_max_s);
 
   // ---------------------------------------------------------------------------
   // CS output
   // ---------------------------------------------------------------------------
-  assign cs_o = (state_r != IDLE_ST) && (state_r != DONE_ST);
+  assign cs_o = (state_s != idle_st) && (state_s != done_st);
 
   // ---------------------------------------------------------------------------
   // Error latch
@@ -380,8 +369,8 @@ module as_qspi (
   logic error_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)     error_r <= 1'b0;
-    else if (state_r == DAT_ST && tx_flag_r  && tx_empty_i) error_r <= 1'b1;
-    else if (state_r == DAT_ST && !tx_flag_r && rx_full_i)  error_r <= 1'b1;
+    else if (state_s == dat_st && tx_flag_r  && tx_empty_i) error_r <= 1'b1;
+    else if (state_s == dat_st && !tx_flag_r && rx_full_i)  error_r <= 1'b1;
   end
   assign stat_error_o = error_r;
 
@@ -394,7 +383,7 @@ module as_qspi (
     if (rst_i) begin
       to_cnt_r <= '0;
       to_r     <= 1'b0;
-    end else if (state_r == IDLE_ST) begin
+    end else if (state_s == idle_st) begin
       to_cnt_r <= timeout_reg_i;
       to_r     <= 1'b0;
     end else if (timeout_reg_i != '0) begin
@@ -405,48 +394,9 @@ module as_qspi (
   assign stat_timeout_o = to_r;
 
   // ---------------------------------------------------------------------------
-  // FSM next-state
-  // ---------------------------------------------------------------------------
-  always_comb begin
-    next_s = state_r;
-    case (state_r)
-      IDLE_ST: if (start_i)
-                 next_s = xip_active_r ? ADDR_ST : CMD_ST;
-
-      CMD_ST:  if (sck_drive_s && cnt_cmd_r >= CMD_MAX)
-                 next_s = ADDR_ST;
-
-      ADDR_ST: if (sck_drive_s && cnt_addr_r >= addr_max_s)
-                 next_s = (dummy_reg_i == '0) ? DAT_ST : DUM_ST;
-
-      // cnt_dum_r is registered: it holds the count from the *previous* cycle.
-      // We leave DUM_ST on the sck_rise_s that would push cnt_dum_r to
-      // dummy_reg_i, i.e. when (cnt_dum_r + 1 == dummy_reg_i).
-      DUM_ST:  if (sck_rise_s && ({1'b0, cnt_dum_r} + 7'd1 >= {1'b0, dummy_reg_i}))
-                 next_s = DAT_ST;
-
-      DAT_ST:  if ( tx_flag_r && sck_drive_s  &&
-                    (cnt_dat_r + {17'd0,bpc_s}) > dat_max_s)
-                 next_s = DONE_ST;
-               else if (!tx_flag_r && sck_sample_s &&
-                    (cnt_dat_r + {17'd0,bpc_s}) > dat_max_s)
-                 next_s = DONE_ST;
-
-      DONE_ST: next_s = IDLE_ST;
-
-      default: next_s = IDLE_ST;
-    endcase
-  end
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i) state_r <= IDLE_ST;
-    else       state_r <= next_s;
-
-
-  // ---------------------------------------------------------------------------
   // Status outputs
   // ---------------------------------------------------------------------------
-  assign stat_busy_o = (state_r != IDLE_ST) && (state_r != DONE_ST);
-  assign stat_done_o = (state_r == DONE_ST);   // combinatorial, 1 full cycle
+  assign stat_busy_o = (state_s != idle_st) && (state_s != done_st);
+  assign stat_done_o = (state_s == done_st);   // combinatorial, 1 full cycle
 
 endmodule : as_qspi

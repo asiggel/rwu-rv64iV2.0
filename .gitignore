@@ -109,3 +109,12 @@ Thumbs.db
 build/
 dist/
 out/
+# Vivado
+sim/
+build/
+.cache/
+*.jou
+*.log
+*.str
+*.wdb
+*.pb
