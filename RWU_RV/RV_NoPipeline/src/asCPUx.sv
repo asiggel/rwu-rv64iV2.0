@@ -164,7 +164,7 @@ module as_cpux (input  logic                         clk_i,
   logic	gated_clk_s;
   
 
-  assign ir_o = ir_s;
+  assign ir_o = ir_s; // instruction register
 
   //--------------------------------------------
   // Master BPI Instruction Bus
@@ -189,7 +189,7 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // Master BPI Data Bus
   //--------------------------------------------
-  assign dbpi_req_s = 1'b1;
+  assign dbpi_req_s = 1'b1; // kann weg!!
   
   as_master_bpi #(64, 64) mDataBpi(
                                    .rst_i(rst_i),
@@ -686,15 +686,19 @@ module as_cpux (input  logic                         clk_i,
   //===========================================
   // CSR: MCAUSE (Machine Cause)
   //===========================================
-  always_ff @(posedge clk_i, posedge rst_i) begin
+  always_ff @(posedge clk_i, posedge rst_i) 
+  begin
     if(rst_i)
       csr_mcause_s <= 64'h0;
-    else begin
-      if(trap_taken_s) begin
+    else 
+    begin
+      if(trap_taken_s) 
+      begin
         // Priority: Illegal > Misaligned > IRQ
         if(trap_illegal_s)
           csr_mcause_s <= 64'd2;  // Illegal instruction
-        else if(trap_misaligned_s) begin
+        else if(trap_misaligned_s) 
+        begin
           if(dMemRd_s)
             csr_mcause_s <= 64'd4;  // Load address misaligned
           else if(dMemWr_s)
