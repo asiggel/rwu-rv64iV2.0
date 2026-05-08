@@ -1,0 +1,48 @@
+TOPLEVEL_LANG = verilog
+SIM = verilator
+
+TOPLEVEL = as_top_mem
+MODULE = test_cpu
+
+VERILOG_SOURCES = \
+  ../src/as_pack.sv \
+	../src/asRegFile.sv \
+	../../../ip_dmem/src/asDMemBack.sv \
+	../../../ip_dmem/src/asDMemFront.sv \
+	../../../ip_dmem/src/asDMemCore.sv \
+	../../../ip_dmem/src/asDMem.sv \
+	../../../ip_dmem/src/asDMemTop.sv \
+	../src/asIMem.sv \
+	../src/asAlu.sv \
+	../src/asAluBr.sv \
+	../src/asControlAll.sv \
+	../src/asInstrDecode.sv \
+	../../../ip_jtag/src/tap_fsm.sv \
+	../../../ip_jtag/src/ir_cell.sv \
+	../../../ip_jtag/src/dr_cell.sv \
+	../../../ip_jtag/src/scan_cell.sv \
+	../../../ip_jtag/src/by_cell.sv \
+	../../../ip_jtag/src/ir_reg.sv \
+	../../../ip_jtag/src/dr_reg.sv \
+	../../../ip_jtag/src/ir_decode.sv \
+	../../../ip_jtag/src/jtag.sv \
+	../src/asMBpi.sv \
+	../src/asSBpi.sv \
+	../../../ip_gpio/src/asGpio.sv \
+	../../../ip_gpio/src/asGpioTop.sv \
+	../src/asCPUx.sv \
+	../src/asDecode.sv \
+	../../../ip_cgu/src/asCguCore.sv \
+	../../../ip_cgu/src/asCguTop.sv \
+	../src/asTopMem.sv
+
+EXTRA_ARGS += --trace
+EXTRA_ARGS += --sv
+EXTRA_ARGS += --public-flat-rw
+# Work on the following and delete the lines then.
+#EXTRA_ARGS += -Wno-IMPLICIT
+#EXTRA_ARGS += -Wno-CASEINCOMPLETE
+#EXTRA_ARGS += -Wno-WIDTHEXPAND
+#EXTRA_ARGS += -Wno-WIDTHTRUNC
+
+include $(shell cocotb-config --makefiles)/Makefile.sim
