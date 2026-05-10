@@ -8,9 +8,12 @@
 rm -rf build
 # generate source directory and build directory
 cmake -S . -B build
+cmake -B build -DSIMULATOR=xsim
+cmake -B build -DSIMULATOR=verilator
 # executes a single simulation (For waveform generation, un-comment the line
 #   in the SIM section of CMakeLists.txt. Do not forget to comment
 #   it after the single-run.)
+cmake -B build -DWAVES=ON
 cmake --build build --target sim_readgpioid
 # executes all simulations as regression
 cmake --build build --target regression
@@ -157,3 +160,5 @@ include $(shell cocotb-config --makefiles)/Makefile.sim
 - Start:
 cd sim
 make
+
+
