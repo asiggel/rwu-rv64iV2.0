@@ -96,12 +96,15 @@ endforeach()
 
 # -------------------------------------------------
 # Regression-Fehler sammeln
+# Semicolons in CMake lists werden von der Shell als Befehlstrenner
+# interpretiert → kommagetrennte Liste verwenden
 # -------------------------------------------------
+list(JOIN ASM_TESTS "," TESTS_CSV)
 add_custom_target(collect_errors
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${PROJECT_ROOT}
         -DBUILD_ROOT=${CMAKE_BINARY_DIR}
-        "-DTESTS=${ASM_TESTS}"
+        -DTESTS=${TESTS_CSV}
         -P ${PROJECT_ROOT}/collect_errors.cmake
     COMMENT "Collecting regression error files"
 )

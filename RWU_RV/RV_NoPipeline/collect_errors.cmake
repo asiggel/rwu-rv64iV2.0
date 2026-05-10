@@ -12,9 +12,10 @@ set(OUT_FILE ${PROJECT_ROOT}/regression.txt)
 
 file(WRITE ${OUT_FILE} "=== RV64I REGRESSION REPORT ===\n")
 
-# TESTS kommt als Semikolon-Liste via -DTESTS="${ASM_TESTS}"
-# Das foreach expandiert die Liste direkt
-foreach(TEST ${TESTS})
+# TESTS kommt als kommagetrennte Liste (Semikolons würden die Shell als
+# Befehlstrenner interpretieren). Hier in eine CMake-Liste umwandeln.
+string(REPLACE "," ";" TEST_LIST "${TESTS}")
+foreach(TEST ${TEST_LIST})
     set(ERR_FILE ${BUILD_ROOT}/${TEST}/sim/error.txt)
 
     file(APPEND ${OUT_FILE} "\n--- ${TEST} ---\n")
