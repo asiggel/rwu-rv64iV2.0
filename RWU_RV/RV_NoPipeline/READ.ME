@@ -23,6 +23,33 @@ cmake --build build --target regression
 # executes all simulations as regression and collects the errors
 cmake --build build --target collect_errors
 
+Sequences:
+==========
+- Single Vivado simulation with wave
+------------------------------------
+rm -rf build
+cmake -S . -B build -DSIMULATOR=xsim -DWAVES=ON
+cmake --build build --target sim_instr06addi
+
+- Single Verilator simulation with wave
+---------------------------------------------
+rm -rf build
+cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+cmake --build build --target sim_instr06addi
+
+- Regression Vivado simulation without wave
+------------------------------------
+rm -rf build
+cmake -S . -B build -DSIMULATOR=xsim
+cmake --build build --target collect_errors
+
+- Single Verilator simulation without wave
+---------------------------------------------
+rm -rf build
+cmake -S . -B build -DSIMULATOR=verilator
+cmake --build build --target collect_errors
+
+
 
 2Do:
 - In the design phase of QSPI, many registers where added - check the memory map and the decoder.
