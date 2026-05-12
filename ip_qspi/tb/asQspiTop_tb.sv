@@ -1,5 +1,10 @@
 // =============================================================================
-// asQspiTop_tb.sv  v2
+// asQspiTop_tb.sv  v3
+// =============================================================================
+// Tests both bus ports:
+//   T1–T12  Wishbone configuration port (register R/W, FIFOs, IRQ, transfers)
+//   T13     AXI4 data port: 4-beat burst → 4 sequential 8-byte kernel runs
+//   T14     AXI4 ARREADY blocked while WB-started kernel is busy
 // =============================================================================
 `timescale 1ns/1ps
 import as_pack::*;
@@ -11,45 +16,81 @@ module asQspiTop_tb;
   localparam int DATA_W     = 64;
   localparam int FDEPTH     = 16;
 
-  logic                 rst_i, clk_i;
-  logic [ADDR_W-1:0]    wbdAddr_i;
-  logic [DATA_W-1:0]    wbdDat_i;
-  logic [DATA_W-1:0]    wbdDat_o;
-  logic                 wbdWe_i, wbdStb_i, wbdAck_o, wbdCyc_i;
-  logic [wbdSel-1:0]    wbdSel_i;
-  logic                 sck_o, cs_o, qspi_irq_o;
-  wire  [3:0]           data_io;
-  logic [3:0]           flash_drive_s = 4'b0;
-  logic                 flash_oe_s    = 1'b0;
-  assign data_io = flash_oe_s ? flash_drive_s : 4'bzzzz;
-
-  as_qspi_top #(.QSPI_ADDR_WIDTH(ADDR_W),.QSPI_DATA_WIDTH(DATA_W),.FIFO_DEPTH(FDEPTH)) dut (
-    .rst_i(rst_i),.clk_i(clk_i),
-    .wbdAddr_i(wbdAddr_i),.wbdDat_i(wbdDat_i),.wbdDat_o(wbdDat_o),
-    .wbdWe_i(wbdWe_i),.wbdSel_i(wbdSel_i),.wbdStb_i(wbdStb_i),
-    .wbdAck_o(wbdAck_o),.wbdCyc_i(wbdCyc_i),
-    .sck_o(sck_o),.cs_o(cs_o),.data_io(data_io),.qspi_irq_o(qspi_irq_o)
-  );
-
+  // ── clocks / reset ─────────────────────────────────────────────────────────
+  logic rst_i, clk_i;
   initial clk_i = 0;
   always  #(CLK_PERIOD/2) clk_i = ~clk_i;
 
-  // Scorecard
+  // ── Wishbone signals ───────────────────────────────────────────────────────
+  logic [ADDR_W-1:0] wbdAddr_i;
+  logic [DATA_W-1:0] wbdDat_i;
+  logic [DATA_W-1:0] wbdDat_o;
+  logic              wbdWe_i, wbdStb_i, wbdAck_o, wbdCyc_i;
+  logic [wbdSel-1:0] wbdSel_i;
+
+  // ── AXI4 slave port signals ────────────────────────────────────────────────
+  logic        axi_arvalid, axi_arready;
+  logic [3:0]  axi_arid;
+  logic [31:0] axi_araddr;
+  logic [3:0]  axi_arlen;
+  logic [2:0]  axi_arsize;
+  logic [1:0]  axi_arburst;
+  logic        axi_rvalid, axi_rready;
+  logic [3:0]  axi_rid;
+  logic [63:0] axi_rdata;
+  logic [1:0]  axi_rresp;
+  logic        axi_rlast;
+
+  // ── SPI / Flash ────────────────────────────────────────────────────────────
+  logic sck_o, cs_o, qspi_irq_o;
+  wire  [3:0] data_io;
+  logic [3:0] flash_drive_s = 4'b0;
+  logic       flash_oe_s    = 1'b0;
+  assign data_io = flash_oe_s ? flash_drive_s : 4'bzzzz;
+
+  // ── DUT ───────────────────────────────────────────────────────────────────
+  as_qspi_top #(.QSPI_ADDR_WIDTH(ADDR_W),.QSPI_DATA_WIDTH(DATA_W),.FIFO_DEPTH(FDEPTH)) dut (
+    .rst_i(rst_i), .clk_i(clk_i),
+    // Wishbone
+    .wbdAddr_i(wbdAddr_i), .wbdDat_i(wbdDat_i), .wbdDat_o(wbdDat_o),
+    .wbdWe_i(wbdWe_i), .wbdSel_i(wbdSel_i), .wbdStb_i(wbdStb_i),
+    .wbdAck_o(wbdAck_o), .wbdCyc_i(wbdCyc_i),
+    // AXI4
+    .axi_s_arvalid_i(axi_arvalid), .axi_s_arready_o(axi_arready),
+    .axi_s_arid_i   (axi_arid),    .axi_s_araddr_i  (axi_araddr),
+    .axi_s_arlen_i  (axi_arlen),   .axi_s_arsize_i  (axi_arsize),
+    .axi_s_arburst_i(axi_arburst),
+    .axi_s_rvalid_o (axi_rvalid),  .axi_s_rready_i  (axi_rready),
+    .axi_s_rid_o    (axi_rid),     .axi_s_rdata_o   (axi_rdata),
+    .axi_s_rresp_o  (axi_rresp),   .axi_s_rlast_o   (axi_rlast),
+    // SPI
+    .sck_o(sck_o), .cs_o(cs_o), .data_io(data_io), .qspi_irq_o(qspi_irq_o)
+  );
+
+  // ── Scorecard ──────────────────────────────────────────────────────────────
   int pass_cnt = 0, fail_cnt = 0;
+
   task automatic chk64(input string lbl, input logic [63:0] got, input logic [63:0] exp);
     if (got !== exp) begin
-      $display("FAIL [%7.1f ns] %-42s  got=%016h  exp=%016h",$realtime,lbl,got,exp);
+      $display("FAIL [%7.1f ns] %-42s  got=%016h  exp=%016h", $realtime, lbl, got, exp);
       fail_cnt++;
-    end else begin $display("PASS [%7.1f ns] %s",$realtime,lbl); pass_cnt++; end
-  endtask
-  task automatic chk1(input string lbl, input logic got, input logic exp);
-    if (got !== exp) begin
-      $display("FAIL [%7.1f ns] %-42s  got=%b exp=%b",$realtime,lbl,got,exp);
-      fail_cnt++;
-    end else begin $display("PASS [%7.1f ns] %s",$realtime,lbl); pass_cnt++; end
+    end else begin
+      $display("PASS [%7.1f ns] %s", $realtime, lbl);
+      pass_cnt++;
+    end
   endtask
 
-  // Wishbone tasks (inputs driven on negedge for race-free DUT sampling)
+  task automatic chk1(input string lbl, input logic got, input logic exp);
+    if (got !== exp) begin
+      $display("FAIL [%7.1f ns] %-42s  got=%b exp=%b", $realtime, lbl, got, exp);
+      fail_cnt++;
+    end else begin
+      $display("PASS [%7.1f ns] %s", $realtime, lbl);
+      pass_cnt++;
+    end
+  endtask
+
+  // ── Wishbone tasks ─────────────────────────────────────────────────────────
   task automatic wb_write(input logic [ADDR_W-1:0] addr, input logic [DATA_W-1:0] data);
     @(negedge clk_i);
     wbdAddr_i=addr; wbdDat_i=data; wbdWe_i=1; wbdSel_i='1; wbdStb_i=1; wbdCyc_i=1;
@@ -65,15 +106,48 @@ module asQspiTop_tb;
     @(negedge clk_i); wbdStb_i=0; wbdCyc_i=0;
   endtask
 
+  // ── Reset + bus idle ───────────────────────────────────────────────────────
   task automatic do_reset();
-    rst_i=1; wbdAddr_i='0; wbdDat_i='0; wbdWe_i=0; wbdSel_i='0; wbdStb_i=0; wbdCyc_i=0;
+    rst_i=1;
+    wbdAddr_i='0; wbdDat_i='0; wbdWe_i=0; wbdSel_i='0; wbdStb_i=0; wbdCyc_i=0;
+    axi_arvalid=0; axi_arid='0; axi_araddr='0;
+    axi_arlen=4'd3; axi_arsize=3'd3; axi_arburst=2'b01;
+    axi_rready=0;
     flash_oe_s=0; flash_drive_s=4'b0;
     repeat(4) @(posedge clk_i);
     @(negedge clk_i); rst_i=0;
     @(posedge clk_i);
   endtask
 
-  // Register offsets (must match asQspiTop.sv)
+  // ── AXI4 burst-read task ───────────────────────────────────────────────────
+  // Issues a 4-beat read at 'addr' with ID 'id'.
+  // Returns the 4 data words. RREADY is held high throughout.
+  task automatic axi_burst_read(
+    input  logic [31:0] addr,
+    input  logic [3:0]  id,
+    output logic [63:0] beat0, beat1, beat2, beat3
+  );
+    // Present AR channel
+    @(negedge clk_i);
+    axi_arvalid=1; axi_araddr=addr; axi_arid=id;
+    axi_arlen=4'd3; axi_arsize=3'd3; axi_arburst=2'b01;
+    // Wait for ARREADY
+    do @(posedge clk_i); #1; while (!axi_arready);
+    @(negedge clk_i); axi_arvalid=0;
+
+    // Assert RREADY and collect 4 beats
+    axi_rready=1;
+    // Beat 0 – wait for first RVALID
+    do @(posedge clk_i); #1; while (!axi_rvalid);
+    beat0 = axi_rdata;
+    @(posedge clk_i); #1; beat1 = axi_rdata;
+    @(posedge clk_i); #1; beat2 = axi_rdata;
+    @(posedge clk_i); #1; beat3 = axi_rdata;
+    // RLAST should be asserted on beat3 – checked in the test body
+    @(negedge clk_i); axi_rready=0;
+  endtask
+
+  // ── Register offsets (must match asQspiTop.sv / as_pack.sv) ───────────────
   localparam logic [ADDR_W-1:0]
     A_ID       = ADDR_W'(0),   A_CTRL    = ADDR_W'(8),
     A_CMD      = ADDR_W'(16),  A_ADDR_R  = ADDR_W'(24),
@@ -85,7 +159,8 @@ module asQspiTop_tb;
     A_TXDATA   = ADDR_W'(112), A_FIFOSTAT= ADDR_W'(120),
     A_XIPMODE  = ADDR_W'(128), A_STATUS  = ADDR_W'(136);
 
-  // Flash model
+  // ── Flash model ────────────────────────────────────────────────────────────
+  // Reactive to cs_o posedge; counts sck_o posedges, then drives on negedges.
   logic [63:0] fm_payload='0; logic [7:0] fm_skip='0;
   logic fm_quad=0, fm_arm=0;
   always @(negedge cs_o) begin flash_oe_s=0; flash_drive_s=4'b0; end
@@ -111,12 +186,14 @@ module asQspiTop_tb;
     end
   end
 
-  // =========================================================================
+  // ==========================================================================
+  // TESTS
+  // ==========================================================================
   logic [DATA_W-1:0] rdata;
 
   initial begin
     $display("============================================================");
-    $display("  asQspiTop Testbench  v2");
+    $display("  asQspiTop Testbench  v3  (Wishbone + AXI4)");
     $display("============================================================");
     do_reset();
 
@@ -137,9 +214,11 @@ module asQspiTop_tb;
     // T2 – ID register read-only
     // =========================================================================
     $display("\n--- T2: ID register (read-only) ---");
-    wb_read(A_ID,rdata); chk64("T2 ID reset value", rdata, 64'(qspi_id_reg_addr_rst_c));
-    wb_write(A_ID, 64'hDEAD);  // write attempt must not change value
-    wb_read(A_ID,rdata); chk64("T2 ID unchanged after write", rdata, 64'(qspi_id_reg_addr_rst_c));
+    wb_read(A_ID,rdata);
+    chk64("T2 ID reset value", rdata, 64'(qspi_id_reg_addr_rst_c));
+    wb_write(A_ID, 64'hDEAD);
+    wb_read(A_ID,rdata);
+    chk64("T2 ID unchanged after write", rdata, 64'(qspi_id_reg_addr_rst_c));
 
     // =========================================================================
     // T3 – TX FIFO write via TXDATA; FIFOSTAT tx_level
@@ -164,18 +243,16 @@ module asQspiTop_tb;
     // =========================================================================
     $display("\n--- T5: Interrupt registers ---");
     do_reset();
-    wb_write(A_IMSC, 64'h01);           // enable DONE only
+    wb_write(A_IMSC, 64'h01);
     @(posedge clk_i); #1;
     chk1("T5 IRQ low initially", qspi_irq_o, 1'b0);
-
-    wb_write(A_ISR, 64'h01);            // software-set DONE
+    wb_write(A_ISR, 64'h01);
     @(posedge clk_i); #1;
     wb_read(A_RIS,rdata); chk64("T5 RIS[0]=1 after ISR",  rdata[0:0], 1'b1);
     wb_read(A_MIS,rdata); chk64("T5 MIS[0]=1 (unmasked)", rdata[0:0], 1'b1);
     @(posedge clk_i); #1;
     chk1("T5 IRQ high", qspi_irq_o, 1'b1);
-
-    wb_write(A_ICR, 64'h01);            // clear DONE
+    wb_write(A_ICR, 64'h01);
     @(posedge clk_i); #1;
     wb_read(A_RIS,rdata); chk64("T5 RIS[0]=0 after ICR", rdata[0:0], 1'b0);
     @(posedge clk_i); #1;
@@ -186,14 +263,13 @@ module asQspiTop_tb;
     // =========================================================================
     $display("\n--- T6: IMSC masking ---");
     do_reset();
-    wb_write(A_IMSC, 64'h00);           // mask all
-    wb_write(A_ISR,  64'h01);           // force DONE in RIS
+    wb_write(A_IMSC, 64'h00);
+    wb_write(A_ISR,  64'h01);
     @(posedge clk_i); #1;
     wb_read(A_RIS,rdata); chk64("T6 RIS[0]=1 (unmasked)", rdata[0:0], 1'b1);
     wb_read(A_MIS,rdata); chk64("T6 MIS[0]=0 (masked)",   rdata[0:0], 1'b0);
     chk1("T6 IRQ=0 when masked", qspi_irq_o, 1'b0);
-
-    wb_write(A_IMSC, 64'h01);           // unmask
+    wb_write(A_IMSC, 64'h01);
     @(posedge clk_i); #1;
     chk1("T6 IRQ=1 after unmask", qspi_irq_o, 1'b1);
     wb_write(A_ICR, 64'h01);
@@ -206,8 +282,6 @@ module asQspiTop_tb;
     for (int i = 0; i < FDEPTH; i++) wb_write(A_TXDATA, 64'(i));
     wb_read(A_FIFOSTAT,rdata);
     chk64("T7 TX FIFO full (level=16)", rdata[4:0], 5'd16);
-
-    // Extra write when full: ACK must still come
     @(negedge clk_i);
     wbdAddr_i=A_TXDATA; wbdDat_i=64'hDEAD; wbdWe_i=1; wbdSel_i='1; wbdStb_i=1; wbdCyc_i=1;
     @(posedge clk_i); #1;
@@ -228,9 +302,9 @@ module asQspiTop_tb;
     @(negedge clk_i); wbdStb_i=0; wbdCyc_i=0; wbdWe_i=0;
 
     // =========================================================================
-    // T9 – Full Single Read: program regs, start, wait DONE IRQ, read RX FIFO
+    // T9 – Full Single Read via Wishbone: program regs, start, wait DONE, pop RX
     // =========================================================================
-    $display("\n--- T9: Full Single Read (0x0B, 8 dummy, 8B) ---");
+    $display("\n--- T9: Full Single Read (0x0B, 8 dummy, 8B) via WB ---");
     begin : t9
       automatic logic [63:0] exp_rx = 64'hDEAD_BEEF_CAFE_F00D;
       automatic int tout;
@@ -243,43 +317,33 @@ module asQspiTop_tb;
       wb_write(A_DUMMY,  64'd8);
       wb_write(A_CLKDIV, 64'd2);
       wb_write(A_TIMEOUT,64'd0);
-      wb_write(A_IMSC,   64'h01);  // DONE interrupt only (avoid tx_half false trigger)
+      wb_write(A_IMSC,   64'h01);   // DONE only
 
-      // Start: write CTRL with bit[3]=1
-      wb_write(A_CTRL, 64'h08);
+      wb_write(A_CTRL, 64'h08);     // bit[3]=START
 
-      // Wait for DONE IRQ (poll)
       tout=0;
       do begin @(posedge clk_i); #1; tout++; end while (!qspi_irq_o && tout<200000);
       if (tout>=200000) $display("FAIL  T9: transfer timeout");
 
       wb_read(A_STATUS,rdata);
-      // stat_done_s is combinatorial and only high for 1 cycle (DONE_ST).
-      // By the time we poll, state_r=IDLE_ST so done=0 is expected.
-      // Use RIS[0] instead which latches the done event.
       chk64("T9 STATUS busy=0",  rdata[0:0], 1'b0);
       chk64("T9 STATUS error=0", rdata[3:3], 1'b0);
       wb_read(A_RIS, rdata);
       chk64("T9 RIS[0] done=1 (latched)", rdata[0:0], 1'b1);
       chk1 ("T9 IRQ fired",      qspi_irq_o, 1'b1);
-
-      wb_write(A_ICR, 64'h01);       // clear DONE
+      wb_write(A_ICR, 64'h01);
       @(posedge clk_i); #1;
       chk1("T9 IRQ cleared", qspi_irq_o, 1'b0);
-
-      // RX FIFO: level in bits [20:16]
       wb_read(A_FIFOSTAT,rdata);
       chk64("T9 RX level=1", rdata[20:16], 5'd1);
-
       @(posedge clk_i); #1;
       wb_read(A_RXDATA, rdata);
       chk64("T9 RX data", rdata, exp_rx);
-
       fm_arm=0;
     end
 
     // =========================================================================
-    // T10 – RX FIFO half-full interrupt (via software ISR path)
+    // T10 – RX half-full interrupt (software ISR path)
     // =========================================================================
     $display("\n--- T10: RXHALF interrupt ---");
     do_reset();
@@ -292,14 +356,13 @@ module asQspiTop_tb;
     chk1("T10 IRQ cleared", qspi_irq_o, 1'b0);
 
     // =========================================================================
-    // T11 – CTRL write does not corrupt other register fields
+    // T11 – CTRL fields preserve (start auto-clears)
     // =========================================================================
     $display("\n--- T11: CTRL fields preserve ---");
     do_reset();
-    // Write CTRL with quad=1 (bit4), cpol=0, cpha=0
-    wb_write(A_CTRL, 64'h10);  // quad bit in qspi_ctrl_t packed at bit4
+    wb_write(A_CTRL, 64'h10);   // quad bit in qspi_ctrl_t packed at bit4
     wb_read(A_CTRL, rdata);
-    chk64("T11 CTRL[4] quad preserved", rdata[4:4], 1'b1);
+    chk64("T11 CTRL[4] quad preserved",   rdata[4:4], 1'b1);
     chk64("T11 CTRL[3] start auto-clear", rdata[3:3], 1'b0);
 
     // =========================================================================
@@ -310,10 +373,86 @@ module asQspiTop_tb;
     wb_write(A_TXDATA, 64'h01); wb_write(A_TXDATA, 64'h02);
     wb_read(A_FIFOSTAT,rdata);
     chk64("T12 TX level=2 before flush", rdata[4:0], 5'd2);
-    wb_write(A_CTRL, 64'h02);  // bit1=tx_flush
+    wb_write(A_CTRL, 64'h02);   // bit1=tx_flush
     @(posedge clk_i); #1;
     wb_read(A_FIFOSTAT,rdata);
     chk64("T12 TX level=0 after flush", rdata[4:0], 5'd0);
+
+    // =========================================================================
+    // T13 – AXI4 burst read: 32-byte cache line (4 × 8-byte sub-transactions)
+    // =========================================================================
+    // Pre-configure: CMD=0x6B (Quad Fast Read), CTRL.quad=1, DUMMY=8, CLKDIV=2
+    // Flash model returns fm_payload for all 4 sub-transactions.
+    // Expected: all 4 R beats = fm_payload.
+    // =========================================================================
+    $display("\n--- T13: AXI4 burst read (4-beat, 32-byte cache line) ---");
+    begin : t13
+      automatic logic [63:0] exp_word = 64'hCAFE_BABE_1234_5678;
+      automatic logic [63:0] b0, b1, b2, b3;
+
+      do_reset();
+      // SW configures QSPI for Quad Fast Read
+      wb_write(A_CMD,    64'h6B);   // Quad Fast Read opcode
+      wb_write(A_DUMMY,  64'd8);    // 8 dummy cycles
+      wb_write(A_CLKDIV, 64'd2);
+      wb_write(A_CTRL,   64'h10);   // quad=1 (bit4 of qspi_ctrl_t at CTRL[4])
+
+      // Flash model: fm_skip=22 for 0x6B quad (8 CMD + 6 ADDR-quad + 8 DUMMY)
+      fm_payload=exp_word; fm_skip=8'd22; fm_quad=1; fm_arm=1;
+
+      axi_burst_read(32'h00_1000_00, 4'h5, b0, b1, b2, b3);
+
+      chk64("T13 beat0", b0, exp_word);
+      chk64("T13 beat1", b1, exp_word);
+      chk64("T13 beat2", b2, exp_word);
+      chk64("T13 beat3", b3, exp_word);
+      chk1 ("T13 RLAST on beat3", axi_rlast, 1'b1);
+      chk1 ("T13 RRESP=OKAY",     axi_rresp[1], 1'b0);
+      chk64("T13 RID matches AID", {60'b0, axi_rid}, {60'b0, 4'h5});
+
+      @(posedge clk_i); #1;
+      chk1("T13 RVALID deasserted after burst", axi_rvalid, 1'b0);
+      chk1("T13 ARREADY high again",            axi_arready, 1'b1);
+      fm_arm=0;
+    end
+    repeat(5) @(posedge clk_i);
+
+    // =========================================================================
+    // T14 – AXI4 ARREADY blocked while WB-started kernel is busy
+    // =========================================================================
+    $display("\n--- T14: AXI4 ARREADY blocked during WB-started transfer ---");
+    begin : t14
+      do_reset();
+      // Configure for single read (no quad)
+      wb_write(A_CMD,    64'h03);
+      wb_write(A_ADDR_R, 64'h005000);
+      wb_write(A_LEN,    64'd8);
+      wb_write(A_DUMMY,  64'd0);
+      wb_write(A_CLKDIV, 64'd2);
+      wb_write(A_CTRL,   64'h00);   // quad=0
+      // Do NOT arm flash model → kernel will run but no data returns (timeout test not needed)
+      // We only want to check ARREADY is low while busy.
+      fm_arm=0;
+
+      // Start kernel via Wishbone
+      wb_write(A_CTRL, 64'h08);     // START
+      @(posedge clk_i); #1;
+      // Kernel should now be busy
+      chk1("T14 kernel busy after WB start", dut.stat_busy_s, 1'b1);
+
+      // Drive AR but expect ARREADY=0
+      @(negedge clk_i);
+      axi_arvalid=1; axi_araddr=32'h001000; axi_arid=4'h2;
+      axi_arlen=4'd3; axi_arsize=3'd3; axi_arburst=2'b01;
+      @(posedge clk_i); #1;
+      chk1("T14 ARREADY=0 while busy", axi_arready, 1'b0);
+      @(negedge clk_i); axi_arvalid=0;
+
+      // Let kernel finish (or reset)
+      do_reset();
+      @(posedge clk_i); #1;
+      chk1("T14 ARREADY=1 after reset", axi_arready, 1'b1);
+    end
 
     // =========================================================================
     // Summary
@@ -327,6 +466,6 @@ module asQspiTop_tb;
     $finish;
   end
 
-  initial begin #50_000_000; $display("FAIL  WATCHDOG"); $finish; end
+  initial begin #80_000_000; $display("FAIL  WATCHDOG"); $finish; end
 
 endmodule : asQspiTop_tb

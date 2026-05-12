@@ -176,6 +176,40 @@ package as_pack;
   localparam int       gpio_end_address_c             = 64'h00000001_0000005F; // 12 registers space
   localparam int       qspi_start_address_c           = 64'h00000001_00000060;
   localparam int       qspi_end_address_c             = 64'h00000001_000000BF; // 12 registers space
+
+  // QSPI register byte offsets (from peripheral base address)
+  localparam int       qspi_id_reg_addr_offs_c        =   0;
+  localparam int       qspi_ctrl_reg_addr_offs_c      =   8;
+  localparam int       qspi_cmd_reg_addr_offs_c       =  16;
+  localparam int       qspi_addr_reg_addr_offs_c      =  24;
+  localparam int       qspi_len_reg_addr_offs_c       =  32;
+  localparam int       qspi_dummy_reg_addr_offs_c     =  40;
+  localparam int       qspi_clkdiv_reg_addr_offs_c    =  48;
+  localparam int       qspi_timeout_reg_addr_offs_c   =  56;
+  localparam int       qspi_isr_reg_addr_offs_c       =  64;
+  localparam int       qspi_ris_reg_addr_offs_c       =  72;
+  localparam int       qspi_imsc_reg_addr_offs_c      =  80;
+  localparam int       qspi_mis_reg_addr_offs_c       =  88;
+  localparam int       qspi_icr_reg_addr_offs_c       =  96;
+  localparam int       qspi_rx_reg_addr_offs_c        = 104;
+  localparam int       qspi_tx_reg_addr_offs_c        = 112;
+  localparam int       qspi_fifost_reg_addr_offs_c    = 120;
+  localparam int       qspi_xip_reg_addr_offs_c       = 128;
+  localparam int       qspi_stat_reg_addr_offs_c      = 136;
+
+  // QSPI register reset values
+  localparam logic [63:0] qspi_id_reg_addr_rst_c      = 64'h00000000_00000010;
+  localparam logic [63:0] qspi_ctrl_reg_addr_rst_c    = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_cmd_reg_addr_rst_c     = 64'h00000000_0000006B; // 0x6B Quad Fast Read default
+  localparam logic [63:0] qspi_addr_reg_rst_c         = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_len_reg_rst_c          = 64'h00000000_00000008; // 8 bytes default
+  localparam logic [63:0] qspi_dummy_reg_rst_c        = 64'h00000000_00000008; // 8 dummy cycles default
+  localparam logic [63:0] qspi_clkdiv_reg_rst_c       = 64'h00000000_00000004; // CLKDIV=4 default
+  localparam logic [63:0] qspi_timeout_reg_rst_c      = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_isr_reg_rst_c          = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_ris_reg_rst_c          = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_imsc_reg_rst_c         = 64'h00000000_00000000;
+  localparam logic [63:0] qspi_xip_reg_rst_c          = 64'h00000000_000000A0; // Winbond mode byte
   localparam int       cgu_start_address_c            = 64'h00000001_000000C0;
   localparam int       cgu_end_address_c              = 64'h00000001_0000011F; // 12 registers space
   localparam int       uart0_start_address_c          = 64'h00000001_00000120;
