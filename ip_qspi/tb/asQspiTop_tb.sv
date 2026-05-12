@@ -131,14 +131,16 @@ module asQspiTop_tb;
     @(negedge clk_i);
     axi_arvalid=1; axi_araddr=addr; axi_arid=id;
     axi_arlen=4'd3; axi_arsize=3'd3; axi_arburst=2'b01;
-    // Wait for ARREADY
-    do @(posedge clk_i); #1; while (!axi_arready);
+    // Wait for ARREADY (Vivado xsim: while instead of do-while)
+    @(posedge clk_i); #1;
+    while (!axi_arready) begin @(posedge clk_i); #1; end
     @(negedge clk_i); axi_arvalid=0;
 
     // Assert RREADY and collect 4 beats
     axi_rready=1;
     // Beat 0 – wait for first RVALID
-    do @(posedge clk_i); #1; while (!axi_rvalid);
+    @(posedge clk_i); #1;
+    while (!axi_rvalid) begin @(posedge clk_i); #1; end
     beat0 = axi_rdata;
     @(posedge clk_i); #1; beat1 = axi_rdata;
     @(posedge clk_i); #1; beat2 = axi_rdata;
@@ -215,10 +217,10 @@ module asQspiTop_tb;
     // =========================================================================
     $display("\n--- T2: ID register (read-only) ---");
     wb_read(A_ID,rdata);
-    chk64("T2 ID reset value", rdata, 64'(qspi_id_reg_addr_rst_c));
+    chk64("T2 ID reset value", rdata, 64'h00000000_00000010);
     wb_write(A_ID, 64'hDEAD);
     wb_read(A_ID,rdata);
-    chk64("T2 ID unchanged after write", rdata, 64'(qspi_id_reg_addr_rst_c));
+    chk64("T2 ID unchanged after write", rdata, 64'h00000000_00000010);
 
     // =========================================================================
     // T3 – TX FIFO write via TXDATA; FIFOSTAT tx_level
