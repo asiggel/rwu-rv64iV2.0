@@ -736,6 +736,67 @@ As a direct consequence:
 This simplification resolves open item MEM-01 and reduces D-Cache
 controller complexity significantly.
 
+\subsubsection{Scratchpad SRAM -- Software Segment Mapping}
+\label{subsubsec:scratchpadSegments}
+
+The Scratchpad SRAM serves as the sole read-write memory of the system.
+It holds all program data that must be writable at run time.
+Table~\ref{tab:asScratchpadSegments} lists the standard linker segments
+assigned to the Scratchpad region.
+
+\begin{table}[H]
+\caption{Software Segments in Scratchpad SRAM}
+\label{tab:asScratchpadSegments}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Segment & Access & Content and lifecycle \\
+  \hline
+  \hline
+  \texttt{.data} & R/W & Initialised global and static variables.
+    Values are copied from NOR Flash to Scratchpad by the start-up
+    routine (\texttt{\_start} / \texttt{crt0}) before \texttt{main()}
+    is entered.
+    Subsequent reads and writes go directly to Scratchpad. \\
+  \hline
+  \texttt{.bss}  & R/W & Uninitialised (zero-initialised) global and
+    static variables.
+    The start-up routine zeroes this region in Scratchpad before
+    \texttt{main()} is entered; no NOR Flash copy is required. \\
+  \hline
+  Heap           & R/W & Dynamic memory managed by \texttt{malloc}/\texttt{free}
+    (or equivalent).
+    Grows upward from the end of \texttt{.bss} toward the stack.
+    Access pattern is unpredictable (random reads and writes), making
+    caching impractical. \\
+  \hline
+  Stack          & R/W & Automatic variables, function call frames,
+    and saved registers.
+    Grows downward from the top of the Scratchpad region.
+    Access is highly regular (push/pop, mostly 8-byte aligned) but
+    write-intensive; caching would require frequent dirty evictions. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Why these segments cannot reside in NOR Flash.}
+NOR Flash is a read-only medium from the system's perspective: the QSPI
+controller provides a cache-miss-driven read path only; there is no byte-
+or word-level write path to Flash.
+Even if write commands were issued via the QSPI configuration interface,
+Flash write latency is in the millisecond range and requires sector erase
+before re-programming -- wholly unsuitable for stack or heap access.
+
+\paragraph{Linker script responsibility.}
+The linker script must place \texttt{.data}, \texttt{.bss}, heap, and
+stack inside the Scratchpad address window
+(\texttt{SP\_BASE}\ldots\texttt{SP\_BASE + SP\_SIZE - 1}).
+Code (\texttt{.text}) and read-only data (\texttt{.rodata}) remain in
+the NOR Flash address window and are served through the cache.
+The start-up routine copies \texttt{.data} from Flash to Scratchpad using
+the D-Cache bypass path (Scratchpad addresses); the Flash source copy is
+accessed through the D-Cache (Flash addresses).
+
 \subsubsection{D-Cache State Machine}
 \label{subsec:dcacheFsm}
 
@@ -836,9 +897,11 @@ interface as_icache_if (input logic clk_i,
   logic [31:0] ic_rdata;
   logic        ic_rvalid;
   modport cpu  (output ic_addr, ic_req, ic_flush,
-                input  ic_stall, ic_flush_done, ic_err, ic_rdata, ic_rvalid);
+                input  ic_stall, ic_flush_done, ic_err, 
+                       ic_rdata, ic_rvalid);
   modport cache(input  ic_addr, ic_req, ic_flush,
-                output ic_stall, ic_flush_done, ic_err, ic_rdata, ic_rvalid);
+                output ic_stall, ic_flush_done, ic_err, 
+                       ic_rdata, ic_rvalid);
 endinterface
 \end{verbatim}
 
@@ -903,10 +966,12 @@ interface as_dcache_if (input logic clk_i,
   logic        dc_rvalid;
   modport cpu  (output dc_addr, dc_req, dc_wr, dc_size,
                        dc_wdata, dc_wstrb, dc_flush,
-                input  dc_stall, dc_flush_done, dc_err, dc_rdata, dc_rvalid);
+                input  dc_stall, dc_flush_done, dc_err, 
+                       dc_rdata, dc_rvalid);
   modport cache(input  dc_addr, dc_req, dc_wr, dc_size,
                        dc_wdata, dc_wstrb, dc_flush,
-                output dc_stall, dc_flush_done, dc_err, dc_rdata, dc_rvalid);
+                output dc_stall, dc_flush_done, dc_err, 
+                       dc_rdata, dc_rvalid);
 endinterface
 \end{verbatim}
 
@@ -1144,9 +1209,9 @@ interface as_axi4_if #(
            awready, wready, bid, bresp, bvalid
   );
   modport slave (
-    input  arid, araddr, arlen, arsize, arburst, arvalid, rready,
-           awid, awaddr, awlen, awsize, awburst, awvalid,
-           wdata, wstrb, wlast, wvalid, bready,
+    input  arid, araddr, arlen, arsize, arburst, arvalid, 
+           rready, awid, awaddr, awlen, awsize, awburst, 
+           awvalid, wdata, wstrb, wlast, wvalid, bready,
     output arready, rid, rdata, rresp, rlast, rvalid,
            awready, wready, bid, bresp, bvalid
   );
@@ -1466,7 +1531,7 @@ and the required CPU action.
 \caption{DMA Coherency Requirements by Memory Region}
 \label{tab:asDmaCoh}
 \centering
-\begin{tabularx}{\textwidth}{|l |l |l |X|}
+\begin{tabularx}{\textwidth}{|l |X |X |X|}
   \hline
   DMA source & DMA destination & Coherency issue? & Required CPU action \\
   \hline
@@ -1615,7 +1680,7 @@ causes.
 \caption{AXI4 Error to RISC-V Exception Mapping}
 \label{tab:asAxi4Exc}
 \centering
-\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+\begin{tabularx}{\textwidth}{|l |l |l |X |X|}
   \hline
   Cache & AXI4 signal & \texttt{mcause} & Exception name & \texttt{mtval} \\
   \hline
@@ -1916,6 +1981,146 @@ The selected NOR Flash must support:
 \end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Memory Hierarchy Performance Analysis}
+\label{subsec:memPerfAnalysis}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Average Memory Access Time (AMAT)}
+
+The standard metric for cache hierarchy performance is the
+\textbf{Average Memory Access Time (AMAT)}:
+
+\[
+  \text{AMAT} = t_\text{hit} + m_1 \cdot t_\text{miss}
+\]
+
+where $t_\text{hit}$ is the cache hit latency, $m_1$ is the L1 miss rate,
+and $t_\text{miss}$ is the miss penalty.
+For the current two-level hierarchy (L1 cache + NOR Flash) the values
+from this document are:
+
+\begin{itemize}
+  \item $t_\text{hit} = 1$ cycle (cache hit, combinatorial tag compare +
+        SRAM read).
+  \item $t_\text{miss} = 42$ system clock cycles (cache-line fill from
+        NOR Flash via QSPI Quad Fast Read at 25\,MHz QSPI /
+        10\,MHz system; see Table~\ref{tab:asQspiLat}).
+\end{itemize}
+
+Thus:
+\[
+  \text{AMAT}_\text{2-level} = 1 + m_1 \cdot 42 \quad \text{[system cycles]}
+\]
+
+\subsubsection{Hypothetical Three-Level Hierarchy}
+
+If an additional on-chip SRAM layer (L2) were inserted between the L1
+caches and NOR Flash, the AMAT becomes:
+
+\[
+  \text{AMAT}_\text{3-level} = 1 + m_1 \cdot \bigl(t_\text{L2} + m_2 \cdot 42\bigr)
+\]
+
+where $t_\text{L2}$ is the L2 SRAM access time (1--2 cycles for an
+on-chip synchronous SRAM) and $m_2$ is the fraction of L1 misses that
+also miss in L2.
+The resulting speed-up $S = \text{AMAT}_\text{2-level} /
+\text{AMAT}_\text{3-level}$ is shown in
+Table~\ref{tab:asMemSpeedup}.
+
+\begin{table}[H]
+\caption{AMAT and Speed-Up for a Hypothetical L2 SRAM
+         ($t_\text{L2} = 2$ cycles, $t_\text{miss} = 42$ cycles)}
+\label{tab:asMemSpeedup}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |l|}
+  \hline
+  L1 miss rate $m_1$ & L2 miss rate $m_2$ & AMAT$_\text{2-level}$ &
+  AMAT$_\text{3-level}$ & Speed-Up \\
+  \hline
+  \hline
+  5\,\%  & 0\,\% (program fits in L2)  & 3.1 & 1.10 & $2.8\times$ \\
+  \hline
+  10\,\% & 0\,\%                       & 5.2 & 1.20 & $4.3\times$ \\
+  \hline
+  20\,\% & 0\,\%                       & 9.4 & 1.40 & $6.7\times$ \\
+  \hline
+  10\,\% & 20\,\% (L2 80\,\% hit rate) & 5.2 & 2.04 & $2.5\times$ \\
+  \hline
+  10\,\% & 50\,\%                       & 5.2 & 3.10 & $1.7\times$ \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The maximum benefit occurs when the active working set fits entirely
+in L2 ($m_2 \approx 0\,\%$), in which case NOR Flash is accessed only
+during the initial boot load and AMAT approaches $1 + m_1 \cdot t_\text{L2}$.
+
+\subsubsection{System-Clock Scaling of the Miss Penalty}
+
+The QSPI transaction consumes a \emph{fixed number of QSPI clock cycles}
+(106 at 25\,MHz QSPI; see Table~\ref{tab:asQspiLat}).
+Converting to system clock cycles:
+
+\[
+  t_\text{miss}[\text{sys}] = \frac{106}{f_\text{QSPI}} \cdot f_\text{sys}
+  = 106 \cdot \frac{f_\text{sys}}{f_\text{QSPI}}
+\]
+
+\begin{table}[H]
+\caption{Miss Penalty vs.\ System Clock (QSPI fixed at 25\,MHz)}
+\label{tab:asQspiMissPenaltyScaling}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  System clock & QSPI clock & Miss penalty & Remark \\
+  \hline
+  \hline
+  10\,MHz & 25\,MHz & 42 cycles  & Reference design point \\
+  \hline
+  25\,MHz & 25\,MHz & 106 cycles & Penalty $2.5\times$ longer \\
+  \hline
+  50\,MHz & 25\,MHz & 212 cycles & Penalty $5\times$ longer \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The penalty in system cycles grows linearly with the system clock when
+the QSPI clock is held constant.
+An additional on-chip SRAM layer therefore becomes increasingly
+beneficial as the system clock is raised.
+
+\subsubsection{Design Decision}
+\label{subsubsec:l2Decision}
+
+The current architecture intentionally omits an L2 cache layer:
+
+\begin{itemize}
+  \item \textbf{Chip area:} At X-Fab XO035 (350\,nm) a true L2 cache
+    (tag array, replacement logic, coherency protocol) consumes
+    significant die area.
+  \item \textbf{Complexity:} An L2 controller adds coherency and
+    arbitration logic on top of the existing Memory Arbiter.
+  \item \textbf{Scratchpad covers the critical path:}
+    Stack, heap, \texttt{.data}, and \texttt{.bss} reside in the
+    Scratchpad SRAM (1--2 cycle access); these are the write-intensive
+    segments that would most benefit from low latency.
+    Only code (\texttt{.text}) and read-only data (\texttt{.rodata})
+    remain in the Flash/cache path.
+  \item \textbf{4\,KB L1 miss rate:} For small embedded programs that
+    fit in the 4\,KB I-Cache, the instruction miss rate is low after
+    the initial cache warm-up, limiting the absolute time spent on
+    Flash accesses.
+\end{itemize}
+
+Should the system clock be raised significantly above 10\,MHz or should
+larger programs with a high L1 miss rate become a requirement, adding a
+Tightly Coupled Memory (TCM) layer -- an on-chip SRAM preloaded from
+Flash at boot -- would be the recommended approach.
+A full L2 cache is not recommended for the first tape-out on this
+process node.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Open Items and Refinements}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1954,7 +2159,7 @@ The selected NOR Flash must support:
   \hline
   MEM-05 & Physical address width: 32\,bits chosen (\texttt{PA\_WIDTH=32}).
            With scratchpad and Flash regions both well within a 4\,GB space
-           this is confirmed sufficient; finalise when memory map is defined. & AS: 32\,bits -- ok \\
+           this is confirmed sufficient; finalise when memory map is defined. & AS: 32\,b / ok \\
   \hline
   MEM-06 & \textbf{[RESOLVED]} RRESP $\neq$ OKAY mapped to RISC-V exceptions:
            I-Cache~$\rightarrow$ Instruction Access Fault (\texttt{mcause}=1),
