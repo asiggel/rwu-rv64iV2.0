@@ -37,13 +37,51 @@ module asMemArb (
 );
 
   typedef enum logic [1:0] {
-    ARB_IDLE    = 2'b00,
-    ARB_GRANT_D = 2'b01,  // D-Cache owns the bus
-    ARB_GRANT_I = 2'b10   // I-Cache owns the bus
-  } arb_state_t;
+    ARB_IDLE_ST    = 2'b00,
+    ARB_GRANT_D_ST = 2'b01,  // D-Cache owns the bus
+    ARB_GRANT_I_ST = 2'b10   // I-Cache owns the bus
+  } statetype_t;
+  statetype_t state_s, nextstate_s;
 
-  arb_state_t state_r;
-
+  // Three block FSM for education purpose:
+  // FSM block: delay
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i == 1)
+      state_s <= ARB_IDLE_ST;
+    else
+      state_s <= nextstate_s;
+  end
+  
+  // FSM block: Input logic -> calculates state_s
+  // ---------------------------------------------------------------------------
+  // State Logic
+  //
+  // Transitions:
+  //   IDLE     → GRANT_D  when D-Cache presents arvalid (D has priority)
+  //   IDLE     → GRANT_I  when only I-Cache presents arvalid
+  //   GRANT_D  → IDLE     when QSPI delivers RLAST and D-Cache accepts it
+  //   GRANT_I  → IDLE     when QSPI delivers RLAST and I-Cache accepts it
+  // ---------------------------------------------------------------------------
+  always_comb 
+  begin
+    nextstate_s = state_s; // self arc
+    case(state_s)
+      ARB_IDLE_ST:     begin
+                       if (dcache_axi4.arvalid) 
+                         nextstate_s <= ARB_GRANT_D_ST;
+                       else if (icache_axi4.arvalid) 
+                         nextstate_s <= ARB_GRANT_I_ST;
+                       end
+      ARB_GRANT_D_ST:  if (qspi_axi4.rvalid & qspi_axi4.rlast & dcache_axi4.rready)
+                         nextstate_s <= ARB_IDLE_ST;
+      ARB_GRANT_I_ST:  if (qspi_axi4.rvalid & qspi_axi4.rlast & icache_axi4.rready)
+                         nextstate_s <= ARB_IDLE_ST;
+      default: nextstate_s <= ARB_IDLE_ST;
+    endcase
+  end
+  
+  // FSM block: Output logic -> calculates outputs
   // ---------------------------------------------------------------------------
   // Combinatorial grant signals
   //
@@ -58,56 +96,18 @@ module asMemArb (
   // ---------------------------------------------------------------------------
   logic grant_d_s, grant_i_s;
 
-  assign grant_d_s = (state_r == ARB_GRANT_D) |
-                     (state_r == ARB_IDLE & dcache_axi4.arvalid);
-
-  assign grant_i_s = (state_r == ARB_GRANT_I) |
-                     (state_r == ARB_IDLE & ~dcache_axi4.arvalid & icache_axi4.arvalid);
-
-  // ---------------------------------------------------------------------------
-  // State register
-  //
-  // Transitions:
-  //   IDLE     → GRANT_D  when D-Cache presents arvalid (D has priority)
-  //   IDLE     → GRANT_I  when only I-Cache presents arvalid
-  //   GRANT_D  → IDLE     when QSPI delivers RLAST and D-Cache accepts it
-  //   GRANT_I  → IDLE     when QSPI delivers RLAST and I-Cache accepts it
-  // ---------------------------------------------------------------------------
-  always_ff @(posedge clk_i) begin
-    if (rst_i) begin
-      state_r <= ARB_IDLE;
-    end else begin
-      case (state_r)
-        ARB_IDLE: begin
-          if      (dcache_axi4.arvalid) state_r <= ARB_GRANT_D;
-          else if (icache_axi4.arvalid) state_r <= ARB_GRANT_I;
-        end
-        ARB_GRANT_D:
-          if (qspi_axi4.rvalid & qspi_axi4.rlast & dcache_axi4.rready)
-            state_r <= ARB_IDLE;
-        ARB_GRANT_I:
-          if (qspi_axi4.rvalid & qspi_axi4.rlast & icache_axi4.rready)
-            state_r <= ARB_IDLE;
-        default: state_r <= ARB_IDLE;
-      endcase
-    end
-  end
+  assign grant_d_s = (state_s == ARB_GRANT_D_ST) | (state_s == ARB_IDLE_ST & dcache_axi4.arvalid);
+  assign grant_i_s = (state_s == ARB_GRANT_I_ST) | (state_s == ARB_IDLE_ST & ~dcache_axi4.arvalid & icache_axi4.arvalid);
 
   // ---------------------------------------------------------------------------
   // AR channel: mux selected master → QSPI
   // ---------------------------------------------------------------------------
-  assign qspi_axi4.arvalid = grant_d_s ? dcache_axi4.arvalid :
-                              grant_i_s ? icache_axi4.arvalid : '0;
-  assign qspi_axi4.arid    = grant_d_s ? dcache_axi4.arid    :
-                              grant_i_s ? icache_axi4.arid    : '0;
-  assign qspi_axi4.araddr  = grant_d_s ? dcache_axi4.araddr  :
-                              grant_i_s ? icache_axi4.araddr  : '0;
-  assign qspi_axi4.arlen   = grant_d_s ? dcache_axi4.arlen   :
-                              grant_i_s ? icache_axi4.arlen   : '0;
-  assign qspi_axi4.arsize  = grant_d_s ? dcache_axi4.arsize  :
-                              grant_i_s ? icache_axi4.arsize  : '0;
-  assign qspi_axi4.arburst = grant_d_s ? dcache_axi4.arburst :
-                              grant_i_s ? icache_axi4.arburst : '0;
+  assign qspi_axi4.arvalid = grant_d_s ? dcache_axi4.arvalid : grant_i_s ? icache_axi4.arvalid : '0;
+  assign qspi_axi4.arid    = grant_d_s ? dcache_axi4.arid    : grant_i_s ? icache_axi4.arid    : '0;
+  assign qspi_axi4.araddr  = grant_d_s ? dcache_axi4.araddr  : grant_i_s ? icache_axi4.araddr  : '0;
+  assign qspi_axi4.arlen   = grant_d_s ? dcache_axi4.arlen   : grant_i_s ? icache_axi4.arlen   : '0;
+  assign qspi_axi4.arsize  = grant_d_s ? dcache_axi4.arsize  : grant_i_s ? icache_axi4.arsize  : '0;
+  assign qspi_axi4.arburst = grant_d_s ? dcache_axi4.arburst : grant_i_s ? icache_axi4.arburst : '0;
 
   // ARREADY: QSPI → selected master; non-selected master sees 0
   assign dcache_axi4.arready = grant_d_s ? qspi_axi4.arready : '0;
@@ -129,8 +129,7 @@ module asMemArb (
   assign icache_axi4.rlast  = grant_i_s ? qspi_axi4.rlast  : '0;
 
   // RREADY: selected master → QSPI
-  assign qspi_axi4.rready = grant_d_s ? dcache_axi4.rready :
-                             grant_i_s ? icache_axi4.rready : '0;
+  assign qspi_axi4.rready = grant_d_s ? dcache_axi4.rready : grant_i_s ? icache_axi4.rready : '0;
 
   // ---------------------------------------------------------------------------
   // Write channels: tied off (Flash is read-only; no AXI4 write path)
