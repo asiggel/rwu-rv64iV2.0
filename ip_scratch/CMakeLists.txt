@@ -7,6 +7,7 @@ set(AS_PACK ${PROJECT_ROOT}/../RWU_RV/RV_NoPipeline/src/as_pack.sv)
 
 set(SOURCES_SV
     ${AS_PACK}
+    ${PROJECT_ROOT}/src/as_sram_sp64.sv
     ${PROJECT_ROOT}/src/asScratch.sv
     ${PROJECT_ROOT}/tb/${TB_TOP}.sv
 )
