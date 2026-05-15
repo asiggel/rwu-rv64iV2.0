@@ -4,10 +4,10 @@
 // Differences from RV_NoPipeline/src/asTopMem.sv:
 //   - asIMem and asDMemTop removed; replaced by asMemTop (I-Cache + D-Cache + Scratchpad).
 //   - Both as_master_bpi removed; CPU uses icpu_if / dcpu_if directly.
-//   - I-Mem JTAG scan chain (dr_reg) removed; instructions come from flash via AXI4.
-//   - AXI4 master port qspi_* exposed for testbench / QSPI controller.
+//   - I-Mem JTAG scan chain (dr_reg) removed; instructions come from flash via QSPI.
+//   - as_qspi_top instantiated; exposes physical QSPI pins (sck, cs, data[3:0]).
 //   - Peripheral bridge: CPU data accesses with dc_addr[32]=1 are routed to WB bus
-//     (GPIO, CGU) with 1-cycle dc_rvalid.
+//     (GPIO, QSPI ctrl, CGU) with 1-cycle dc_rvalid.
 //   - SP_BASE=0 so scratchpad covers 0x0000_0000–0x0000_1FFF (existing test data addrs).
 `timescale 1ns/1ps
 
@@ -25,21 +25,11 @@ module as_top_mem (
     // GPIO
     inout  tri [nr_gpios-1:0]       gpio_io,
     output logic                    cs_o,
-    // AXI4 master → QSPI flash (read-only: AR + R channels)
-    output logic [3:0]              qspi_arid_o,
-    output logic [31:0]             qspi_araddr_o,
-    output logic [7:0]              qspi_arlen_o,
-    output logic [2:0]              qspi_arsize_o,
-    output logic [1:0]              qspi_arburst_o,
-    output logic                    qspi_arvalid_o,
-    input  logic                    qspi_arready_i,
-    input  logic [3:0]              qspi_rid_i,
-    input  logic [63:0]             qspi_rdata_i,
-    input  logic [1:0]              qspi_rresp_i,
-    input  logic                    qspi_rlast_i,
-    input  logic                    qspi_rvalid_i,
-    output logic                    qspi_rready_o,
-    // Clock for testbench AXI slave (= clk_core_s, same domain as AXI master)
+    // QSPI flash (physical pins)
+    output logic                    sck_o,
+    output logic                    flash_cs_o,
+    inout  tri   [3:0]              flash_data_io,
+    // Clock for testbench (= clk_core_s, same domain as QSPI master)
     output logic                    clk_div_o
 );
 
@@ -64,10 +54,11 @@ module as_top_mem (
   logic [daddr_width-1:0] dBusAddr_periph_s;
   logic [reg_width-1:0]   dBusDataWr_periph_s;
   logic [reg_width-1:0]   dBusDataRdGpio_s;
+  logic [reg_width-1:0]   dBusDataRdQspi_s;
   logic [reg_width-1:0]   dBusDataRdCgu_s;
   logic [reg_width-1:0]   periph_rdata_s;
-  logic                   wbdstbGpio_s, wbdstbCgu_s;
-  logic                   wdbAckGpio_s, wdbAckCgu_s;
+  logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s;
+  logic                   wdbAckGpio_s, wdbAckQspi_s, wdbAckCgu_s;
   logic                   is_periph_req_s;
   logic                   is_periph_r;
   logic                   is_periph_s;
@@ -76,6 +67,9 @@ module as_top_mem (
   // GPIO IRQ, cs
   logic irq_gpiox_s;
   logic asGpioCs_s;
+
+  // QSPI IRQ
+  logic qspi_irq_s;
 
   // IRQ
   logic [irq_total_num_ext_c-1:0] irq_external_s;
@@ -104,6 +98,7 @@ module as_top_mem (
   always_comb
     case(csx_s)
       4'd2:    periph_rdata_s = dBusDataRdGpio_s;
+      4'd4:    periph_rdata_s = dBusDataRdQspi_s;
       4'd8:    periph_rdata_s = dBusDataRdCgu_s;
       default: periph_rdata_s = '0;
     endcase
@@ -125,6 +120,7 @@ module as_top_mem (
   end
 
   assign wbdstbGpio_s = is_periph_req_s & csx_s[1];
+  assign wbdstbQspi_s = is_periph_req_s & csx_s[2];
   assign wbdstbCgu_s  = is_periph_req_s & csx_s[3];
 
   // ── Route CPU → asMemTop (non-peripheral only) ───────────────────
@@ -142,21 +138,6 @@ module as_top_mem (
   assign dcpu_if_s.dc_stall      = is_periph_s ? 1'b0               : dcpu_mem_if_s.dc_stall;
   assign dcpu_if_s.dc_err        = 1'b0;
   assign dcpu_if_s.dc_flush_done = 1'b0;
-
-  // ── AXI4 flat port ↔ internal qspi_if_s ─────────────────────────
-  assign qspi_arid_o        = qspi_if_s.arid;
-  assign qspi_araddr_o      = qspi_if_s.araddr;
-  assign qspi_arlen_o       = qspi_if_s.arlen;
-  assign qspi_arsize_o      = qspi_if_s.arsize;
-  assign qspi_arburst_o     = qspi_if_s.arburst;
-  assign qspi_arvalid_o     = qspi_if_s.arvalid;
-  assign qspi_if_s.arready  = qspi_arready_i;
-  assign qspi_if_s.rid      = qspi_rid_i;
-  assign qspi_if_s.rdata    = qspi_rdata_i;
-  assign qspi_if_s.rresp    = qspi_rresp_i;
-  assign qspi_if_s.rlast    = qspi_rlast_i;
-  assign qspi_if_s.rvalid   = qspi_rvalid_i;
-  assign qspi_rready_o      = qspi_if_s.rready;
 
   // ── CGU ─────────────────────────────────────────────────────────
   as_cgu_top #(cgu_addr_width) cgu (
@@ -191,9 +172,36 @@ module as_top_mem (
     .cs_o(asGpioCs_s)
   );
 
+  // ── QSPI controller ──────────────────────────────────────────────
+  // QSPI peripheral WB address base: 0x1_0000_0200 (csx[2])
+  // Register offsets 0x00–0x88 fit in 8-bit address (256 > 136 = OFF_STATUS).
+  localparam int QSPI_AW = 8;
+  as_qspi_top #(
+    .QSPI_ADDR_WIDTH(QSPI_AW),
+    .QSPI_DATA_WIDTH(reg_width),
+    .FIFO_DEPTH(16)
+  ) qspi_ctrl (
+    .clk_i      (clk_div_s),
+    .rst_i      (rst_i),
+    .wbdAddr_i  (dBusAddr_periph_s[QSPI_AW-1:0]),
+    .wbdDat_i   (dBusDataWr_periph_s),
+    .wbdDat_o   (dBusDataRdQspi_s),
+    .wbdWe_i    (wbdwe_s),
+    .wbdSel_i   (sel_s),
+    .wbdStb_i   (wbdstbQspi_s),
+    .wbdAck_o   (wdbAckQspi_s),
+    .wbdCyc_i   (is_periph_req_s),
+    .axi4_if    (qspi_if_s),
+    .sck_o      (sck_o),
+    .cs_o       (flash_cs_o),
+    .data_io    (flash_data_io),
+    .qspi_irq_o (qspi_irq_s)
+  );
+
   // ── IRQ ──────────────────────────────────────────────────────────
   assign irq_external_s[7]   = irq_gpiox_s;
-  assign irq_external_s[6:0] = 7'b0;
+  assign irq_external_s[6]   = qspi_irq_s;
+  assign irq_external_s[5:0] = 6'b0;
 
   // ── JTAG ─────────────────────────────────────────────────────────
   assign bs_tdo_s = 1'b0;

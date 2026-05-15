@@ -18,41 +18,21 @@ module tb_rv64i ();
   logic [31:0] flash_mem_s [0:FLASH_WORDS-1];
   initial $readmemh("riscvtest.mem", flash_mem_s);
 
-  logic [3:0]  qspi_arid_s;
-  logic [31:0] qspi_araddr_s;
-  logic [7:0]  qspi_arlen_s;
-  logic [2:0]  qspi_arsize_s;
-  logic [1:0]  qspi_arburst_s;
-  logic        qspi_arvalid_s;
-  logic        qspi_arready_s;
-  logic [3:0]  qspi_rid_s;
-  logic [63:0] qspi_rdata_s;
-  logic [1:0]  qspi_rresp_s;
-  logic        qspi_rlast_s;
-  logic        qspi_rvalid_s;
-  logic        qspi_rready_s;
-
-  initial begin
-    qspi_arready_s = 1'b0;
-    qspi_rid_s     = '0;
-    qspi_rdata_s   = '0;
-    qspi_rresp_s   = 2'b00;
-    qspi_rlast_s   = 1'b0;
-    qspi_rvalid_s  = 1'b0;
-  end
+  logic       sck_s;
+  logic       flash_cs_s;
+  wire  [3:0] flash_data_s;
+  logic [3:0] flash_drive_s = 4'b0;
+  logic       flash_oe_s    = 1'b0;
+  assign flash_data_s = flash_oe_s ? flash_drive_s : 4'bzzzz;
 
   as_top_mem DUT (
     .clk_i(clk_s), .rst_i(rst_s),
     .tck_i(tck_s), .trst_i(trst_s), .tms_i(tms_s), .tdi_i(tdi_s), .tdo_o(tdo_s),
     .gpio_io(gpio_s),
     .cs_o(cs_s),
-    .qspi_arid_o(qspi_arid_s),   .qspi_araddr_o(qspi_araddr_s),
-    .qspi_arlen_o(qspi_arlen_s), .qspi_arsize_o(qspi_arsize_s),
-    .qspi_arburst_o(qspi_arburst_s), .qspi_arvalid_o(qspi_arvalid_s),
-    .qspi_arready_i(qspi_arready_s),
-    .qspi_rid_i(qspi_rid_s),     .qspi_rdata_i(qspi_rdata_s),
-    .qspi_rresp_i(qspi_rresp_s), .qspi_rlast_i(qspi_rlast_s),
-    .qspi_rvalid_i(qspi_rvalid_s), .qspi_rready_o(qspi_rready_s),
+    .sck_o(sck_s),
+    .flash_cs_o(flash_cs_s),
+    .flash_data_io(flash_data_s),
     .clk_div_o(clk_div_s)
   );
 
@@ -65,81 +45,45 @@ module tb_rv64i ();
   initial begin #2000000000; $display("WATCHDOG: 2ms timeout"); $finish; end
 
   //------------------------------------------
-  // AXI4 slave: serves cache-line fill bursts from flash_mem_s
-  // CDC: DUT master at clk_div_s (slow); slave clocked by clk_s gated on slow rising edge
+  // QSPI NOR flash model (W25Q-style, Quad Output Fast Read 0x6B)
+  // Sequence per CS# cycle (cmd=0x6B, quad=1, 24-bit addr, 8 dummy cycles):
+  //   8 SCK posedges  : CMD on io[0]   (single, MSB first)
+  //   6 SCK posedges  : ADDR on io[3:0] (quad,   MSB first → 24-bit)
+  //   8 SCK posedges  : DUMMY
+  //  16 SCK negedges  : DATA driven on io[3:0] (quad, MSB first → 64-bit)
+  // The AXI4 FSM in as_qspi_top issues 4 separate CS# cycles per 32-byte cache line.
   //------------------------------------------
-  typedef enum logic [1:0] {AXI_IDLE, AXI_AR_HOLD, AXI_RDATA} axi_st_t;
-  axi_st_t     axi_st_r;
-  logic [31:0] axi_araddr_r;
-  logic [7:0]  axi_arlen_r;
-  logic [3:0]  axi_arid_r;
-  logic [7:0]  axi_beat_r;
-
-  // Detect slow-clock rising edge by sampling clk_div_s at fast-clock rate
-  logic clk_div_d_s;
-  logic clk_div_rise_s;
-  always_ff @(posedge clk_s) clk_div_d_s <= clk_div_s;
-  assign clk_div_rise_s = clk_div_s & ~clk_div_d_s;
-
-  always_ff @(posedge clk_s, posedge rst_s) begin
-    if (rst_s) begin
-      axi_st_r       <= AXI_IDLE;
-      qspi_arready_s <= 1'b0;
-      qspi_rvalid_s  <= 1'b0;
-      qspi_rlast_s   <= 1'b0;
-      qspi_rid_s     <= '0;
-      qspi_rdata_s   <= '0;
-      qspi_rresp_s   <= 2'b00;
-    end else if (clk_div_rise_s) begin
-      case (axi_st_r)
-        AXI_IDLE: begin
-          qspi_arready_s <= 1'b0;
-          qspi_rvalid_s  <= 1'b0;
-          if (qspi_arvalid_s) begin
-            axi_araddr_r   <= qspi_araddr_s;
-            axi_arlen_r    <= qspi_arlen_s;
-            axi_arid_r     <= qspi_arid_s;
-            axi_beat_r     <= 8'd0;
-            qspi_arready_s <= 1'b1;
-            axi_st_r       <= AXI_AR_HOLD;
+  always @(negedge flash_cs_s) begin flash_oe_s = 1'b0; flash_drive_s = 4'b0; end
+  always begin
+    @(posedge flash_cs_s);
+    begin
+      automatic logic [23:0] faddr = '0;
+      automatic logic [63:0] fword = '0;
+      automatic int          widx  = 0;
+      automatic int          cnt   = 0;
+      automatic int          idx   = 0;
+      flash_oe_s    = 1'b0;
+      flash_drive_s = 4'b0;
+      while (flash_cs_s) begin
+        @(posedge sck_s); if (!flash_cs_s) break;
+        cnt++;
+        if (cnt >= 9 && cnt <= 14)
+          faddr = {faddr[19:0], flash_data_s[3:0]};
+        if (cnt >= 22 && idx < 16) begin
+          @(negedge sck_s); if (!flash_cs_s) break;
+          if (idx == 0) begin
+            widx  = int'(faddr) >> 2;
+            fword = {flash_mem_s[widx+1], flash_mem_s[widx]};
           end
+          flash_oe_s    = 1'b1;
+          flash_drive_s = fword[63:60];
+          fword         = {fword[59:0], 4'b0};
+          idx++;
+          if (idx == 16) begin @(posedge sck_s); break; end
         end
-        AXI_AR_HOLD: begin
-          // Hold arready until master drops arvalid (registered on master's slow clock)
-          if (!qspi_arvalid_s) begin
-            qspi_arready_s <= 1'b0;
-            qspi_rid_s     <= axi_arid_r;
-            qspi_rresp_s   <= 2'b00;
-            begin
-              automatic int widx = int'(axi_araddr_r >> 2);
-              qspi_rdata_s <= {flash_mem_s[widx+1], flash_mem_s[widx]};
-            end
-            qspi_rlast_s  <= (8'd0 == axi_arlen_r);
-            qspi_rvalid_s <= 1'b1;
-            axi_st_r      <= AXI_RDATA;
-          end
-
-        end
-        AXI_RDATA: begin
-          qspi_arready_s <= 1'b0;
-          qspi_rvalid_s  <= 1'b1;
-          qspi_rid_s     <= axi_arid_r;
-          qspi_rresp_s   <= 2'b00;
-          if (axi_beat_r == axi_arlen_r) begin
-            axi_st_r      <= AXI_IDLE;
-            qspi_rvalid_s <= 1'b0;
-            qspi_rlast_s  <= 1'b0;
-          end else if (qspi_rready_s) begin
-            axi_beat_r   <= axi_beat_r + 8'd1;
-            axi_araddr_r <= axi_araddr_r + 32'd8;
-            begin
-              automatic int widx = int'((axi_araddr_r + 32'd8) >> 2);
-              qspi_rdata_s <= {flash_mem_s[widx+1], flash_mem_s[widx]};
-            end
-            qspi_rlast_s <= ((axi_beat_r + 8'd1) == axi_arlen_r);
-          end
-        end
-      endcase
+      end
+      flash_oe_s    = 1'b0;
+      flash_drive_s = 4'b0;
     end
   end
 

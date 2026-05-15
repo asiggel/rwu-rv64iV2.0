@@ -98,7 +98,7 @@ module as_qspi_top #(
   localparam int OFF_STATUS  = 136;
 
   localparam logic [63:0] RST_ID      = 64'h00000000_00000010;
-  localparam logic [63:0] RST_CTRL    = 64'h00000000_00000000;
+  localparam logic [63:0] RST_CTRL    = 64'h00000000_00000010; // quad=1: needed at reset for AXI4 cache-refill before SW configures QSPI
   localparam logic [63:0] RST_CMD     = 64'h00000000_0000006B; // 0x6B Quad Fast Read
   localparam logic [63:0] RST_ADDR    = 64'h00000000_00000000;
   localparam logic [63:0] RST_LEN     = 64'h00000000_00000008; // 8 bytes
