@@ -83,8 +83,11 @@ module as_top_mem (
   // ── Clock mux (scan test) ───────────────────────────────────────
   assign clk_div_s  = dr_cap_s ? clk_i : clk_core_s;
   assign clk_div_o  = clk_div_s;
-  // QSPI domain tied to core clock — no CDC needed until frequencies diverge
+  // All CGU domain clocks tied to core clock — no CDC needed until fast/slow
+  // peripherals are added to the SoC and the CGU outputs are re-enabled.
   assign clk_qspi_s = clk_div_s;
+  assign clk_bus1_s = clk_div_s;
+  assign clk_bus2_s = clk_div_s;
 
   assign cs_o = asGpioCs_s;
 
@@ -152,8 +155,8 @@ module as_top_mem (
     .wbdStb_i(wbdstbCgu_s),
     .wbdAck_o(wdbAckCgu_s),
     .wbdCyc_i(is_periph_req_s),
-    .clk_bus1_o(clk_bus1_s),
-    .clk_bus2_o(clk_bus2_s),
+    .clk_bus1_o( /* unused: clk_bus1_s tied to clk_div_s below */ ),
+    .clk_bus2_o( /* unused: clk_bus2_s tied to clk_div_s below */ ),
     .clk_qspi_o( /* unused: clk_qspi_s tied to clk_div_s below */ ),
     .clk_core_o(clk_core_s)
   );
