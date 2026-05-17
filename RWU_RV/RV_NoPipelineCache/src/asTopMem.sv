@@ -78,11 +78,13 @@ module as_top_mem (
   as_icache_if icpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
   as_dcache_if dcpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
   as_dcache_if dcpu_mem_if_s(.clk_i(clk_div_s), .rst_i(rst_i));
-  as_axi4_if #(.ADDR_W(32)) qspi_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
+  as_axi4_if #(.ADDR_W(32)) qspi_if_s (.clk_i(clk_qspi_s), .rst_i(rst_i));
 
   // ── Clock mux (scan test) ───────────────────────────────────────
-  assign clk_div_s = dr_cap_s ? clk_i : clk_core_s;
-  assign clk_div_o = clk_div_s;
+  assign clk_div_s  = dr_cap_s ? clk_i : clk_core_s;
+  assign clk_div_o  = clk_div_s;
+  // QSPI domain tied to core clock — no CDC needed until frequencies diverge
+  assign clk_qspi_s = clk_div_s;
 
   assign cs_o = asGpioCs_s;
 
@@ -152,7 +154,7 @@ module as_top_mem (
     .wbdCyc_i(is_periph_req_s),
     .clk_bus1_o(clk_bus1_s),
     .clk_bus2_o(clk_bus2_s),
-    .clk_qspi_o(clk_qspi_s),
+    .clk_qspi_o( /* unused: clk_qspi_s tied to clk_div_s below */ ),
     .clk_core_o(clk_core_s)
   );
 
@@ -181,7 +183,7 @@ module as_top_mem (
     .QSPI_DATA_WIDTH(reg_width),
     .FIFO_DEPTH(16)
   ) qspi_ctrl (
-    .clk_i      (clk_div_s),
+    .clk_i      (clk_qspi_s),
     .rst_i      (rst_i),
     .wbdAddr_i  (dBusAddr_periph_s[QSPI_AW-1:0]),
     .wbdDat_i   (dBusDataWr_periph_s),
