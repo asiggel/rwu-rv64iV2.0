@@ -42,6 +42,7 @@ set(ASM_TESTS
     instr19add
     instr07slli
     instr29lui
+    scratchpad_intensive
 )
 
 add_custom_target(regression)

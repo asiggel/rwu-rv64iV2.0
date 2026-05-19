@@ -87,8 +87,9 @@ module tb_rv64i ();
     end
   end
 
-  always @(negedge clk_core_s) begin
-    if(cs_s === 1) begin
+  always @(posedge cs_s) begin
+    begin
+      #1; // cs_o and gpio_io update in same NBA region; 1 ns settles gpio_io
       $display("CS detected");
       // direction[7]=1 → gpio_io[7]=Z; casez treats Z in expression as don't-care
       casez(gpio_s)

@@ -311,7 +311,7 @@ module as_cpux (input  logic                         clk_i,
       IMM_S    : immExt_s = {{(XLEN-12){ir_s[31]}},ir_s[31:25],ir_s[11:7]}; // S-type: sign ext, immediate1 (7 b), immediate2 (5 b)
       IMM_B    : immExt_s = {{(XLEN-12){ir_s[31]}},ir_s[7],ir_s[30:25],ir_s[11:8],1'b0}; // B-type: sign ext, imm1 (1 b), imm2 (6 b), imm3 (4 b), *2
       IMM_J    : immExt_s = {{(XLEN-20){ir_s[31]}},ir_s[19:12],ir_s[20],ir_s[30:21],1'b0}; // J-type: sign ext, imm1 (8 b), imm2 (1 b), imm3 (10 b), *2
-      IMM_U    : immExt_s = {{(XLEN-32){1'b0}}, ir_s[31:12], 12'b0}; // // U-type: zero ext, imm, zero; lui, auipc
+      IMM_U    : immExt_s = {{(XLEN-32){ir_s[31]}}, ir_s[31:12], 12'b0};
       IMM_NONE : immExt_s = {reg_width{1'b0}};
       default  : immExt_s = {reg_width{1'b0}};
     endcase

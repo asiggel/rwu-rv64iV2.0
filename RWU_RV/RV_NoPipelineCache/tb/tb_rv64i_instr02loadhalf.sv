@@ -87,8 +87,9 @@ module tb_rv64i ();
     end
   end
 
-  always @(negedge clk_core_s) begin
-    if(cs_s === 1) begin
+  always @(posedge cs_s) begin
+    begin
+      #1; // cs_o and gpio_io update in same NBA region; 1 ns settles gpio_io
       $display("CS detected");
       case(gpio_s)
             1     : begin $display("Instr 02 - load half01: 0x%0h", gpio_s); end
