@@ -137,8 +137,8 @@ phase6:
     li   x11, 0x11
     bne  x10, x11, fail
 
-    ld   x10, 0(x7)         # HIT: set0/tag10 (W2) still valid; x10 = 0x22
-    li   x11, 0x22
+    ld   x10, 0(x8)         # HIT: set0/tag11 (W3) still valid; x10 = 0x33
+    li   x11, 0x33
     bne  x10, x11, fail
 
     li   x20, 6

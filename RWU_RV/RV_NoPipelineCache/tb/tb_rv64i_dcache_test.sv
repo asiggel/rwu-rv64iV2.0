@@ -59,7 +59,7 @@ module tb_rv64i ();
   always  begin clk_core_s <= 1; #clk_80_t; clk_core_s <= 0; #clk_80_t; end
   initial begin tck_s <= 0; tms_s <= 0; tdi_s <= 0; trst_s <= 1; end
 
-  initial begin #5000000000; $display("WATCHDOG: 5 ms timeout"); $finish; end
+  initial begin #2000000000; $display("WATCHDOG: 2 ms timeout"); $finish; end
 
   // ── D-Cache state monitor ─────────────────────────────────────────────────
   // Shorthand path into D-Cache (read-only — never drive)
@@ -244,7 +244,7 @@ module tb_rv64i ();
             $fdisplay(fd, "%s - dcache_test: FAIL phase seq @cp6", get_time());
             $fclose(fd); $stop;
           end
-          $display("Phase 6 pass: warm-cache hits on set0/set1 ok");
+          $display("Phase 6 pass: warm-cache hits on set1/tag8, set0/tag9, set0/tag11 ok");
           phase_s = 6;
         end
 
