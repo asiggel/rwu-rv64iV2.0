@@ -42,14 +42,23 @@ add_custom_command(
 
 # -------------------------------------------------
 # OBJ → ELF
+#   Optional linker script:  cmake -DLINKER_SCRIPT=<path>
 # -------------------------------------------------
+set(LD_EXTRA_ARGS "")
+set(ELF_EXTRA_DEPS "")
+if(DEFINED LINKER_SCRIPT)
+    list(APPEND LD_EXTRA_ARGS -T ${LINKER_SCRIPT})
+    list(APPEND ELF_EXTRA_DEPS ${LINKER_SCRIPT})
+endif()
+
 add_custom_command(
     OUTPUT ${ELF}
     COMMAND ${LD}
             -b elf64-littleriscv
+            ${LD_EXTRA_ARGS}
             -o ${ELF}
             ${OBJ}
-    DEPENDS ${OBJ}
+    DEPENDS ${OBJ} ${ELF_EXTRA_DEPS}
     COMMENT "Linking ELF"
 )
 

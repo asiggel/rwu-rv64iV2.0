@@ -44,7 +44,11 @@ set(ASM_TESTS
     instr29lui
     scratchpad_intensive
     dcache_test
+    memory_sections
 )
+
+# Per-test linker scripts (only define for tests that need one)
+set(memory_sections_LDSCRIPT ${NP_ROOT}/rv64Sim/memory_sections.ld)
 
 add_custom_target(regression)
 
@@ -52,17 +56,26 @@ foreach(TEST ${ASM_TESTS})
 
     set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})
 
+    # Optional linker script for this test
+    set(LDSCRIPT_CMAKE_ARGS "")
+    set(LDSCRIPT_DEPS "")
+    if(DEFINED ${TEST}_LDSCRIPT)
+        list(APPEND LDSCRIPT_CMAKE_ARGS -DLINKER_SCRIPT=${${TEST}_LDSCRIPT})
+        list(APPEND LDSCRIPT_DEPS ${${TEST}_LDSCRIPT})
+    endif()
+
     # ---------------- ASM ----------------
     add_custom_command(
         OUTPUT ${TEST_BUILD_DIR}/asm/rv64i.mem
         COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_BUILD_DIR}/asm
         COMMAND ${CMAKE_COMMAND}
                 -DASM_FILE=${NP_ROOT}/rv64Sim/${TEST}.asm
+                ${LDSCRIPT_CMAKE_ARGS}
                 -S ${NP_ROOT}/rv64Sim
                 -B ${TEST_BUILD_DIR}/asm
         COMMAND ${CMAKE_COMMAND}
                 --build ${TEST_BUILD_DIR}/asm --target mem
-        DEPENDS ${NP_ROOT}/rv64Sim/${TEST}.asm
+        DEPENDS ${NP_ROOT}/rv64Sim/${TEST}.asm ${LDSCRIPT_DEPS}
         COMMENT "Assembling ${TEST}"
     )
 
