@@ -196,7 +196,7 @@ module as_top_mem (input logic                       clk_i,
   
   assign wdbAckAll_s = (wdbAckDmem_s || wdbAckGpio_s || wdbAckQspi_s || wdbAckCgu_s) && gnt0_s;
   
-  as_cpux cpu (.clk_i(clk_div_s), // divided functional clock or external TB clock (scan)
+  as_cpux_pipeline cpu (.clk_i(clk_div_s), // divided functional clock or external TB clock (scan)
               .rst_i(rst_i),
               .tck_i(tck_i),
               .ir_o(ir_s),
