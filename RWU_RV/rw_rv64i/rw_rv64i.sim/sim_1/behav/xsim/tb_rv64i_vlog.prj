@@ -1,0 +1,39 @@
+# compile verilog/system verilog design source files
+sv xil_defaultlib  \
+"../../../../../RV_NoPipeline/src/as_pack.sv" \
+"../../../../../RV_NoPipeline/src/asAlu.sv" \
+"../../../../../RV_NoPipeline/src/asAluBr.sv" \
+"../../../../../RV_NoPipeline/src/asCPUx_pipeline.sv" \
+"../../../../../../ip_cgu/src/asCguCore.sv" \
+"../../../../../../ip_cgu/src/asCguTop.sv" \
+"../../../../../../ip_dmem/src/asDMem.sv" \
+"../../../../../../ip_dmem/src/asDMemBack.sv" \
+"../../../../../../ip_dmem/src/asDMemCore.sv" \
+"../../../../../../ip_dmem/src/asDMemFront.sv" \
+"../../../../../../ip_dmem/src/asDMemTop.sv" \
+"../../../../../RV_NoPipeline/src/asDecode.sv" \
+"../../../../../../ip_gpio/src/asGpio.sv" \
+"../../../../../../ip_gpio/src/asGpioTop.sv" \
+"../../../../../RV_NoPipeline/src/asIMem.sv" \
+"../../../../../RV_NoPipeline/src/asInstrDecode.sv" \
+"../../../../../RV_NoPipeline/src/asMBpi.sv" \
+"../../../../../RV_NoPipeline/src/asRegFile.sv" \
+"../../../../../RV_NoPipeline/src/asSBpi.sv" \
+"../../../../../RV_NoPipeline/src/asTopMem.sv" \
+"../../../../../RV_NoPipeline/src/as_forwarding_unit.sv" \
+"../../../../../RV_NoPipeline/src/as_hazard_unit.sv" \
+"../../../../../../ip_jtag/src/by_cell.sv" \
+"../../../../../../ip_jtag/src/dr_cell.sv" \
+"../../../../../../ip_jtag/src/dr_reg.sv" \
+"../../../../../../ip_jtag/src/ir_cell.sv" \
+"../../../../../../ip_jtag/src/ir_decode.sv" \
+"../../../../../../ip_jtag/src/jtag.sv" \
+"../../../../../../ip_jtag/src/scan_cell.sv" \
+"../../../../../../ip_jtag/src/tap_fsm.sv" \
+"../../../../../RV_NoPipeline/tb/tb_rv64i_instr06addi.sv" \
+
+# compile glbl module
+verilog xil_defaultlib "glbl.v"
+
+# Do not sort compile order
+nosort
