@@ -1,26 +1,26 @@
-# Scan test example
-- take an arbitrary mem-file, e.g. readgpioid
-- cp tb_rv64i_instr99scantest.sv tb_rv64i.sv
-- run simulation
+# Testbench-Struktur
+# ===================
+# Instruktions-Tests (instr01..instr29) verwenden eine gemeinsame Testbench:
+#   tb/tb_rv64i_instr.sv
+# Konfiguration via Plusargs (+TEST_NAME, +EXPECTED) — wird automatisch
+# durch CMakeLists.txt gesetzt, kein manueller Eingriff nötig.
+#
+# Eigene Testbenches behalten:
+#   tb_rv64i_instr99scantest.sv
+#   tb_rv64i_instr99loadimem.sv
+#   tb_rv64i_readgpioid.sv
 
 # Run simulations
-# ... remove old runs
-rm -rf build
-# generate source directory and build directory
-cmake -S . -B build
-cmake -B build -DSIMULATOR=xsim
-cmake -B build -DSIMULATOR=verilator
-cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
-# executes a single simulation (For waveform generation, un-comment the line
-#   in the SIM section of CMakeLists.txt. Do not forget to comment
-#   it after the single-run.)
-cmake -B build -DWAVES=ON
-cmake -B build -DWAVES=ON -DSIMULATOR=verilator
+# ================
+# Simulator wählen (Default: xsim):
+cmake -S . -B build -DSIMULATOR=xsim
+cmake -S . -B build -DSIMULATOR=verilator
+
+# Einzelnen Test simulieren:
 cmake --build build --target sim_readgpioid
 cmake --build build --target sim_instr06addi
-# executes all simulations as regression
-cmake --build build --target regression
-# executes all simulations as regression and collects the errors
+
+# Regression (alle Tests) + Ergebnisse sammeln:
 cmake --build build --target collect_errors
 
 Sequences:
@@ -33,22 +33,29 @@ cmake --build build --target sim_instr06addi
 cmake --build build --target sim_instr99loadimem
 
 - Single Verilator simulation with wave
----------------------------------------------
+----------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
 cmake --build build --target sim_instr06addi
 
 - Regression Vivado simulation without wave
-------------------------------------
+--------------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=xsim
 cmake --build build --target collect_errors
 
 - Regression Verilator simulation without wave
----------------------------------------------
+-----------------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator
 cmake --build build --target collect_errors
+
+- Separate Build-Verzeichnisse (kein rm -rf beim Simulator-Wechsel)
+--------------------------------------------------------------------
+cmake -S . -B build_xsim      -DSIMULATOR=xsim
+cmake -S . -B build_verilator -DSIMULATOR=verilator
+cmake --build build_xsim      --target collect_errors
+cmake --build build_verilator --target collect_errors
 
 
 
