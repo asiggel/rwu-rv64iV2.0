@@ -38,8 +38,8 @@ module tap_fsm ( input  logic tck_i,          // Base clock
   logic	irdr_select_s; // Select either IR or DR for TDO
   logic	tdo_ena_s;     // Select TDO or 'Z'
 
-  // make reset invertible if needed (active high <-> active low)
-  assign trst_s = trst_i;
+  // active-low TRST# per IEEE 1149.1
+  assign trst_s = ~trst_i;
 
   // FSM block 2: delay
   always_ff @(posedge tck_i, posedge trst_s)
