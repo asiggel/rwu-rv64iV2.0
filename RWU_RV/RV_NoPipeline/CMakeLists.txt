@@ -52,14 +52,55 @@ set(ASM_TESTS
     instr29lui
 )
 
+# -------------------------------------------------
+# Konfiguration der einheitlichen Instruktions-Testbench
+# Format pro Eintrag: TEST_ID NAME EXPECTED_GPIO
+# Alle hier gelisteten Tests verwenden tb_rv64i_instr.sv.
+# Alle anderen Tests behalten ihre eigene Testbench.
+# -------------------------------------------------
+set(INSTR_TB_CONFIG
+  "instr01loadbyte"  "load_byte"   "128"
+  "instr02loadhalf"  "load_half"   "7"
+  "instr03loadword"  "load_word"   "5"
+  "instr04loadbyteu" "load_byteu"  "128"
+  "instr05loadhalfu" "load_halfu"  "7"
+  "instr06addi"      "addi"        "6"
+  "instr19add"       "add"         "254"
+  "instr07slli"      "slli"        "1"
+  "instr29lui"       "lui"         "29"
+)
+
+list(LENGTH INSTR_TB_CONFIG _cfg_len)
+set(_i 0)
+while(_i LESS _cfg_len)
+    list(GET INSTR_TB_CONFIG ${_i}             _tid)
+    math(EXPR _ni "${_i} + 1")
+    math(EXPR _ei "${_i} + 2")
+    list(GET INSTR_TB_CONFIG ${_ni}            _tname)
+    list(GET INSTR_TB_CONFIG ${_ei}            _texp)
+    set(INSTR_TB_NAME_${_tid}     "${_tname}")
+    set(INSTR_TB_EXPECTED_${_tid} "${_texp}")
+    math(EXPR _i "${_i} + 3")
+endwhile()
+
 add_custom_target(regression)
 
 foreach(TEST ${ASM_TESTS})
 
     set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})
 
+    # Testbench-Auswahl: einheitliche TB oder test-spezifische TB
+    if(DEFINED INSTR_TB_NAME_${TEST})
+        set(_TB_FILE    ${PROJECT_ROOT}/tb/tb_rv64i_instr.sv)
+        set(_EXTRA_ARGS
+            "-DTB_TEST_NAME=${INSTR_TB_NAME_${TEST}}"
+            "-DTB_EXPECTED=${INSTR_TB_EXPECTED_${TEST}}")
+    else()
+        set(_TB_FILE    ${PROJECT_ROOT}/tb/tb_rv64i_${TEST}.sv)
+        set(_EXTRA_ARGS "")
+    endif()
+
     # ---------------- ASM ----------------
-    # Fix: kein Copy in den Source-Tree — ASM_FILE wird direkt übergeben
     add_custom_command(
         OUTPUT ${TEST_BUILD_DIR}/asm/rv64i.mem
         COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_BUILD_DIR}/asm
@@ -74,15 +115,14 @@ foreach(TEST ${ASM_TESTS})
     )
 
     # ---------------- SIM ----------------
-    # Fix: kein Copy von tb_rv64i_<test>.sv in den Source-Tree — TB_FILE wird übergeben
-    # SIMULATOR und SIM_TARGET (simulate|waves) werden weitergereicht
     add_custom_target(sim_${TEST}
         COMMAND ${CMAKE_COMMAND}
                 -DPROJECT_ROOT=${PROJECT_ROOT}
                 -DIP_ROOT=${IP_ROOT}
                 -DRV64_MEM=${TEST_BUILD_DIR}/asm/rv64i.mem
-                -DTB_FILE=${PROJECT_ROOT}/tb/tb_rv64i_${TEST}.sv
+                -DTB_FILE=${_TB_FILE}
                 -DSIMULATOR=${SIMULATOR}
+                ${_EXTRA_ARGS}
                 -S ${PROJECT_ROOT}/sim
                 -B ${TEST_BUILD_DIR}/sim
         COMMAND ${CMAKE_COMMAND} --build ${TEST_BUILD_DIR}/sim --target ${SIM_TARGET}
