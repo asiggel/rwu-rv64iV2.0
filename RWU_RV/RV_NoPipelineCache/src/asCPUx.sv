@@ -410,9 +410,9 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mie_r <= regA_s;
             3'b010: csr_mie_r <= csr_mie_r | regA_s;
             3'b011: csr_mie_r <= csr_mie_r & ~regA_s;
-            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};
             default: csr_mie_r <= regA_s;
           endcase
     end
@@ -438,9 +438,9 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mstatus_r <= regA_s;
             3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
             3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
-            3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
             default: csr_mie_r <= regA_s;
           endcase
     end
@@ -462,9 +462,9 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mepc_r <= regA_s;
             3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
             3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
-            3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
             default: csr_mie_r <= regA_s;
           endcase
     end
@@ -480,9 +480,9 @@ module as_cpux (input  logic                         clk_i,
           3'b001: csr_mtvec_r <= regA_s;
           3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
           3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
-          3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+          3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
+          3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
+          3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
           default: csr_mie_r <= regA_s;
         endcase
   end
