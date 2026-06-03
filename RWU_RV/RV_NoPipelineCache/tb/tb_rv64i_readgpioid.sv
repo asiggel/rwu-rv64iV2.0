@@ -40,7 +40,7 @@ module tb_rv64i ();
   initial begin fd = $fopen("./error.txt", "a"); end
   always begin clk_s <= 1; #clk_2_t; clk_s <= 0; #clk_2_t; end
   always begin clk_core_s <= 1; #clk_80_t; clk_core_s <= 0; #clk_80_t; end
-  initial begin tck_s <= 0; tms_s <= 0; tdi_s <= 0; trst_s <= 1; end
+  initial begin tck_s <= 0; tms_s <= 0; tdi_s <= 0; trst_s <= 0; end
 
   initial begin #2000000000; $display("WATCHDOG: 2ms timeout"); $finish; end
 
@@ -53,38 +53,40 @@ module tb_rv64i ();
   //  16 SCK negedges  : DATA driven on io[3:0] (quad, MSB first → 64-bit)
   // The AXI4 FSM in as_qspi_top issues 4 separate CS# cycles per 32-byte cache line.
   //------------------------------------------
+  task automatic flash_transaction();
+    logic [23:0] faddr = '0;
+    logic [63:0] fword = '0;
+    int          widx  = 0;
+    int          cnt   = 0;
+    int          idx   = 0;
+    flash_oe_s    = 1'b0;
+    flash_drive_s = 4'b0;
+    while (flash_cs_s) begin
+      @(posedge sck_s); if (!flash_cs_s) return;
+      cnt++;
+      if (cnt >= 9 && cnt <= 14)
+        faddr = {faddr[19:0], flash_data_s[3:0]};
+      if (cnt >= 22 && idx < 16) begin
+        @(negedge sck_s); if (!flash_cs_s) return;
+        if (idx == 0) begin
+          widx  = int'(faddr) >> 2;
+          fword = {flash_mem_s[widx+1], flash_mem_s[widx]};
+        end
+        flash_oe_s    = 1'b1;
+        flash_drive_s = fword[63:60];
+        fword         = {fword[59:0], 4'b0};
+        idx++;
+        if (idx == 16) begin @(posedge sck_s); return; end
+      end
+    end
+  endtask
+
   always @(negedge flash_cs_s) begin flash_oe_s = 1'b0; flash_drive_s = 4'b0; end
   always begin
     @(posedge flash_cs_s);
-    begin
-      automatic logic [23:0] faddr = '0;
-      automatic logic [63:0] fword = '0;
-      automatic int          widx  = 0;
-      automatic int          cnt   = 0;
-      automatic int          idx   = 0;
-      flash_oe_s    = 1'b0;
-      flash_drive_s = 4'b0;
-      while (flash_cs_s) begin
-        @(posedge sck_s); if (!flash_cs_s) break;
-        cnt++;
-        if (cnt >= 9 && cnt <= 14)
-          faddr = {faddr[19:0], flash_data_s[3:0]};
-        if (cnt >= 22 && idx < 16) begin
-          @(negedge sck_s); if (!flash_cs_s) break;
-          if (idx == 0) begin
-            widx  = int'(faddr) >> 2;
-            fword = {flash_mem_s[widx+1], flash_mem_s[widx]};
-          end
-          flash_oe_s    = 1'b1;
-          flash_drive_s = fword[63:60];
-          fword         = {fword[59:0], 4'b0};
-          idx++;
-          if (idx == 16) begin @(posedge sck_s); break; end
-        end
-      end
-      flash_oe_s    = 1'b0;
-      flash_drive_s = 4'b0;
-    end
+    flash_transaction();
+    flash_oe_s    = 1'b0;
+    flash_drive_s = 4'b0;
   end
 
   always @(posedge cs_s) begin
