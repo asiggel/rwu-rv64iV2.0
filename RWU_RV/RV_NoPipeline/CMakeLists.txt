@@ -97,6 +97,7 @@ set(ASM_TESTS
     instr55csrrsi
     instr56csrrci
     instr57mret
+    instr58fence
 )
 
 # -------------------------------------------------
@@ -165,6 +166,7 @@ set(INSTR_TB_CONFIG
   "instr55csrrsi"    "csrrsi"      "25"
   "instr56csrrci"    "csrrci"      "20"
   "instr57mret"      "mret"        "57"
+  "instr58fence"     "fence"       "58"
 )
 
 list(LENGTH INSTR_TB_CONFIG _cfg_len)

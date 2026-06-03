@@ -40,6 +40,12 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
     trap_illegal_instr_o = 1'b0;
 
     case (instr_opcode_i)
+      // ---------------- FENCE ----------------
+      // Single-issue CPU with no cache: memory ordering is already total.
+      // Decode as legal no-op so software (GCC atomics, barriers) does not trap.
+      OP_FENCE: begin
+                end
+
       // ---------------- I-TYPE ----------------
       OP_LOAD: begin
                  en_regWr_o      = 1'b1;

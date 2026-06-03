@@ -12,6 +12,7 @@ package as_pack;
   // typedef enum for opcode
   typedef enum logic [6:0]
   {
+    OP_FENCE     = 7'b0001111, // 15,  I-type, fence / fence.i
     OP_LOAD      = 7'b0000011, // 3,   I-type, loads
     OP_OP_IMM    = 7'b0010011, // 19,  I-type (ADDI, ORI, etc.)
     OP_AUIPC     = 7'b0010111, // 23,  U-type, auipc
