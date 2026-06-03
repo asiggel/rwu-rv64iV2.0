@@ -197,6 +197,8 @@ set(memory_sections_LDSCRIPT ${NP_ROOT}/rv64Sim/memory_sections.ld)
 
 add_custom_target(regression)
 
+set(_prev_sim "")
+
 foreach(TEST ${ASM_TESTS})
 
     set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})
@@ -251,6 +253,12 @@ foreach(TEST ${ASM_TESTS})
         DEPENDS ${TEST_BUILD_DIR}/asm/rv64i.mem
         COMMENT "Simulating ${TEST} [${SIMULATOR}]"
     )
+
+    # Enforce list order: each test waits for the previous one
+    if(_prev_sim)
+        add_dependencies(sim_${TEST} ${_prev_sim})
+    endif()
+    set(_prev_sim sim_${TEST})
 
     add_dependencies(regression sim_${TEST})
 

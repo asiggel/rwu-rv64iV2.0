@@ -128,13 +128,13 @@ if(SIMULATOR STREQUAL "xsim")
     endif()
 
     add_custom_target(simulate
-        COMMAND xsim ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
+        COMMAND xsim ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg_reg.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating (xsim)"
     )
 
     add_custom_target(waves
-        COMMAND xsim --gui ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg2.tcl
+        COMMAND xsim --gui ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating with Vivado Waveform GUI"
     )
