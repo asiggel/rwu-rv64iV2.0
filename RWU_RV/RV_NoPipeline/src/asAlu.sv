@@ -25,7 +25,9 @@ module as_alu (input  logic [reg_width-1:0]      data01_i,
   
   assign tmp_sllw_s = data01_i[31:0] << shamt32;
   assign tmp_sign_sllw_s = tmp_sllw_s[31];
-  assign tmp_sraw_s = $signed(data01_i[31:0] >>> shamt32);
+  // $signed must wrap the operand, not the whole expression; otherwise >>>
+  // sees an unsigned value and degrades to a logical (zero-filling) shift.
+  assign tmp_sraw_s = $signed(data01_i[31:0]) >>> shamt32;
   assign tmp_sign_sraw_s = tmp_sraw_s[31];
   
   always_comb

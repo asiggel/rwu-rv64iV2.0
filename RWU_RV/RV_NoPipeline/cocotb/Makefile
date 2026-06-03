@@ -10,10 +10,12 @@
 # ---------------------------------------------------------------------------
 # Toolchain
 # ---------------------------------------------------------------------------
-TOPLEVEL_LANG := verilog
-SIM           := verilator
-TOPLEVEL      := as_top_mem
-MODULE        := test_poc
+TOPLEVEL_LANG        := verilog
+SIM                  := verilator
+TOPLEVEL             := as_top_mem
+# Default: full regression + ISS scoreboard.  Override for the smoke test:
+#   make COCOTB_TEST_MODULES=test_poc
+COCOTB_TEST_MODULES  ?= test_regression
 
 VENV          := $(abspath venv)
 PYTHON        := $(VENV)/bin/python3

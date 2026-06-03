@@ -52,8 +52,9 @@ module as_cpux (input  logic                         clk_i,
   logic                       dMemWr_s;     // write enable for dmem
 
   // PC
-  logic [iaddr_width-1:0] PCp4_s;   // linear code
-  logic [iaddr_width-1:0] PCbr_s;   // branch target; PCTarget
+  logic [iaddr_width-1:0] PCp4_s;    // next sequential fetch address (PC_s + 4)
+  logic [iaddr_width-1:0] PC_link_s; // JAL/JALR return address = PC_instr_r + 4
+  logic [iaddr_width-1:0] PCbr_s;    // branch/jump target
   logic	[iaddr_width-1:0] PCorRS1_s;
 
   // Immediate extention
@@ -283,7 +284,8 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // Adder +4 for the address of the next instruction
   //--------------------------------------------
-  assign PCp4_s = PC_s + 64'd4;
+  assign PCp4_s    = PC_s + 64'd4;
+  assign PC_link_s = PC_instr_r + 64'd4;  // spec-correct return address for JAL/JALR
 
   //--------------------------------------------
   // Mux for jumps of jalr instruction or normal branches.
@@ -373,7 +375,7 @@ module as_cpux (input  logic                         clk_i,
     case(resultSrcx_s)
       RES_ALU    : result_s = aluCalcRes_s;
       RES_MEM    : result_s = dBusDataRd_s;
-      RES_PC4    : result_s = PCp4_s;
+      RES_PC4    : result_s = PC_link_s;
       RES_CSR    : result_s = csr_data_s;
       default    : result_s = {reg_width{1'b0}};
     endcase
