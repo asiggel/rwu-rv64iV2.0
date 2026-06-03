@@ -1,0 +1,11 @@
+venv/
+sim_build/
+__pycache__/
+*.pyc
+results.xml
+dump.vcd
+dump.fst
+# generated mem file in CWD (copy of MEMFILE for $readmemh)
+riscvtest.mem
+# but keep committed test programs
+!programs/*.mem
