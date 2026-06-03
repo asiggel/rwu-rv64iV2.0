@@ -22,6 +22,14 @@ if(NOT DEFINED SIMULATOR)
     set(SIMULATOR "xsim")
 endif()
 
+# Optional plusargs for the unified instruction testbench tb_rv64i_instr.sv
+if(NOT DEFINED TB_TEST_NAME)
+    set(TB_TEST_NAME "")
+endif()
+if(NOT DEFINED TB_EXPECTED)
+    set(TB_EXPECTED "-1")
+endif()
+
 set(TB_TOP tb_rv64i)
 
 # -------------------------------------------------
@@ -111,14 +119,22 @@ if(SIMULATOR STREQUAL "xsim")
     )
     add_custom_target(elaborate DEPENDS elaborate.stamp)
 
+    if(TB_TEST_NAME)
+        set(_XSIM_PLUSARGS
+            --testplusarg "TEST_NAME=${TB_TEST_NAME}"
+            --testplusarg "EXPECTED=${TB_EXPECTED}")
+    else()
+        set(_XSIM_PLUSARGS "")
+    endif()
+
     add_custom_target(simulate
-        COMMAND xsim ${TB_TOP}_snapshot --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
+        COMMAND xsim ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating (xsim)"
     )
 
     add_custom_target(waves
-        COMMAND xsim --gui ${TB_TOP}_snapshot --tclbatch ${NP_ROOT}/sim/xsim_cfg2.tcl
+        COMMAND xsim --gui ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg2.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating with Vivado Waveform GUI"
     )
@@ -159,8 +175,13 @@ elseif(SIMULATOR STREQUAL "verilator")
     add_custom_target(verilate DEPENDS ${VERILATOR_OUT})
 
     set(RUN_SIM_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/run_sim.cmake)
-    file(WRITE ${RUN_SIM_SCRIPT}
-        "execute_process(COMMAND \"${VERILATOR_OUT}\")\n")
+    if(TB_TEST_NAME)
+        file(WRITE ${RUN_SIM_SCRIPT}
+            "execute_process(COMMAND \"${VERILATOR_OUT}\" \"+TEST_NAME=${TB_TEST_NAME}\" \"+EXPECTED=${TB_EXPECTED}\")\n")
+    else()
+        file(WRITE ${RUN_SIM_SCRIPT}
+            "execute_process(COMMAND \"${VERILATOR_OUT}\")\n")
+    endif()
 
     add_custom_target(simulate
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem
