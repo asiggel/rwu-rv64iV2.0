@@ -54,7 +54,8 @@ package as_pack;
     BR_LT,
     BR_GE,
     BR_LTU,
-    BR_GEU
+    BR_GEU,
+    BR_ALWAYS  // unconditional: JAL, JALR
   } br_op_t;
   
   typedef enum logic [2:0]

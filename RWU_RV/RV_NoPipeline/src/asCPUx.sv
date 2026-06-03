@@ -42,6 +42,7 @@ module as_cpux (input  logic                         clk_i,
   // instruction
   logic [instr_width-1:0]     iBusDataRd_s; // data out from imem
   logic [iaddr_width-1:0]     iBusAddr_s;   // address for imem
+  logic [iaddr_width-1:0]     PC_instr_r;   // PC of instruction currently in IR
 
   // data
   logic [reg_width-1:0]       dBusDataRd_s; // data out from dmem
@@ -147,12 +148,15 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // PC, Program Counter and IR (Instruction Register)
   //--------------------------------------------
-  assign iBusAddr_s = PC_s;
+  // During FETCH0_ST: when branch/jump taken, redirect I-Mem to the target;
+  // otherwise present PC_s (the address being refetched for the next instruction).
+  assign iBusAddr_s = (fetch0_phase_s && take_s) ? PCbr_s : PC_s;
   
   //--------------------------------------------
   // ... PC itself:
-  // PC represents the last committed architectural instruction
-  // and is only advanced on instr_commit_s
+  // PC is always one pipeline slot AHEAD of the instruction in IR:
+  //   PC_s = PC_instr_r + 4 during FETCH1/EXEC.
+  // It is advanced in each FETCH0_ST.
   //--------------------------------------------
   always_ff @(posedge clk_i, posedge rst_i)
   begin
@@ -163,17 +167,30 @@ module as_cpux (input  logic                         clk_i,
       if(fetch0_phase_s)
       begin
         if(trap_taken_s)
-          PC_s <= {csr_mtvec_r[63:2], 2'b00};  // Jump to trap vector
+          PC_s <= {csr_mtvec_r[63:2], 2'b00};
         else
           if(mret_pending_s)
-            PC_s <= csr_mepc_r;                // Return from trap
-          else 
+            PC_s <= csr_mepc_r;
+          else
             if(take_s)
-              PC_s <= PCbr_s;  // Branch/Jump
+              // +4 keeps PC one slot ahead of the branch target, matching
+              // the invariant for sequential instructions (PC = instr_addr + 4).
+              PC_s <= PCbr_s + 4;
             else
               PC_s <= PCp4_s;  // Sequential
       end
     end
+  end
+
+  // Captures the address of the instruction being fetched in FETCH0_ST.
+  // Used as branch/jump base and for AUIPC — correct even when a branch
+  // redirects iBusAddr_s away from PC_s.
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i)
+      PC_instr_r <= '0;
+    else if(fetch0_phase_s)
+      PC_instr_r <= iBusAddr_s;
   end
 
   //===========================================
@@ -273,7 +290,7 @@ module as_cpux (input  logic                         clk_i,
   //         - pc_o   : jalr
   //         - regA_s : normal branch
   //--------------------------------------------
-  assign PCorRS1_s = jump_s ? regA_s : iBusAddr_s;
+  assign PCorRS1_s = jump_s ? regA_s : PC_instr_r;
 
   //--------------------------------------------
   // Adder for the branch targets
@@ -327,7 +344,7 @@ module as_cpux (input  logic                         clk_i,
   always_comb
     case(aluSrcA_s)
       SRC_REGA    : srcA_s = regA_s;
-      SRC_PC      : srcA_s = PC_s;
+      SRC_PC      : srcA_s = PC_instr_r;
       SRC_ZERO    : srcA_s = {reg_width{1'b0}};
       default     : srcA_s = regA_s;
     endcase // case (aluSrcA_s)
@@ -517,9 +534,9 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mie_r <= regA_s;                                        // csrrw
             3'b010: csr_mie_r <= csr_mie_r | regA_s;                            // csrrs
             3'b011: csr_mie_r <= csr_mie_r & ~regA_s;                           // csrrc
-            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};               // csrrwi
-            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};   // csrrsi
-            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};  // csrrci
+            3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};               // csrrwi
+            3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};   // csrrsi
+            3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};  // csrrci
 	    default: csr_mie_r <= regA_s;
           endcase
     end
@@ -561,9 +578,9 @@ module as_cpux (input  logic                         clk_i,
                 3'b001: csr_mstatus_r <= regA_s;
                 3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
                 3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
-                3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+                3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
+                3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
+                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
 		default: csr_mie_r <= regA_s;
               endcase
     end
@@ -591,9 +608,9 @@ module as_cpux (input  logic                         clk_i,
               3'b001: csr_mepc_r <= regA_s;
               3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
               3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
-              3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+              3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
+              3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
+              3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
 	      default: csr_mie_r <= regA_s;
             endcase
     end
@@ -615,9 +632,9 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mtvec_r <= regA_s;
             3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
             3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
-            3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
 	    default: csr_mie_r <= regA_s;
           endcase
   end

@@ -157,6 +157,7 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                  sel_immSrc_o    = IMM_I;
                  mux_jump_o      = 1'b1;
                  mux_resultSrc_o = RES_PC4;
+                 br_op_o         = BR_ALWAYS;
                end
 
       // ---------------- JAL ----------------
@@ -164,11 +165,14 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                 en_regWr_o      = 1'b1;
                 sel_immSrc_o    = IMM_J;
                 mux_resultSrc_o = RES_PC4;
+                br_op_o         = BR_ALWAYS;
               end
 
       // ---------------- SYSTEM ----------------
       OP_SYSTEM: begin
                    mux_resultSrc_o = RES_CSR;
+                   if (instr_func3_i != 3'b000)  // mret (func3=0) does not write rd
+                     en_regWr_o = 1'b1;
                  end
 
       default: begin
