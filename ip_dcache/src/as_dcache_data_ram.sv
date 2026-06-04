@@ -23,7 +23,8 @@ module as_dcache_data_ram #(
     input  logic [LINE_BITS-1:0]           wr_data_i
 );
 
-    logic [LINE_BITS-1:0] mem [0:WAYS-1][0:SETS-1];
+    // FPGA: infer Block RAM (ASIC flow replaces this module with X-Fab macro wrapper)
+    (* ram_style = "block" *) logic [LINE_BITS-1:0] mem [0:WAYS-1][0:SETS-1];
 
     always_ff @(posedge clk_i) begin
         if (wr_en_i)

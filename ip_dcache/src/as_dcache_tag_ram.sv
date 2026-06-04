@@ -20,7 +20,9 @@ module as_dcache_tag_ram #(
     input  logic [TAG_BITS-1:0]           wr_data_i
 );
 
-    logic [TAG_BITS-1:0] mem [0:WAYS-1][0:SETS-1];
+    // FPGA: infer Distributed RAM (32×22 Bit/Way too small for BRAM; parallel way-read suits LUT-RAM)
+    // ASIC flow replaces this module with X-Fab macro wrapper
+    (* ram_style = "distributed" *) logic [TAG_BITS-1:0] mem [0:WAYS-1][0:SETS-1];
 
     always_ff @(posedge clk_i) begin
         if (wr_en_i)

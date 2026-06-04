@@ -4,7 +4,7 @@
 // Synchronous single-clock FIFO for the QSPI peripheral
 //
 // Converted from VHDL (fifo_e / fifo_a) with the following changes:
-//   - Reset changed to active-high synchronous (matches QSPI / Wishbone style)
+//   - Reset changed to active-high asynchronous (matches project-wide async-reset convention)
 //   - Data width default 64 bit, depth default 16 (matches QSPI spec)
 //   - Flush input added (for CTRL.TX_FLUSH / CTRL.RX_FLUSH)
 //   - half_full_o added  (RX_HALF / TX_HALF interrupt source)
@@ -75,7 +75,7 @@ module as_fifo #(
   parameter int AF_LEVEL   = FIFO_DEPTH*3/4,   // almost-full  threshold
   parameter int AE_LEVEL   = FIFO_DEPTH/4      // almost-empty threshold
 )(
-  input  logic                      rst_i,       // synchronous reset, active high
+  input  logic                      rst_i,       // asynchronous reset, active high
   input  logic                      clk_i,
   input  logic                      flush_i,     // synchronous flush, active high
 
@@ -115,6 +115,7 @@ module as_fifo #(
   // Local types and storage
   // ---------------------------------------------------------------------------
   localparam int PTR_WIDTH = $clog2(FIFO_DEPTH); // pointer width for wrap-around
+  localparam int CNT_WIDTH = PTR_WIDTH + 1;       // counter width (0 .. FIFO_DEPTH)
 
   //logic [DATA_WIDTH-1:0] mem [0:FIFO_DEPTH-1];
   (* ram_style = "registers" *) logic [DATA_WIDTH-1:0] mem [0:FIFO_DEPTH-1];
@@ -127,24 +128,25 @@ module as_fifo #(
   logic full_s;
   logic empty_s;
 
-  assign full_s  = (cnt_r == FIFO_DEPTH);
-  assign empty_s = (cnt_r == 0);
+  assign full_s  = (cnt_r == CNT_WIDTH'(FIFO_DEPTH));
+  assign empty_s = (cnt_r == '0);
 
   // ---------------------------------------------------------------------------
   // Main sequential process
   // Fixes vs. original VHDL:
-  //   - Reset is synchronous active-high (not async active-low)
+  //   - Reset is asynchronous active-high (matches project-wide convention)
+  //   - flush_i is synchronous (separate else-if branch)
   //   - cnt_r guarded: only increments on real writes (!full),
   //                    only decrements on real reads  (!empty)
   //   - Memory write guarded by !full
   //   - Simultaneous read+write (cnt unchanged) handled correctly
-  //   - flush_i supported
   // ---------------------------------------------------------------------------
-  always_ff @(posedge clk_i) begin : fifo_proc
-    if (rst_i || flush_i) begin
-      // -----------------------------------------------------------------------
-      // Reset / Flush: clear pointers and counter; memory content is don't-care
-      // -----------------------------------------------------------------------
+  always_ff @(posedge clk_i, posedge rst_i) begin : fifo_proc
+    if (rst_i) begin
+      wr_ptr_r <= '0;
+      rd_ptr_r <= '0;
+      cnt_r    <= '0;
+    end else if (flush_i) begin
       wr_ptr_r <= '0;
       rd_ptr_r <= '0;
       cnt_r    <= '0;
@@ -199,10 +201,10 @@ module as_fifo #(
   // ---------------------------------------------------------------------------
   assign full_o         = full_s;
   assign empty_o        = empty_s;
-  assign almost_full_o  = (cnt_r >  AF_LEVEL);
-  assign almost_empty_o = (cnt_r <  AE_LEVEL);
-  assign half_full_o    = (cnt_r >= FIFO_DEPTH / 2);  // RX_HALF interrupt source
-  assign half_empty_o   = (cnt_r <  FIFO_DEPTH / 2);  // TX_HALF interrupt source
+  assign almost_full_o  = (cnt_r >  CNT_WIDTH'(AF_LEVEL));
+  assign almost_empty_o = (cnt_r <  CNT_WIDTH'(AE_LEVEL));
+  assign half_full_o    = (cnt_r >= CNT_WIDTH'(FIFO_DEPTH / 2));  // RX_HALF interrupt source
+  assign half_empty_o   = (cnt_r <  CNT_WIDTH'(FIFO_DEPTH / 2));  // TX_HALF interrupt source
   assign level_o        = cnt_r;
 
 endmodule : as_fifo

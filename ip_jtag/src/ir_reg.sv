@@ -4,9 +4,9 @@
 
 import as_pack::*;
 
-module ir_reg ( input logic                 tck_i,      // Base clock
+module ir_reg #(parameter logic [ir_width-1:0] IR_RST = '0)  // IR reset value per bit (must be constant)
+              ( input logic                 tck_i,      // Base clock
                 input logic                 trst_i,     // TAPC reset
-                input logic [ir_width-1:0]  ir_rst_i,   // Reset value of the IR
                 input logic                 ir_shift_i, // For Mux: either shift tdi/tdo or capture data; Monitor only
                 input logic                 ir_clock_i, // Clock the IR shift register (Latch?); Monitor only
                 input logic                 ir_upd_i,   // Clock (activate) the IR hold register; Monitor only
@@ -24,9 +24,9 @@ module ir_reg ( input logic                 tck_i,      // Base clock
   generate
     for (i=0;i<ir_width;i++)
     begin
-      ir_cell ircell (.tck_i(tck_i),
+      ir_cell #(.IR_RST_VAL(IR_RST[i])) ircell (
+                      .tck_i(tck_i),
                       .trst_i(trst_i),
-                      .ir_rst_i(ir_rst_i[i]),
                       .ir_shift_i(ir_shift_i),
                       .ir_clock_i(ir_clock_i),
                       .ir_upd_i(ir_upd_i),

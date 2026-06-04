@@ -30,7 +30,8 @@ module as_sram_sp64 #(
     output logic [63:0]              rdata_o   // registered; valid 1 cycle after read
 );
 
-    logic [63:0] mem [0:DEPTH-1];
+    // FPGA: infer Block RAM (ASIC flow replaces this module with X-Fab macro wrapper)
+    (* ram_style = "block" *) logic [63:0] mem [0:DEPTH-1];
 
     always_ff @(posedge clk_i) begin
         if (cen_i) begin

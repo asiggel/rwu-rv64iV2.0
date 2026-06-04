@@ -153,11 +153,9 @@ elseif(SIMULATOR STREQUAL "verilator")
                 --timing
                 -Wall
                 -Wno-fatal
-                -Wno-DECLFILENAME
-                -Wno-PINCONNECTEMPTY
-                -Wno-PINNOCONNECT
-                -Wno-UNUSEDSIGNAL
-                -Wno-IMPORTSTAR
+                -Wno-DECLFILENAME       # camelCase filenames (asXxx.sv) vs snake_case module names (as_xxx): project-wide convention, mass-rename not worthwhile
+                -Wno-PINCONNECTEMPTY    # intentional .port() on unused outputs (FIFO status, clocks, Wishbone-Ack): explicit documentation of discarded outputs
+                -Wno-IMPORTSTAR         # import as_pack::* at $unit scope in all 27 RTL files; single-package design, namespace pollution is benign; mass-refactor to module-level import not worthwhile
                 --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir
                 -DLOGIC_SV
                 --trace-fst

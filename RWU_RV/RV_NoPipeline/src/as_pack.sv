@@ -131,9 +131,11 @@ package as_pack;
   localparam int       nr_regs          = 32;
 
   // memories & peripherals
+  /* verilator lint_off UNUSEDPARAM */ // used by flat-SRAM modules (asIMem, old asTopMem) not compiled in the Cache build
   localparam int       dmemdepth        = 1024; // amount of double words (if reg_width = 64); 1024 doubles = 8192 bytes => addr_width = 13
   localparam int       dmem_addr_width  = 13;   // address for all bytes (8192 double words * 8 Bytes = 65536 Bytes => 16 bit address)
   localparam int       imemdepth        = 8192; // 12 bit address, but the lower 2 will not be used; word alligned
+  /* verilator lint_on UNUSEDPARAM */
   localparam int       imem_addr_width  = 15;   // (8192 words accessible => 15 - 2 bits address)
   localparam int       cgu_addr_width   = 8;
   
@@ -150,7 +152,9 @@ package as_pack;
   localparam int       nr_drs = 5; // BY, BS, I-Mem, Scan, USERCODE
   localparam int       im_addr_width = imem_addr_width; // #address lines
   localparam int       im_data_width = instr_width;     // #data lines
+  /* verilator lint_off UNUSEDPARAM */ // used by old flat-SRAM asTopMem (JTAG iMem scan chain), not in Cache build
   localparam int       im_scan_length = im_addr_width + im_data_width + 1; // +1 for w_en; only writing
+  /* verilator lint_on UNUSEDPARAM */
 
   localparam int       chipsel = 4;
   localparam int       wbdSel = 8;
@@ -262,6 +266,7 @@ endpackage
 // CPU -- I-Cache interface
 // Spec: 03_arch_memory_concept.tex, subsec. "Instruction Bus (CPU -- I-Cache)"
 // ---------------------------------------------------------------------------
+/* verilator lint_off UNUSEDSIGNAL */ // interface ports clk_i/rst_i and modport-restricted members not used by all consumers
 interface as_icache_if (input logic clk_i,
                         input logic rst_i);
   logic [63:0] ic_addr;
@@ -279,11 +284,13 @@ interface as_icache_if (input logic clk_i,
                 output ic_stall, ic_flush_done, ic_err,
                        ic_rdata, ic_rvalid);
 endinterface
+/* verilator lint_on UNUSEDSIGNAL */
 
 // ---------------------------------------------------------------------------
 // CPU -- D-Cache interface
 // Spec: 03_arch_memory_concept.tex, subsec. "Data Bus (CPU -- D-Cache)"
 // ---------------------------------------------------------------------------
+/* verilator lint_off UNUSEDSIGNAL */
 interface as_dcache_if (input logic clk_i,
                         input logic rst_i);
   logic [63:0] dc_addr;
@@ -307,6 +314,7 @@ interface as_dcache_if (input logic clk_i,
                 output dc_stall, dc_flush_done, dc_err,
                        dc_rdata, dc_rvalid);
 endinterface
+/* verilator lint_on UNUSEDSIGNAL */
 
 // ---------------------------------------------------------------------------
 // AXI4 cache memory bus (I/D-Cache <--> Memory Arbiter <--> QSPI data port)
@@ -315,6 +323,7 @@ endinterface
 //       Channels used: AR, R (read-only for cache fills);
 //                      AW, W, B present for completeness / D-Cache write-back
 // ---------------------------------------------------------------------------
+/* verilator lint_off UNUSEDSIGNAL */ // clk_i/rst_i structural ports; AW/W/B write-channel members unused (D-Cache is read-only in current SoC)
 interface as_axi4_if #(
   parameter int ADDR_W = 32,
   parameter int DATA_W = 64,
@@ -384,4 +393,5 @@ interface as_axi4_if #(
            bid, bresp, bvalid
   );
 endinterface
+/* verilator lint_on UNUSEDSIGNAL */
 

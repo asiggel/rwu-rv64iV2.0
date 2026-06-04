@@ -260,7 +260,7 @@ module asICache #(
   // -------------------------------------------------------------------------
 
   // FSM block: delay
-  always_ff @(posedge clk_i)
+  always_ff @(posedge clk_i, posedge rst_i)
   begin
     if (rst_i)
       ic_state_s <= IDLE_ST;
@@ -269,7 +269,7 @@ module asICache #(
   end
 
   // FSM block: output logic
-  always_ff @(posedge clk_i)
+  always_ff @(posedge clk_i, posedge rst_i)
   begin
     if (rst_i) begin
       ar_valid_r   <= '0;

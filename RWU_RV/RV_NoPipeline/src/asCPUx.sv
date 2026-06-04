@@ -13,7 +13,9 @@ module as_cpux (input  logic                         clk_i,
                output logic                          sc01_tdo_o,   // scan: serial out
                input  logic                          sc01_tdi_i,   // scan: serial in
                input  logic                          sc01_shift_i, // scan: shift enable
-               input  logic                          sc01_clock_i, // scan: clock enabe
+               /* verilator lint_off UNUSEDSIGNAL */ // scan clock received for interface compatibility; not used in current scan chain implementation
+               input  logic                          sc01_clock_i,
+               /* verilator lint_on UNUSEDSIGNAL */ // scan: clock enabe
                // Instruction bus (legacy flat BPI)
                output logic [iaddr_width-1:0]        iBusAddr_o,     // I-Bus: address
                input  logic [instr_width-1:0]        iBusDataRd_i,   // I-Bus: data
@@ -26,7 +28,9 @@ module as_cpux (input  logic                         clk_i,
                as_icache_if.cpu                      icpu_if,
                as_dcache_if.cpu                      dcpu_if,
                // IRQ
+               /* verilator lint_off UNUSEDSIGNAL */ // only highest-priority IRQ (bit 7) implemented; lower bits reserved
                input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts, irq_ext_i[7] = GPIO
+               /* verilator lint_on UNUSEDSIGNAL */
               );
 
   localparam int XLEN = reg_width;
@@ -539,7 +543,7 @@ module as_cpux (input  logic                         clk_i,
             3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};               // csrrwi
             3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};   // csrrsi
             3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};  // csrrci
-	    default: csr_mie_r <= regA_s;
+            default: csr_mie_r <= csr_mie_r;
           endcase
     end
   end
@@ -583,7 +587,7 @@ module as_cpux (input  logic                         clk_i,
                 3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
                 3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
                 3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
-		default: csr_mie_r <= regA_s;
+                default: csr_mstatus_r <= csr_mstatus_r;
               endcase
     end
   end
@@ -613,7 +617,7 @@ module as_cpux (input  logic                         clk_i,
               3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
               3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
               3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
-	      default: csr_mie_r <= regA_s;
+              default: csr_mepc_r <= csr_mepc_r;
             endcase
     end
   end
@@ -637,7 +641,7 @@ module as_cpux (input  logic                         clk_i,
             3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
             3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
             3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
-	    default: csr_mie_r <= regA_s;
+            default: csr_mtvec_r <= csr_mtvec_r;
           endcase
   end
   
@@ -724,8 +728,10 @@ module as_cpux (input  logic                         clk_i,
   scan_cell sc01 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_tdi_i, and_in01_s, sc01_01_s);
   scan_cell sc02 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_01_s, and_in02_s, sc01_02_s);
   assign and_out_s = and_in01_s & and_in02_s;
-  scan_cell sc03 (clk_mux_s, rst_i, sc01_shift_i, and_out_s, sc01_02_s, , sc01_03_s); // to_some_pin1_s
-  scan_cell sc04 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_03_s, , sc01_tdo_o); // to_some_pin2_s
+  scan_cell sc03 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(and_out_s), .ser_i(sc01_02_s), .data_o(), .ser_o(sc01_03_s));
+  scan_cell sc04 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(1'b0), .ser_i(sc01_03_s), .data_o(), .ser_o(sc01_tdo_o));
 
 endmodule : as_cpux
 

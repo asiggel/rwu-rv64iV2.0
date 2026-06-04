@@ -38,7 +38,8 @@ module jtag ( input logic  tck_i,        // Test Clock
   logic	tdo_ena_s, tdo_ena_n_s;
 
   logic	[ir_width:0]   ser_ir_s;
-  logic	[ir_width-1:0] ir_rst_s, ir_data_s;
+  localparam logic [ir_width-1:0] ir_rst_s  = 'h96;  // IR reset value (constant → clean FDCE/FDPE per bit)
+  localparam logic [ir_width-1:0] ir_data_s = 'hf1;  // IR capture value (constant)
   logic [ir_width-1:0] ir_s; //IR
   logic		       tdo_ir_s;
 
@@ -79,16 +80,14 @@ module jtag ( input logic  tck_i,        // Test Clock
   //----------------------------------------
   // IR
   //----------------------------------------
-  assign ir_rst_s  = 'h96;
-  assign ir_data_s = 'hf1;
   assign ser_ir_s[0] = tdi_i;
   genvar i;
   generate
     for (i=0;i<ir_width;i++)
     begin
-      ir_cell ircell (.tck_i(tck_i),           // from IO
+      ir_cell #(.IR_RST_VAL(ir_rst_s[i])) ircell (
+                      .tck_i(tck_i),           // from IO
                       .trst_i(jtag_rst_s),     // from rst OR
-                      .ir_rst_i(ir_rst_s[i]),  // from constant
                       .ir_shift_i(ir_shift_s), // from FSM
                       .ir_clock_i(ir_clock_s), // from FSM
                       .ir_upd_i(ir_upd_s),     // from FSM

@@ -12,8 +12,10 @@ module as_alu (input  logic [reg_width-1:0]      data01_i,
 
   logic [5:0] shamt64;
   logic [4:0] shamt32;
+  /* verilator lint_off UNUSEDSIGNAL */ // only bit 31 (sign) is used; bits [30:0] are arithmetic intermediates
   logic [31:0] tmp_addw_s, tmp_subw_s, tmp_sllw_s, tmp_sraw_s;
-  logic	       tmp_sign_addw_s, tmp_sign_subw_s, tmp_sign_sllw_s, tmp_sign_sraw_s;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic        tmp_sign_addw_s, tmp_sign_subw_s, tmp_sign_sllw_s, tmp_sign_sraw_s;
 
   assign tmp_addw_s = data01_i[31:0] + data02_i[31:0];
   assign tmp_sign_addw_s = tmp_addw_s[31];
@@ -22,7 +24,7 @@ module as_alu (input  logic [reg_width-1:0]      data01_i,
 
   assign shamt64 = data02_i[5:0];
   assign shamt32 = data02_i[4:0];
-  
+
   assign tmp_sllw_s = data01_i[31:0] << shamt32;
   assign tmp_sign_sllw_s = tmp_sllw_s[31];
   // $signed must wrap the operand, not the whole expression; otherwise >>>

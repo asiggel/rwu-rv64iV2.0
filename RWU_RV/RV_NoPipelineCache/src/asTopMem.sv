@@ -35,15 +35,17 @@ module as_top_mem (
 
   // ── Signal declarations ─────────────────────────────────────────
   localparam int QSPI_AW = 8;
-  logic clk_core_s, clk_qspi_s, clk_bus1_s, clk_bus2_s;
+  logic clk_core_s, clk_qspi_s;
   logic dr_cap_s;
   logic clk_div_s;
 
-  // JTAG
+  // JTAG — signals driven by JTAG module but not yet consumed by iMem/boundary-scan chain
+  /* verilator lint_off UNUSEDSIGNAL */
   logic tap_rst_s;
   logic sc01_tdo_s, sc01_tdi_s, sc01_shift_s, sc01_clock_s;
   logic im_tdo_s, im_tdi_s, im_shift_s, im_clock_s, im_upd_s, im_mode_s;
   logic bs_tdo_s, bs_tdi_s, bs_shift_s, bs_clock_s, bs_upd_s, bs_mode_s;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   // Peripheral bridge
   logic [chipsel-1:0]     csx_s;
@@ -84,8 +86,6 @@ module as_top_mem (
   // All CGU domain clocks tied to core clock — no CDC needed until fast/slow
   // peripherals are added to the SoC and the CGU outputs are re-enabled.
   assign clk_qspi_s = clk_div_s;
-  assign clk_bus1_s = clk_div_s;
-  assign clk_bus2_s = clk_div_s;
 
   assign cs_o = asGpioCs_s;
 
