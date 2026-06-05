@@ -66,8 +66,11 @@ set(SOURCES_SV
     ${IP_ROOT}/ip_cgu/src/asCguCore.sv
     ${IP_ROOT}/ip_cgu/src/asCguTop.sv
 
-    # FIFO IP (needed by QSPI)
+    # FIFO IP (needed by QSPI and UART)
     ${IP_ROOT}/ip_fifo/src/as_fifo.sv
+
+    # UART0
+    ${IP_ROOT}/ip_uart_v2/src/as_uart_top.sv
 
     # QSPI controller IP
     ${IP_ROOT}/ip_qspi/src/as_qspi.sv

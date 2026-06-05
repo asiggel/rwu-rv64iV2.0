@@ -47,7 +47,9 @@ module tb_rv64i ();
     .sck_o        (sck_s),
     .flash_cs_o   (flash_cs_s),
     .flash_data_io(flash_data_s),
-    .clk_div_o    (clk_div_s)
+    .clk_div_o    (clk_div_s),
+    .uart0_tx_o   (),
+    .uart0_rx_i   (1'b1)
   );
 
   initial begin rst_s  <= 1; #(10*2*clk_2_t); rst_s  <= 0; end

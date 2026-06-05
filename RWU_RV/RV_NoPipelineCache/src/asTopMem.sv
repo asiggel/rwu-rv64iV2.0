@@ -29,6 +29,9 @@ module as_top_mem (
     output logic                    sck_o,
     output logic                    flash_cs_o,
     inout  tri   [3:0]              flash_data_io,
+    // UART0
+    output logic                    uart0_tx_o,
+    input  logic                    uart0_rx_i,
     // Clock for testbench (= clk_div_s = clk_core_s)
     output logic                    clk_div_o
 );
@@ -56,8 +59,10 @@ module as_top_mem (
   logic [reg_width-1:0]   dBusDataRdGpio_s;
   logic [reg_width-1:0]   dBusDataRdQspi_s;
   logic [reg_width-1:0]   dBusDataRdCgu_s;
+  logic [reg_width-1:0]   dBusDataRdUart_s;
   logic [reg_width-1:0]   periph_rdata_s;
-  logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s;
+  logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s, wbdstbUart_s;
+  logic                   irq_uart_s;
   // WB ACK signals intentionally unconnected: bridge uses fixed 1-cycle dc_rvalid
   logic                   is_periph_req_s;
   logic                   is_periph_r;
@@ -99,11 +104,12 @@ module as_top_mem (
 
   // Peripheral read-data mux
   always_comb
-    case(csx_s)
-      4'd2:    periph_rdata_s = dBusDataRdGpio_s;
-      4'd4:    periph_rdata_s = dBusDataRdQspi_s;
-      4'd8:    periph_rdata_s = dBusDataRdCgu_s;
-      default: periph_rdata_s = '0;
+    case (csx_s)
+      5'b00010: periph_rdata_s = dBusDataRdGpio_s;
+      5'b00100: periph_rdata_s = dBusDataRdQspi_s;
+      5'b01000: periph_rdata_s = dBusDataRdCgu_s;
+      5'b10000: periph_rdata_s = dBusDataRdUart_s;
+      default:  periph_rdata_s = '0;
     endcase
 
   // ── Peripheral bridge ───────────────────────────────────────────
@@ -125,6 +131,7 @@ module as_top_mem (
   assign wbdstbGpio_s = is_periph_req_s & csx_s[1];
   assign wbdstbQspi_s = is_periph_req_s & csx_s[2];
   assign wbdstbCgu_s  = is_periph_req_s & csx_s[3];
+  assign wbdstbUart_s = is_periph_req_s & csx_s[4];
 
   // ── Route CPU → asMemTop (non-peripheral only) ───────────────────
   assign dcpu_mem_if_s.dc_addr  = dcpu_if_s.dc_addr;
@@ -200,10 +207,34 @@ module as_top_mem (
     .qspi_irq_o (qspi_irq_s)
   );
 
+  // ── UART0  (base 0x0000_0001_0000_0600, 512 B, cs[4]) ────────────
+  localparam int UART0_AW = 8;
+
+  as_uart_top #(
+    .UART_ADDR_WIDTH(UART0_AW),
+    .UART_DATA_WIDTH(reg_width),
+    .FIFO_DEPTH(16)
+  ) uart0 (
+    .clk_i      (clk_div_s),
+    .rst_i      (rst_i),
+    .wbdAddr_i  (dBusAddr_periph_s[UART0_AW-1:0]),
+    .wbdDat_i   (dBusDataWr_periph_s),
+    .wbdDat_o   (dBusDataRdUart_s),
+    .wbdWe_i    (wbdwe_s),
+    .wbdSel_i   (sel_s),
+    .wbdStb_i   (wbdstbUart_s),
+    .wbdAck_o   (),             // peripheral bridge uses fixed 1-cycle dc_rvalid
+    .wbdCyc_i   (is_periph_req_s),
+    .tx_o       (uart0_tx_o),
+    .rx_i       (uart0_rx_i),
+    .uart_irq_o (irq_uart_s)
+  );
+
   // ── IRQ ──────────────────────────────────────────────────────────
   assign irq_external_s[7]   = irq_gpiox_s;
   assign irq_external_s[6]   = qspi_irq_s;
-  assign irq_external_s[5:0] = 6'b0;
+  assign irq_external_s[5]   = irq_uart_s;
+  assign irq_external_s[4:0] = 5'b0;
 
   // ── JTAG ─────────────────────────────────────────────────────────
   assign bs_tdo_s = 1'b0;
