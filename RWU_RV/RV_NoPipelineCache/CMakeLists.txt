@@ -36,6 +36,8 @@ message(STATUS "SIM_TARGET = ${SIM_TARGET}")
 # -------------------------------------------------
 set(ASM_TESTS
     readgpioid
+    uart_tx
+    uart_rx
     # ---- Table B.1 loads ----
     instr01loadbyte
     instr02loadhalf

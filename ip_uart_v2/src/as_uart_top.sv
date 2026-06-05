@@ -96,6 +96,9 @@ module as_uart_top #(
   logic wr_lcr_s, wr_clkdiv_s, wr_ctrl_s, wr_data_s;
   logic wr_rxthres_s, wr_imsc_s, wr_icr_s;
   logic rd_data_s;
+  // rd_data_s delayed by one clock — aligns RX FIFO pop with the CPU's EXECLD_ST data-capture
+  // phase.  Without this the FIFO pops at the EXEC→EXECLD edge, leaving DATA=0 in EXECLD_ST.
+  logic rd_data_r;
 
   // Configuration registers
   logic [reg_width-1:0] id_reg_s;
@@ -524,6 +527,11 @@ module as_uart_top #(
       rx_timeout_d <= rx_timeout_s;
     end
 
+  // rd_data_s delay register — see declaration comment above
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i) rd_data_r <= 1'b0;
+    else       rd_data_r <= rd_data_s;
+
   // RIS register
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i) begin
@@ -629,7 +637,7 @@ module as_uart_top #(
     .full_o        (rx_full_s),
     .almost_full_o (),
     .half_full_o   (rx_half_s),
-    .rd_en_i       (rd_data_s && !rx_empty_s),
+    .rd_en_i       (rd_data_r && !rx_empty_s),
     .data_rd_o     (rx_data_rd_s),
     .empty_o       (rx_empty_s),
     .almost_empty_o(),

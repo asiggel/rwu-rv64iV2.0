@@ -403,33 +403,29 @@ address; the base address is always aligned to $2^{AW}$ bytes so the lower
 \caption{System Memory Map}
 \label{tab:sysmap}
 \centering
+{\scriptsize
 \begin{tabularx}{\textwidth}{|l |l |l |l |X|}
   \hline
-  Base Address & End Address & Peripheral & AW & Notes \\
+  Base Address & Size & Peripheral & AW & Notes \\
   \hline
   \hline
   \multicolumn{5}{|l|}{\textit{Main memory (bit 32 = 0)}} \\
   \hline
-  \texttt{0x0000\_0000\_0000\_0000} & \texttt{0x0000\_0000\_0000\_FFFF}
-    & D-Mem / Scratchpad & --- & 64\;kB.
-      \textit{RV\_NoPipeline}: flat SRAM.
-      \textit{RV\_NoPipelineCache}: scratchpad (SP\_BASE\,=\,0). \\
+  \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem / Scratchpad & --- &
+    \textit{RV\_NoPipeline}: flat SRAM.
+    \textit{RV\_NoPipelineCache}: scratchpad. \\
   \hline
-  \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32 = 1, prefix 0x0000\_0001)}} \\
+  \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32\,=\,1)}} \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0000} & \texttt{0x0000\_0001\_0000\_01FF}
-    & \textbf{GPIO0} & 7 & 512\;B, cs[1]. Both project variants. \\
+  \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. Both variants. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0200} & \texttt{0x0000\_0001\_0000\_03FF}
-    & \textbf{QSPI0} & 8 & 512\;B, cs[2]. \textit{RV\_NoPipelineCache} only. \\
+  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \textit{RV\_NoPipelineCache} only. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0400} & \texttt{0x0000\_0001\_0000\_05FF}
-    & \textbf{CGU} & 4 & 512\;B, cs[3]. Both project variants. \\
+  \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. Both variants. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0600} & \texttt{0x0000\_0001\_0000\_07FF}
-    & \textbf{UART0} & 8 & 512\;B, cs[4]. Both project variants. \\
+  \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. Both variants. \\
   \hline
-\end{tabularx}
+\end{tabularx}}
 \end{table}
 
 Table~\ref{tab:uartoffsets} repeats the UART0 register offsets (from the UART0
@@ -440,6 +436,7 @@ Section~\ref{sec:uartfunc01}.
 \caption{UART0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0600})}
 \label{tab:uartoffsets}
 \centering
+{\footnotesize
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
   \hline
   Offset & Symbol & Mode & Description \\
@@ -469,7 +466,7 @@ Section~\ref{sec:uartfunc01}.
   \hline
   \texttt{0x58} & \asuartICRRegExt  & wo  & Interrupt Clear (write-1-to-clear) \\
   \hline
-\end{tabularx}
+\end{tabularx}}
 \end{table}
 
 \section{Interrupt Map}
@@ -482,6 +479,7 @@ Table~\ref{tab:irqmap} shows the assignment of external interrupt lines to the
 \caption{External Interrupt Map}
 \label{tab:irqmap}
 \centering
+{\footnotesize
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
   \hline
   IRQ Bit & Source & Signal & Notes \\
@@ -496,7 +494,7 @@ Table~\ref{tab:irqmap} shows the assignment of external interrupt lines to the
   \hline
   4\,--\,0 & reserved & --- & Tied to 0. \\
   \hline
-\end{tabularx}
+\end{tabularx}}
 \end{table}
 
 

@@ -41,6 +41,8 @@ set(ASM_TESTS
     instr99scantest
     instr99loadimem
     readgpioid
+    uart_tx
+    uart_rx
     instr01loadbyte
     instr02loadhalf
     instr03loadword
