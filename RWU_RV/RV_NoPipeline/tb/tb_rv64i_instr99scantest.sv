@@ -48,7 +48,9 @@ module tb_rv64i ();
               .tdi_i(tdi_s),
               .tdo_o(tdo_s),
               .gpio_io(gpio_s),
-              .cs_o(cs_s)
+              .cs_o(cs_s),
+              .uart0_tx_o(),
+              .uart0_rx_i(1'b1)
              );
   // read instructions
   initial

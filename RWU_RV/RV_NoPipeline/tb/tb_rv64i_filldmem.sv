@@ -32,7 +32,9 @@ module tb_rv64i ();
               .tdo_o(tdo_s),
               .gpio_o(gpio_s),
               .gpioAddr_o(gpioAddr_s),
-              .cs_o(cs_s)
+              .cs_o(cs_s),
+              .uart0_tx_o(),
+              .uart0_rx_i(1'b1)
              );
   // read instructions
   initial

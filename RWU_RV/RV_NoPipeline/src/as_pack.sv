@@ -156,7 +156,7 @@ package as_pack;
   localparam int       im_scan_length = im_addr_width + im_data_width + 1; // +1 for w_en; only writing
   /* verilator lint_on UNUSEDPARAM */
 
-  localparam int       chipsel = 4;
+  localparam int       chipsel = 5;   // DMem, GPIO, QSPI, CGU, UART0
   localparam int       wbdSel = 8;
 
   // CGU
@@ -184,8 +184,8 @@ package as_pack;
   //localparam logic [63:0]       qspi_end_address_c             = 64'h00000001_000000BF; // 12 regs     // unused (Verilator UNUSEDPARAM)
   //localparam logic [63:0]       cgu_start_address_c            = 64'h00000001_000000C0;               // unused (Verilator UNUSEDPARAM)
   //localparam logic [63:0]       cgu_end_address_c              = 64'h00000001_0000011F; // 12 regs     // unused (Verilator UNUSEDPARAM)
-  //localparam logic [63:0]       uart0_start_address_c          = 64'h00000001_00000120;               // unused (Verilator UNUSEDPARAM)
-  //localparam logic [63:0]       uart0_end_address_c            = 64'h00000001_0000017F; // 12 regs     // unused (Verilator UNUSEDPARAM)
+  localparam logic [63:0]       uart0_start_address_c          = 64'h00000001_00000600; // byte address, lower 8 bits = 0x00
+  localparam logic [63:0]       uart0_end_address_c            = 64'h00000001_000007FF; // 512 bytes (64 x 8-byte registers)
 
   // register addresses
   //localparam int       gpio_base_addr_c               = 64'h00000001_00000000; // byte address
