@@ -50,6 +50,12 @@ rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator
 cmake --build build --target collect_errors
 
+- Regression Verilator simulation with wave
+---------------------------------------------
+rm -rf build
+cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+cmake --build build --target sim_test_trap
+
 
 
 2Do:

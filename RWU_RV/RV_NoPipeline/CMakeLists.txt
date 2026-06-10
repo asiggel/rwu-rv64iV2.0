@@ -50,6 +50,8 @@ set(ASM_TESTS
     instr19add
     instr07slli
     instr29lui
+    test_csrs
+    test_trap
 )
 
 add_custom_target(regression)

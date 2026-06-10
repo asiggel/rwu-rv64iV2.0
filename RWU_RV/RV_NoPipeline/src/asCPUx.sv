@@ -74,6 +74,8 @@ module as_cpux (input  logic                         clk_i,
   logic	and_out_s;
 
   //IRQ
+  logic [63:0] csr_mscratch_r;
+  logic [63:0] csr_mtval_r;
   logic [63:0] csr_mepc_r;
   logic [63:0] csr_mcause_r;
   logic [63:0] csr_mtvec_r;
@@ -89,6 +91,9 @@ module as_cpux (input  logic                         clk_i,
   logic	regWr_final_s;
   
   logic	trap_taken_s;
+
+  logic instr_mret_s;
+  assign instr_mret_s = (ir_s == 32'h30200073);
   
   logic	irq_pending_s;
 
@@ -454,8 +459,7 @@ module as_cpux (input  logic                         clk_i,
     if(rst_i)
       mret_pending_s <= 1'b0;
     else
-      //if(is_mret_s && exec_phase_s)
-      if(exec_phase_s && is_mret_fetched_s)// && ir_valid_s)
+      if(is_mret_s && exec_phase_s)
         mret_pending_s <= 1'b1;
       else if(fetch0_phase_s)
         mret_pending_s <= 1'b0;
@@ -564,7 +568,7 @@ module as_cpux (input  logic                         clk_i,
                 3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
                 3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
                 3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-		default: csr_mie_r <= regA_s;
+		default: csr_mstatus_r <= regA_s;
               endcase
     end
   end
@@ -594,11 +598,34 @@ module as_cpux (input  logic                         clk_i,
               3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
               3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
               3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	      default: csr_mie_r <= regA_s;
+	      default: csr_mepc_r <= regA_s;
             endcase
     end
   end
   
+  //===========================================
+  // CSR: MSCRATCH 
+  //===========================================
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i)
+      csr_mscratch_r <= 64'h0;
+    else
+    begin
+      if(exec_phase_s && ir_valid_s)
+        if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h340))
+          case(ir_s[14:12])
+            3'b001: csr_mscratch_r <= regA_s;
+            3'b010: csr_mscratch_r <= csr_mscratch_r | regA_s;
+            3'b011: csr_mscratch_r <= csr_mscratch_r & ~regA_s;
+            3'b101: csr_mscratch_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mscratch_r <= csr_mscratch_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mscratch_r <= csr_mscratch_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            default: csr_mscratch_r <= regA_s; 
+          endcase
+    end
+  end
+
   // MTVEC: 64 bit, WARL, h305; OK
   // MTVEC[1:0] = 0 => direct mode
   //===========================================
@@ -618,7 +645,7 @@ module as_cpux (input  logic                         clk_i,
             3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
             3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
             3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	    default: csr_mie_r <= regA_s;
+	    default: csr_mtvec_r <= regA_s;
           endcase
   end
   
@@ -652,6 +679,42 @@ module as_cpux (input  logic                         clk_i,
     end
   end // always_ff @ (posedge clk_i, posedge rst_i)
   
+//===========================================
+  // CSR: MTVAL (Machine Trap Value)
+  //===========================================
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i)
+      csr_mtval_r <= 64'h0;
+    else 
+    begin
+      if(trap_taken_s) 
+      begin
+        // Hardware-Update beim Trap
+        if(trap_illegal_s)
+          csr_mtval_r <= {57'h0, ir_s[6:0]};
+        else if(trap_misaligned_s)
+          csr_mtval_r <= dBusAddr_s;
+        else
+          csr_mtval_r <= 64'h0;
+      end
+      else if(exec_phase_s && ir_valid_s)
+      begin
+        // Software-Update über CSR-Instruktionen
+        if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h343))
+          case(ir_s[14:12])
+            3'b001: csr_mtval_r <= regA_s;
+            3'b010: csr_mtval_r <= csr_mtval_r | regA_s;
+            3'b011: csr_mtval_r <= csr_mtval_r & ~regA_s;
+            3'b101: csr_mtval_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mtval_r <= csr_mtval_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mtval_r <= csr_mtval_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            default: csr_mtval_r <= regA_s;
+          endcase
+      end
+    end
+  end
+
   //===========================================
   // CSR Read Mux
   //===========================================
@@ -663,8 +726,10 @@ module as_cpux (input  logic                         clk_i,
         12'h300: csr_data_s = csr_mstatus_r;
         12'h304: csr_data_s = csr_mie_r;
         12'h305: csr_data_s = csr_mtvec_r;
+        12'h340: csr_data_s = csr_mscratch_r;
         12'h341: csr_data_s = csr_mepc_r;
         12'h342: csr_data_s = csr_mcause_r;
+        12'h343: csr_data_s = csr_mtval_r;
         12'h344: csr_data_s = csr_mip_r;
         default: csr_data_s = 64'h0;
       endcase
