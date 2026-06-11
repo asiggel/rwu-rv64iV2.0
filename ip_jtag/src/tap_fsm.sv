@@ -27,7 +27,9 @@ module tap_fsm ( input  logic tck_i,          // Base clock
   logic	ir_shift_s;    // For Mux: either shift tdi/tdo or capture data
   logic	ir_clock_s;    // Clock the IR shift register (Latch?)
   logic	ir_upd_s;      // Clock (activate) the IR hold register
+  /* verilator lint_off UNUSEDSIGNAL */ // ir_cap_o output is commented out; signal kept for future reconnection
   logic	ir_cap_s;      // Load parallel data to IR
+  /* verilator lint_on UNUSEDSIGNAL */
 
   logic	dr_shift_s;    // For Mux: either shift tdi/tdo or capture data
   logic	dr_clock_s;    // Clock the DR shift register (Latch?)
@@ -38,8 +40,8 @@ module tap_fsm ( input  logic tck_i,          // Base clock
   logic	irdr_select_s; // Select either IR or DR for TDO
   logic	tdo_ena_s;     // Select TDO or 'Z'
 
-  // make reset invertible if needed (active high <-> active low)
-  assign trst_s = trst_i;
+  // active-low TRST# per IEEE 1149.1
+  assign trst_s = ~trst_i;
 
   // FSM block 2: delay
   always_ff @(posedge tck_i, posedge trst_s)

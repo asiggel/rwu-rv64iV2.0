@@ -126,6 +126,7 @@ build/
 *.wcfg
 *.v
 *.mem
+.*.timestamp
 
 # =========================
 # LibreOffice

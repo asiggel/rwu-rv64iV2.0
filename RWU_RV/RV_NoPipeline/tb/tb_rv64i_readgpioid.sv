@@ -33,7 +33,9 @@ module tb_rv64i ();
               .tdo_o(tdo_s),
               .gpio_io(gpio_s),
               //.gpioAddr_o(gpioAddr_s),
-              .cs_o(cs_s)
+              .cs_o(cs_s),
+              .uart0_tx_o(),
+              .uart0_rx_i(1'b1)
              );
   // read instructions
   initial
@@ -67,7 +69,7 @@ module tb_rv64i ();
     tck_s  <= 0;
     tms_s  <= 0;
     tdi_s  <= 0;
-    trst_s <= 1; // reset
+    trst_s <= 0; // TRST# active-low: assert reset to keep TAP FSM in reset_st
   end
 
   always

@@ -359,8 +359,9 @@
 %\section{QSPI Claude}
 %\input{\TEXTqspi as_qspi_spec}
 
-
-
+% UART
+\section{UART}
+\input{\TEXTuart 05_uart_all}
 
 
 
@@ -382,6 +383,118 @@ Not yet
 % C: Memory Map and Registers
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \chapter{Memory Map and Registers}
-Not yet
+\label{ch:memmap}
+
+\section{System Memory Map}
+\label{sec:sysmap}
+
+Table~\ref{tab:sysmap} shows the complete address map of the \aschip{} system.
+The address space is 64-bit.
+Bit~32 of the address separates main memory (bit~32\,=\,0) from the peripheral
+bus (bit~32\,=\,1); the peripheral bridge in \textbf{RV\_NoPipelineCache} uses
+this bit to route accesses.
+All peripheral registers are 64-bit wide and 8-byte aligned.
+The column \textit{AW} gives the address-width parameter passed to the
+peripheral's Wishbone slave interface (lower \textit{AW} bits of the full
+address; the base address is always aligned to $2^{AW}$ bytes so the lower
+\textit{AW} bits equal the register offset directly).
+
+\begin{table}[H]
+\caption{System Memory Map}
+\label{tab:sysmap}
+\centering
+{\scriptsize
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Base Address & Size & Peripheral & AW & Notes \\
+  \hline
+  \hline
+  \multicolumn{5}{|l|}{\textit{Main memory (bit 32 = 0)}} \\
+  \hline
+  \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem / Scratchpad & --- &
+    \textit{RV\_NoPipeline}: flat SRAM.
+    \textit{RV\_NoPipelineCache}: scratchpad. \\
+  \hline
+  \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32\,=\,1)}} \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. Both variants. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \textit{RV\_NoPipelineCache} only. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. Both variants. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. Both variants. \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+Table~\ref{tab:uartoffsets} repeats the UART0 register offsets (from the UART0
+base address) for quick reference; full bit-field descriptions are in
+Section~\ref{sec:uartfunc01}.
+
+\begin{table}[H]
+\caption{UART0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0600})}
+\label{tab:uartoffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asuartIDRegExt   & ro  & Peripheral ID (\texttt{0x20}) \\
+  \hline
+  \texttt{0x08} & \asuartLcrRegExt  & rw  & Line Control (data bits, parity, stop bits, break) \\
+  \hline
+  \texttt{0x10} & \asuartClkdivRegExt & rw & Baud-rate divisor (16-bit) \\
+  \hline
+  \texttt{0x18} & \asuartCtrlRegExt & rw  & Control (loopback, tx\_flush, rx\_flush) \\
+  \hline
+  \texttt{0x20} & \asuartStatusRegExt & ro & TX/RX busy; sticky error flags \\
+  \hline
+  \texttt{0x28} & \asuartDataRegExt & rw  & Write: TX FIFO push; Read: RX FIFO pop \\
+  \hline
+  \texttt{0x30} & \asuartFifostatRegExt & ro & TX/RX FIFO levels, full, half, empty \\
+  \hline
+  \texttt{0x38} & \asuartRxthresRegExt & rw & RX interrupt threshold (default\,=\,8) \\
+  \hline
+  \texttt{0x40} & \asuartRISRegExt  & ro  & Raw Interrupt Status \\
+  \hline
+  \texttt{0x48} & \asuartIMSCRegExt & rw  & Interrupt Mask Control \\
+  \hline
+  \texttt{0x50} & \asuartMISRegExt  & ro  & Masked Interrupt Status \\
+  \hline
+  \texttt{0x58} & \asuartICRRegExt  & wo  & Interrupt Clear (write-1-to-clear) \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+\section{Interrupt Map}
+\label{sec:irqmap}
+
+Table~\ref{tab:irqmap} shows the assignment of external interrupt lines to the
+\aschip{} CPU.
+
+\begin{table}[H]
+\caption{External Interrupt Map}
+\label{tab:irqmap}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  IRQ Bit & Source & Signal & Notes \\
+  \hline
+  \hline
+  7 & GPIO0 & \asgpioIRQ & Input change on any GPIO pin (masked via IMSC). \\
+  \hline
+  6 & QSPI0 & \asqspiIRQ & DONE / RXHALF / TXHALF / ERR / TIMEOUT
+    (\textit{RV\_NoPipelineCache} only). \\
+  \hline
+  5 & UART0 & \asuartIRQ & RX-ready, TX-ready, timeout, frame/parity/overrun/break. \\
+  \hline
+  4\,--\,0 & reserved & --- & Tied to 0. \\
+  \hline
+\end{tabularx}}
+\end{table}
 
 

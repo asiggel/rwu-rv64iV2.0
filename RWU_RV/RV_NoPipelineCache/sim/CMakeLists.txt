@@ -22,6 +22,14 @@ if(NOT DEFINED SIMULATOR)
     set(SIMULATOR "xsim")
 endif()
 
+# Optional plusargs for the unified instruction testbench tb_rv64i_instr.sv
+if(NOT DEFINED TB_TEST_NAME)
+    set(TB_TEST_NAME "")
+endif()
+if(NOT DEFINED TB_EXPECTED)
+    set(TB_EXPECTED "-1")
+endif()
+
 set(TB_TOP tb_rv64i)
 
 # -------------------------------------------------
@@ -58,8 +66,11 @@ set(SOURCES_SV
     ${IP_ROOT}/ip_cgu/src/asCguCore.sv
     ${IP_ROOT}/ip_cgu/src/asCguTop.sv
 
-    # FIFO IP (needed by QSPI)
+    # FIFO IP (needed by QSPI and UART)
     ${IP_ROOT}/ip_fifo/src/as_fifo.sv
+
+    # UART0
+    ${IP_ROOT}/ip_uart_v2/src/as_uart_top.sv
 
     # QSPI controller IP
     ${IP_ROOT}/ip_qspi/src/as_qspi.sv
@@ -111,14 +122,22 @@ if(SIMULATOR STREQUAL "xsim")
     )
     add_custom_target(elaborate DEPENDS elaborate.stamp)
 
+    if(TB_TEST_NAME)
+        set(_XSIM_PLUSARGS
+            --testplusarg "TEST_NAME=${TB_TEST_NAME}"
+            --testplusarg "EXPECTED=${TB_EXPECTED}")
+    else()
+        set(_XSIM_PLUSARGS "")
+    endif()
+
     add_custom_target(simulate
-        COMMAND xsim ${TB_TOP}_snapshot --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
+        COMMAND xsim ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg_reg.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating (xsim)"
     )
 
     add_custom_target(waves
-        COMMAND xsim --gui ${TB_TOP}_snapshot --tclbatch ${NP_ROOT}/sim/xsim_cfg2.tcl
+        COMMAND xsim --gui ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${NP_ROOT}/sim/xsim_cfg.tcl
         DEPENDS elaborate.stamp
         COMMENT "Simulating with Vivado Waveform GUI"
     )
@@ -140,13 +159,9 @@ elseif(SIMULATOR STREQUAL "verilator")
                 --timing
                 -Wall
                 -Wno-fatal
-                -Wno-DECLFILENAME
-                -Wno-PINCONNECTEMPTY
-                -Wno-PINNOCONNECT
-                -Wno-UNUSEDSIGNAL
-                -Wno-IMPORTSTAR
-                -Wno-MULTITOP
-                -Wno-UNUSEDPARAM
+                -Wno-DECLFILENAME       # camelCase filenames (asXxx.sv) vs snake_case module names (as_xxx): project-wide convention, mass-rename not worthwhile
+                -Wno-PINCONNECTEMPTY    # intentional .port() on unused outputs (FIFO status, clocks, Wishbone-Ack): explicit documentation of discarded outputs
+                -Wno-IMPORTSTAR         # import as_pack::* at $unit scope in all 27 RTL files; single-package design, namespace pollution is benign; mass-refactor to module-level import not worthwhile
                 --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir
                 -DLOGIC_SV
                 --trace-fst
@@ -159,8 +174,13 @@ elseif(SIMULATOR STREQUAL "verilator")
     add_custom_target(verilate DEPENDS ${VERILATOR_OUT})
 
     set(RUN_SIM_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/run_sim.cmake)
-    file(WRITE ${RUN_SIM_SCRIPT}
-        "execute_process(COMMAND \"${VERILATOR_OUT}\")\n")
+    if(TB_TEST_NAME)
+        file(WRITE ${RUN_SIM_SCRIPT}
+            "execute_process(COMMAND \"${VERILATOR_OUT}\" \"+TEST_NAME=${TB_TEST_NAME}\" \"+EXPECTED=${TB_EXPECTED}\")\n")
+    else()
+        file(WRITE ${RUN_SIM_SCRIPT}
+            "execute_process(COMMAND \"${VERILATOR_OUT}\")\n")
+    endif()
 
     add_custom_target(simulate
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem

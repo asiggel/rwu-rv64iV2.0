@@ -7,7 +7,9 @@ import as_pack::*;
 module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       // opcode field
                         input logic [func3_width-1:0]     instr_func3_i,        // func3 field
                         input logic                       instr_func7b5_i,      // bit 5 of func7 field
+                        /* verilator lint_off UNUSEDSIGNAL */ // take_i kept for interface compatibility; branch logic uses pc/imm directly
                         input logic                       take_i,               // branch taken
+                        /* verilator lint_on UNUSEDSIGNAL */
                         output result_src_t               mux_resultSrc_o,      // Mux behind DMem
                         output logic                      en_dMemWr_o,          // D-Mem write enable
                         output logic                      en_dMemRd_o,          // D-Mem read enable; almost not needed anymore
@@ -40,6 +42,12 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
     trap_illegal_instr_o = 1'b0;
 
     case (instr_opcode_i)
+      // ---------------- FENCE ----------------
+      // Single-issue CPU with no cache: memory ordering is already total.
+      // Decode as legal no-op so software (GCC atomics, barriers) does not trap.
+      OP_FENCE: begin
+                end
+
       // ---------------- I-TYPE ----------------
       OP_LOAD: begin
                  en_regWr_o      = 1'b1;
@@ -157,6 +165,7 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                  sel_immSrc_o    = IMM_I;
                  mux_jump_o      = 1'b1;
                  mux_resultSrc_o = RES_PC4;
+                 br_op_o         = BR_ALWAYS;
                end
 
       // ---------------- JAL ----------------
@@ -164,11 +173,14 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                 en_regWr_o      = 1'b1;
                 sel_immSrc_o    = IMM_J;
                 mux_resultSrc_o = RES_PC4;
+                br_op_o         = BR_ALWAYS;
               end
 
       // ---------------- SYSTEM ----------------
       OP_SYSTEM: begin
                    mux_resultSrc_o = RES_CSR;
+                   if (instr_func3_i != 3'b000)  // mret (func3=0) does not write rd
+                     en_regWr_o = 1'b1;
                  end
 
       default: begin

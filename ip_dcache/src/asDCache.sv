@@ -359,7 +359,7 @@ module asDCache #(
   // -------------------------------------------------------------------------
 
   // FSM block: delay
-  always_ff @(posedge clk_i) begin
+  always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       dc_state_s <= IDLE_ST;
     else
@@ -367,7 +367,7 @@ module asDCache #(
   end
 
   // FSM block: output logic
-  always_ff @(posedge clk_i) begin
+  always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i) begin
       ar_valid_r   <= '0;
       aw_valid_r   <= '0;
@@ -612,7 +612,7 @@ module asDCache #(
     automatic logic [LINE_BITS-1:0] r = line;
     for (int b = 0; b < 8; b++)
       if (wstrb[b])
-        r[{dw_sel, 6'd0} + b*8 +: 8] = wdata[b*8 +: 8];
+        r[{dw_sel, 3'(b), 3'b0} +: 8] = wdata[b*8 +: 8];
     return r;
   endfunction
 

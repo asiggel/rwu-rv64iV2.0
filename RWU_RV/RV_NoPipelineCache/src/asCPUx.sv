@@ -22,12 +22,16 @@ module as_cpux (input  logic                         clk_i,
                output logic                          sc01_tdo_o,
                input  logic                          sc01_tdi_i,
                input  logic                          sc01_shift_i,
+               /* verilator lint_off UNUSEDSIGNAL */ // scan clock received for interface compatibility; not used in current scan chain implementation
                input  logic                          sc01_clock_i,
+               /* verilator lint_on UNUSEDSIGNAL */
                // Cache interfaces (active in this version)
                as_icache_if.cpu                      icpu_if,
                as_dcache_if.cpu                      dcpu_if,
                // IRQ
+               /* verilator lint_off UNUSEDSIGNAL */ // only highest-priority IRQ (bit 7) implemented; lower bits reserved
                input logic [irq_total_num_ext_c-1:0] irq_ext_i
+               /* verilator lint_on UNUSEDSIGNAL */
               );
 
   localparam int XLEN = reg_width;
@@ -51,6 +55,12 @@ module as_cpux (input  logic                         clk_i,
   logic [iaddr_width-1:0] PCp4_s;
   logic [iaddr_width-1:0] PCbr_s;
   logic [iaddr_width-1:0] PCorRS1_s;
+  // PC_fetch_r captures the address sent to ICache each FETCH0 (pre-increment).
+  // This is the true PC of the instruction currently in ir_s and is used as the
+  // base for branch/JAL target computation and AUIPC, replacing PC_s which has
+  // already been incremented by 4 when those values are needed in EXEC.
+  logic [iaddr_width-1:0] PC_fetch_r;
+  logic [iaddr_width-1:0] ic_addr_s;
 
   logic [reg_width-1:0] immExt_s;
   logic [reg_width-1:0] srcA_s, regA_s;
@@ -99,7 +109,10 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // I-Cache interface
   //--------------------------------------------
-  assign icpu_if.ic_addr  = PC_s;
+  // When a branch/JAL is taken, redirect the ICache immediately to the correct
+  // target (PCbr_s) rather than the fallthrough address, eliminating the delay slot.
+  assign ic_addr_s        = (fetch0_phase_s && take_s) ? PCbr_s : PC_s;
+  assign icpu_if.ic_addr  = ic_addr_s;
   assign icpu_if.ic_req   = fetch0_phase_s;   // 1-cycle pulse in FETCH0
   assign icpu_if.ic_flush = 1'b0;
 
@@ -116,7 +129,7 @@ module as_cpux (input  logic                         clk_i,
   assign dcpu_if.dc_flush = 1'b0;
 
   // Internal data-bus aliases
-  assign iBusAddr_s   = PC_s;
+  assign iBusAddr_s   = PC_fetch_r;
   assign dBusAddr_s   = aluRes_s;
   assign dBusDataRd_s = dcpu_if.dc_rdata;     // sign/zero ext done by scratchpad / cache
 
@@ -159,10 +172,17 @@ module as_cpux (input  logic                         clk_i,
       if(fetch0_phase_s) begin
         if(trap_taken_s)      PC_s <= {csr_mtvec_r[63:2], 2'b00};
         else if(mret_pending_s) PC_s <= csr_mepc_r;
-        else if(take_s)        PC_s <= PCbr_s;
+        else if(take_s)        PC_s <= PCbr_s + 64'd4;
         else                   PC_s <= PCp4_s;
       end
     end
+  end
+
+  // Capture the address actually sent to the ICache each FETCH0 cycle.
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i)               PC_fetch_r <= 64'h0;
+    else if(fetch0_phase_s) PC_fetch_r <= ic_addr_s;
   end
 
   //--------------------------------------------
@@ -259,7 +279,7 @@ module as_cpux (input  logic                         clk_i,
       IMM_S    : immExt_s = {{(XLEN-12){ir_s[31]}}, ir_s[31:25], ir_s[11:7]};
       IMM_B    : immExt_s = {{(XLEN-12){ir_s[31]}}, ir_s[7], ir_s[30:25], ir_s[11:8], 1'b0};
       IMM_J    : immExt_s = {{(XLEN-20){ir_s[31]}}, ir_s[19:12], ir_s[20], ir_s[30:21], 1'b0};
-      IMM_U    : immExt_s = {{(XLEN-32){1'b0}}, ir_s[31:12], 12'b0};
+      IMM_U    : immExt_s = {{(XLEN-32){ir_s[31]}}, ir_s[31:12], 12'b0};
       IMM_NONE : immExt_s = {reg_width{1'b0}};
       default  : immExt_s = {reg_width{1'b0}};
     endcase
@@ -272,7 +292,7 @@ module as_cpux (input  logic                         clk_i,
   always_comb
     case(aluSrcA_s)
       SRC_REGA : srcA_s = regA_s;
-      SRC_PC   : srcA_s = PC_s;
+      SRC_PC   : srcA_s = PC_fetch_r;
       SRC_ZERO : srcA_s = {reg_width{1'b0}};
       default  : srcA_s = regA_s;
     endcase
@@ -289,7 +309,7 @@ module as_cpux (input  logic                         clk_i,
     case(resultSrcx_s)
       RES_ALU : result_s = aluCalcRes_s;
       RES_MEM : result_s = dBusDataRd_s;     // from scratchpad / D-Cache
-      RES_PC4 : result_s = PCp4_s;
+      RES_PC4 : result_s = PC_fetch_r + 64'd4;
       RES_CSR : result_s = csr_data_s;
       default : result_s = {reg_width{1'b0}};
     endcase
@@ -394,10 +414,10 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mie_r <= regA_s;
             3'b010: csr_mie_r <= csr_mie_r | regA_s;
             3'b011: csr_mie_r <= csr_mie_r & ~regA_s;
-            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_r <= regA_s;
+            3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};
+            default: csr_mie_r <= csr_mie_r;
           endcase
     end
   end
@@ -422,10 +442,10 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mstatus_r <= regA_s;
             3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
             3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
-            3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_r <= regA_s;
+            3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
+            default: csr_mstatus_r <= csr_mstatus_r;
           endcase
     end
   end
@@ -446,10 +466,10 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mepc_r <= regA_s;
             3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
             3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
-            3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_r <= regA_s;
+            3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
+            default: csr_mepc_r <= csr_mepc_r;
           endcase
     end
   end
@@ -464,10 +484,10 @@ module as_cpux (input  logic                         clk_i,
           3'b001: csr_mtvec_r <= regA_s;
           3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
           3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
-          3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-          default: csr_mie_r <= regA_s;
+          3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
+          3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
+          3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
+          default: csr_mtvec_r <= csr_mtvec_r;
         endcase
   end
 
@@ -509,7 +529,9 @@ module as_cpux (input  logic                         clk_i,
   scan_cell sc01 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_tdi_i, and_in01_s, sc01_01_s);
   scan_cell sc02 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_01_s, and_in02_s, sc01_02_s);
   assign and_out_s = and_in01_s & and_in02_s;
-  scan_cell sc03 (clk_mux_s, rst_i, sc01_shift_i, and_out_s, sc01_02_s, , sc01_03_s);
-  scan_cell sc04 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_03_s, , sc01_tdo_o);
+  scan_cell sc03 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(and_out_s), .ser_i(sc01_02_s), .data_o(), .ser_o(sc01_03_s));
+  scan_cell sc04 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(1'b0), .ser_i(sc01_03_s), .data_o(), .ser_o(sc01_tdo_o));
 
 endmodule : as_cpux

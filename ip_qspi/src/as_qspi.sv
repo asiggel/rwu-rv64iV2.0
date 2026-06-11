@@ -39,7 +39,9 @@ module as_qspi (
   input  logic        rst_i,
   input  logic        clk_i,
   input  logic        start_i,
+  /* verilator lint_off UNUSEDSIGNAL */ // ctrl_reg_i bits [5,3,1] not yet implemented
   input  qspi_ctrl_t  ctrl_reg_i,
+  /* verilator lint_on UNUSEDSIGNAL */
   input  logic [7:0]  cmd_reg_i,
   input  logic [31:0] addr_reg_i,
   input  logic [15:0] len_reg_i,

@@ -13,7 +13,9 @@ module as_cpux (input  logic                         clk_i,
                output logic                          sc01_tdo_o,   // scan: serial out
                input  logic                          sc01_tdi_i,   // scan: serial in
                input  logic                          sc01_shift_i, // scan: shift enable
-               input  logic                          sc01_clock_i, // scan: clock enabe
+               /* verilator lint_off UNUSEDSIGNAL */ // scan clock received for interface compatibility; not used in current scan chain implementation
+               input  logic                          sc01_clock_i,
+               /* verilator lint_on UNUSEDSIGNAL */ // scan: clock enabe
                // Instruction bus (legacy flat BPI)
                output logic [iaddr_width-1:0]        iBusAddr_o,     // I-Bus: address
                input  logic [instr_width-1:0]        iBusDataRd_i,   // I-Bus: data
@@ -26,7 +28,9 @@ module as_cpux (input  logic                         clk_i,
                as_icache_if.cpu                      icpu_if,
                as_dcache_if.cpu                      dcpu_if,
                // IRQ
+               /* verilator lint_off UNUSEDSIGNAL */ // only highest-priority IRQ (bit 7) implemented; lower bits reserved
                input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts, irq_ext_i[7] = GPIO
+               /* verilator lint_on UNUSEDSIGNAL */
               );
 
   localparam int XLEN = reg_width;
@@ -42,6 +46,7 @@ module as_cpux (input  logic                         clk_i,
   // instruction
   logic [instr_width-1:0]     iBusDataRd_s; // data out from imem
   logic [iaddr_width-1:0]     iBusAddr_s;   // address for imem
+  logic [iaddr_width-1:0]     PC_instr_r;   // PC of instruction currently in IR
 
   // data
   logic [reg_width-1:0]       dBusDataRd_s; // data out from dmem
@@ -51,8 +56,9 @@ module as_cpux (input  logic                         clk_i,
   logic                       dMemWr_s;     // write enable for dmem
 
   // PC
-  logic [iaddr_width-1:0] PCp4_s;   // linear code
-  logic [iaddr_width-1:0] PCbr_s;   // branch target; PCTarget
+  logic [iaddr_width-1:0] PCp4_s;    // next sequential fetch address (PC_s + 4)
+  logic [iaddr_width-1:0] PC_link_s; // JAL/JALR return address = PC_instr_r + 4
+  logic [iaddr_width-1:0] PCbr_s;    // branch/jump target
   logic	[iaddr_width-1:0] PCorRS1_s;
 
   // Immediate extention
@@ -152,12 +158,15 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // PC, Program Counter and IR (Instruction Register)
   //--------------------------------------------
-  assign iBusAddr_s = PC_s;
+  // During FETCH0_ST: when branch/jump taken, redirect I-Mem to the target;
+  // otherwise present PC_s (the address being refetched for the next instruction).
+  assign iBusAddr_s = (fetch0_phase_s && take_s) ? PCbr_s : PC_s;
   
   //--------------------------------------------
   // ... PC itself:
-  // PC represents the last committed architectural instruction
-  // and is only advanced on instr_commit_s
+  // PC is always one pipeline slot AHEAD of the instruction in IR:
+  //   PC_s = PC_instr_r + 4 during FETCH1/EXEC.
+  // It is advanced in each FETCH0_ST.
   //--------------------------------------------
   always_ff @(posedge clk_i, posedge rst_i)
   begin
@@ -168,17 +177,30 @@ module as_cpux (input  logic                         clk_i,
       if(fetch0_phase_s)
       begin
         if(trap_taken_s)
-          PC_s <= {csr_mtvec_r[63:2], 2'b00};  // Jump to trap vector
+          PC_s <= {csr_mtvec_r[63:2], 2'b00};
         else
           if(mret_pending_s)
-            PC_s <= csr_mepc_r;                // Return from trap
-          else 
+            PC_s <= csr_mepc_r;
+          else
             if(take_s)
-              PC_s <= PCbr_s;  // Branch/Jump
+              // +4 keeps PC one slot ahead of the branch target, matching
+              // the invariant for sequential instructions (PC = instr_addr + 4).
+              PC_s <= PCbr_s + 4;
             else
               PC_s <= PCp4_s;  // Sequential
       end
     end
+  end
+
+  // Captures the address of the instruction being fetched in FETCH0_ST.
+  // Used as branch/jump base and for AUIPC — correct even when a branch
+  // redirects iBusAddr_s away from PC_s.
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if(rst_i)
+      PC_instr_r <= '0;
+    else if(fetch0_phase_s)
+      PC_instr_r <= iBusAddr_s;
   end
 
   //===========================================
@@ -271,14 +293,15 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // Adder +4 for the address of the next instruction
   //--------------------------------------------
-  assign PCp4_s = PC_s + 64'd4;
+  assign PCp4_s    = PC_s + 64'd4;
+  assign PC_link_s = PC_instr_r + 64'd4;  // spec-correct return address for JAL/JALR
 
   //--------------------------------------------
   // Mux for jumps of jalr instruction or normal branches.
   //         - pc_o   : jalr
   //         - regA_s : normal branch
   //--------------------------------------------
-  assign PCorRS1_s = jump_s ? regA_s : iBusAddr_s;
+  assign PCorRS1_s = jump_s ? regA_s : PC_instr_r;
 
   //--------------------------------------------
   // Adder for the branch targets
@@ -316,7 +339,7 @@ module as_cpux (input  logic                         clk_i,
       IMM_S    : immExt_s = {{(XLEN-12){ir_s[31]}},ir_s[31:25],ir_s[11:7]}; // S-type: sign ext, immediate1 (7 b), immediate2 (5 b)
       IMM_B    : immExt_s = {{(XLEN-12){ir_s[31]}},ir_s[7],ir_s[30:25],ir_s[11:8],1'b0}; // B-type: sign ext, imm1 (1 b), imm2 (6 b), imm3 (4 b), *2
       IMM_J    : immExt_s = {{(XLEN-20){ir_s[31]}},ir_s[19:12],ir_s[20],ir_s[30:21],1'b0}; // J-type: sign ext, imm1 (8 b), imm2 (1 b), imm3 (10 b), *2
-      IMM_U    : immExt_s = {{(XLEN-32){1'b0}}, ir_s[31:12], 12'b0}; // // U-type: zero ext, imm, zero; lui, auipc
+      IMM_U    : immExt_s = {{(XLEN-32){ir_s[31]}}, ir_s[31:12], 12'b0};
       IMM_NONE : immExt_s = {reg_width{1'b0}};
       default  : immExt_s = {reg_width{1'b0}};
     endcase
@@ -332,7 +355,7 @@ module as_cpux (input  logic                         clk_i,
   always_comb
     case(aluSrcA_s)
       SRC_REGA    : srcA_s = regA_s;
-      SRC_PC      : srcA_s = PC_s;
+      SRC_PC      : srcA_s = PC_instr_r;
       SRC_ZERO    : srcA_s = {reg_width{1'b0}};
       default     : srcA_s = regA_s;
     endcase // case (aluSrcA_s)
@@ -361,7 +384,7 @@ module as_cpux (input  logic                         clk_i,
     case(resultSrcx_s)
       RES_ALU    : result_s = aluCalcRes_s;
       RES_MEM    : result_s = dBusDataRd_s;
-      RES_PC4    : result_s = PCp4_s;
+      RES_PC4    : result_s = PC_link_s;
       RES_CSR    : result_s = csr_data_s;
       default    : result_s = {reg_width{1'b0}};
     endcase
@@ -459,9 +482,9 @@ module as_cpux (input  logic                         clk_i,
     if(rst_i)
       mret_pending_s <= 1'b0;
     else
-      if(is_mret_s && exec_phase_s)
+      if(exec_phase_s && is_mret_s)
         mret_pending_s <= 1'b1;
-      else if(fetch0_phase_s)
+      else if(fetch1_phase_s)
         mret_pending_s <= 1'b0;
   end
   
@@ -521,10 +544,10 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mie_r <= regA_s;                                        // csrrw
             3'b010: csr_mie_r <= csr_mie_r | regA_s;                            // csrrs
             3'b011: csr_mie_r <= csr_mie_r & ~regA_s;                           // csrrc
-            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};               // csrrwi
-            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};   // csrrsi
-            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};  // csrrci
-	    default: csr_mie_r <= regA_s;
+            3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};               // csrrwi
+            3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};   // csrrsi
+            3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};  // csrrci
+            default: csr_mie_r <= csr_mie_r;
           endcase
     end
   end
@@ -565,10 +588,10 @@ module as_cpux (input  logic                         clk_i,
                 3'b001: csr_mstatus_r <= regA_s;
                 3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
                 3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
-                3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-		default: csr_mstatus_r <= regA_s;
+                3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
+                3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
+                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
+                default: csr_mstatus_r <= csr_mstatus_r;
               endcase
     end
   end
@@ -595,10 +618,10 @@ module as_cpux (input  logic                         clk_i,
               3'b001: csr_mepc_r <= regA_s;
               3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
               3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
-              3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	      default: csr_mepc_r <= regA_s;
+              3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
+              3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
+              3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
+              default: csr_mepc_r <= csr_mepc_r;
             endcase
     end
   end
@@ -642,10 +665,10 @@ module as_cpux (input  logic                         clk_i,
             3'b001: csr_mtvec_r <= regA_s;
             3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
             3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
-            3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	    default: csr_mtvec_r <= regA_s;
+            3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
+            3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
+            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
+            default: csr_mtvec_r <= csr_mtvec_r;
           endcase
   end
   
@@ -770,8 +793,10 @@ module as_cpux (input  logic                         clk_i,
   scan_cell sc01 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_tdi_i, and_in01_s, sc01_01_s);
   scan_cell sc02 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_01_s, and_in02_s, sc01_02_s);
   assign and_out_s = and_in01_s & and_in02_s;
-  scan_cell sc03 (clk_mux_s, rst_i, sc01_shift_i, and_out_s, sc01_02_s, , sc01_03_s); // to_some_pin1_s
-  scan_cell sc04 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_03_s, , sc01_tdo_o); // to_some_pin2_s
+  scan_cell sc03 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(and_out_s), .ser_i(sc01_02_s), .data_o(), .ser_o(sc01_03_s));
+  scan_cell sc04 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
+                  .data_i(1'b0), .ser_i(sc01_03_s), .data_o(), .ser_o(sc01_tdo_o));
 
 endmodule : as_cpux
 

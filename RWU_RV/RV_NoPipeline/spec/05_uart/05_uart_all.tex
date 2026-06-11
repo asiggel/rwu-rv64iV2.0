@@ -1,0 +1,1004 @@
+
+% UART Spec  (as_uart_top / ip_uart_v2)
+\label{sec:uartfunc01}
+
+%=============================================================
+% Requirements
+%=============================================================
+\subsection{Requirements}
+\label{subsec:uartreq01}
+
+This section defines the functional requirements for the \textbf{UART0}
+peripheral (module \texttt{as\_uart\_top}) in the \aschip{} system.
+Requirements follow IEEE\;29148 terminology:
+\textit{shall} = mandatory, \textit{should} = recommended.
+
+Each requirement identifier has the form
+\textbf{UART-\textit{CAT}-\textit{NNN}}, where \textit{CAT} is the
+category code (see Table~\ref{tab:asUartReqCat}) and \textit{NNN} is a
+three-digit sequence number.
+
+\begin{table}[H]
+\caption{UART Requirements -- Category Codes}
+\label{tab:asUartReqCat}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  Category Code & Scope \\
+  \hline
+  \hline
+  FR & Frame Format \\
+  \hline
+  BR & Baud Rate and Oversampling \\
+  \hline
+  TX & Transmitter Path \\
+  \hline
+  RX & Receiver Path \\
+  \hline
+  FI & FIFOs \\
+  \hline
+  ER & Error Detection \\
+  \hline
+  IR & Interrupts \\
+  \hline
+  SW & Software Interface (Register Map) \\
+  \hline
+  HW & Hardware Interface (Pins) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Frame Format Requirements (FR)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Frame Format}
+\label{tab:asUartReqFR}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-FR-001 &
+    The UART \textit{shall} support data word lengths of 5, 6, 7, and
+    8\;bits per frame, configurable via \textbf{UART0\_LCR}[1:0]:
+    00\,=\,5\;bit, 01\,=\,6\;bit, 10\,=\,7\;bit, 11\,=\,8\;bit (reset). &
+    Covers the full range of the standard asynchronous serial frame (RS-232 / UART). \\
+  \hline
+  UART-FR-002 &
+    The UART \textit{shall} support three parity modes configurable via
+    \textbf{UART0\_LCR}[3:2]:
+    00\,=\,none (reset), 01\,=\,odd, 10\,=\,even.
+    Encoding 11 is reserved (no parity). &
+    Standard 8N1, 7E1, 7O1, etc.\ coverage.
+    The parity bit is inserted between the last data bit and the first stop bit. \\
+  \hline
+  UART-FR-003 &
+    The UART \textit{shall} support 1 stop bit (reset) and 2 stop bits,
+    selectable via \textbf{UART0\_LCR}[4]:
+    0\,=\,1 stop bit, 1\,=\,2 stop bits. &
+    1.5 stop bits are omitted; they are only defined for 5-bit data frames
+    and not required in this application. \\
+  \hline
+  UART-FR-004 &
+    The UART \textit{shall} support forced break transmission:
+    when \textbf{UART0\_LCR}[5]=1 the TX output \textit{shall} be driven
+    continuously to logic\;0, independent of FIFO content and frame
+    boundaries. &
+    Required by POSIX \texttt{tcsendbreak()} and Linux \texttt{termios}.
+    Break ends when LCR[5] is cleared. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Baud Rate and Oversampling Requirements (BR)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Baud Rate and Oversampling}
+\label{tab:asUartReqBR}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-BR-001 &
+    The UART \textit{shall} derive the baud-rate clock from the system clock
+    $f_{clk}$ using a 16-bit integer divisor stored in
+    \textbf{UART0\_CLKDIV}[15:0]:
+    \[ f_{baud} = \frac{f_{clk}}{16 \times \text{CLKDIV}} \]
+    CLKDIV\,=\,0 is illegal; the reset value \textit{shall} correspond to
+    115\,200\;Baud at 125\;MHz (CLKDIV\,=\,68). &
+    16$\times$ oversampling is the industry standard (16550 compatible).
+    At 125\;MHz and CLKDIV\,=\,68 the actual baud rate is
+    $\approx$115\,042\;Baud ($-0.14\,\%$ error). \\
+  \hline
+  UART-BR-002 &
+    The valid range of CLKDIV \textit{shall} be 1\ldots65535.
+    Writing CLKDIV\,=\,0 \textit{shall} have no effect (value rejected,
+    previous value retained). &
+    CLKDIV\,=\,0 would cause division-by-zero in the baud-rate counter. \\
+  \hline
+  UART-BR-003 &
+    The oversampling ratio \textit{shall} be 16.
+    Each received bit \textit{shall} be sampled at sub-clock\;8 of its
+    16-sub-clock period (centre-of-bit sampling). &
+    Centre sampling maximises noise margin relative to both edges. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Transmitter Requirements (TX)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Transmitter}
+\label{tab:asUartReqTX}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-TX-001 &
+    The transmitter \textit{shall} serialize data frames from the TX FIFO:
+    start bit (0), data bits LSB first, parity bit (if enabled), stop
+    bit(s) (1). &
+    Standard UART bit ordering. \\
+  \hline
+  UART-TX-002 &
+    The TX output (\texttt{tx\_o}) \textit{shall} be logic\;1 (mark state)
+    when idle and between frames. &
+    Required so that the receiver can detect the start-bit falling edge. \\
+  \hline
+  UART-TX-003 &
+    The transmitter \textit{shall} fetch the next frame from the TX FIFO
+    only when the FIFO is non-empty and the shift register is idle.
+    If the TX FIFO is empty while the shift register finishes the current
+    frame, \texttt{tx\_o} \textit{shall} return to idle (logic\;1). &
+    Prevents underrun: partial frames are never transmitted. \\
+  \hline
+  UART-TX-004 &
+    When \textbf{UART0\_LCR}[5]\,=\,1 (break), the transmitter
+    \textit{shall} drive \texttt{tx\_o}\,=\,0 continuously until
+    LCR[5] is cleared, overriding normal FIFO operation. &
+    See UART-FR-004. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Receiver Requirements (RX)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Receiver}
+\label{tab:asUartReqRX}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-RX-001 &
+    The \texttt{rx\_i} input \textit{shall} be synchronised through a
+    2-stage flip-flop synchroniser operating in the peripheral clock domain
+    before any logic (edge detection, sampling) is applied to it. &
+    Mandatory metastability protection for any asynchronous input on an
+    FPGA; omitting it can cause the entire system to malfunction. \\
+  \hline
+  UART-RX-002 &
+    Start-bit detection \textit{shall} be performed by detecting a
+    high-to-low transition (falling edge) on the synchronised \texttt{rx\_i}
+    signal. &
+    Marks the beginning of a new frame. \\
+  \hline
+  UART-RX-003 &
+    After start-bit detection, each data bit and (if enabled) the parity bit
+    \textit{shall} be sampled at sub-clock\;8 of the corresponding bit
+    period (centre sampling, see UART-BR-003). &
+    The start-bit centre is used to align the oversampling counter so that
+    subsequent bits are sampled at their centres. \\
+  \hline
+  UART-RX-004 &
+    On successful frame completion (valid stop bit detected), the received
+    data word \textit{shall} be written into the RX FIFO. &
+    Frames with a missing stop bit generate a frame error (see UART-ER-001)
+    and the data word is still pushed to the FIFO
+    so that SW can inspect the erroneous byte. \\
+  \hline
+  UART-RX-005 &
+    When \textbf{UART0\_CTRL}[0]\,=\,1 (loopback), the receiver input
+    \textit{shall} be internally connected to the TX shift-register output,
+    bypassing the external \texttt{rx\_i} pin. &
+    Enables SW self-test without external hardware. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{FIFO Requirements (FI)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- FIFOs}
+\label{tab:asUartReqFI}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-FI-001 &
+    The peripheral \textit{shall} provide a TX FIFO and an RX FIFO.
+    FIFO depth \textit{shall} be set by the SystemVerilog parameter
+    \texttt{FIFO\_DEPTH} (default: 16 entries, 8\;bits per entry). &
+    Decouples bus transaction timing from baud-rate timing; prevents
+    CPU stalls on every byte. \\
+  \hline
+  UART-FI-002 &
+    Each FIFO \textit{shall} provide the following status signals to the
+    register block: full, empty, half-full (level\,>\,FIFO\_DEPTH/2),
+    and current fill level as a $\lceil\log_2(\text{FIFO\_DEPTH}+1)\rceil$-bit
+    integer. &
+    Required for FIFOSTAT register (UART-SW-001). \\
+  \hline
+  UART-FI-003 &
+    FIFO status \textit{shall} be readable via \textbf{UART0\_FIFOSTAT}. &
+    Allows software to perform polled I/O without relying on interrupts. \\
+  \hline
+  UART-FI-004 &
+    Writing 1 to \textbf{UART0\_CTRL}[1] (tx\_flush) \textit{shall}
+    synchronously reset the TX FIFO to the empty state.
+    The bit \textit{shall} auto-clear on the next clock cycle. &
+    Used to abort a pending transmission without a full peripheral reset. \\
+  \hline
+  UART-FI-005 &
+    Writing 1 to \textbf{UART0\_CTRL}[2] (rx\_flush) \textit{shall}
+    synchronously reset the RX FIFO to the empty state.
+    The bit \textit{shall} auto-clear on the next clock cycle. &
+    Used to discard stale receive data after a configuration change. \\
+  \hline
+  UART-FI-006 &
+    The RX interrupt threshold \textit{shall} be configurable via
+    \textbf{UART0\_RXTHRES}[4:0] (valid range: 1\ldots FIFO\_DEPTH;
+    reset: FIFO\_DEPTH/2\,=\,8).
+    The rx\_ready interrupt source (RIS[0]) \textit{shall} be asserted when
+    the RX FIFO level is $\geq$ RXTHRES. &
+    Allows SW to tune the interrupt rate vs.\ latency trade-off without
+    code changes in the driver. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Error Detection Requirements (ER)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Error Detection}
+\label{tab:asUartReqER}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-ER-001 &
+    The UART \textit{shall} detect a \textbf{frame error}:
+    the expected stop bit is sampled as logic\;0.
+    On detection, STATUS[4] (frame\_err) \textit{shall} be set. &
+    Indicates baud-rate mismatch or line noise. \\
+  \hline
+  UART-ER-002 &
+    The UART \textit{shall} detect a \textbf{parity error} when parity is
+    enabled (LCR[3:2]\,$\neq$\,00): the received parity bit differs from
+    the locally computed parity of the received data word.
+    On detection, STATUS[5] (parity\_err) \textit{shall} be set. &
+    Indicates single-bit data corruption. \\
+  \hline
+  UART-ER-003 &
+    The UART \textit{shall} detect an \textbf{overrun error}:
+    the RX FIFO is full when the receiver completes a new frame.
+    The new byte \textit{shall} be discarded, and STATUS[6]
+    (overrun\_err) \textit{shall} be set. &
+    Signals that the driver is not reading fast enough. \\
+  \hline
+  UART-ER-004 &
+    The UART \textit{shall} detect a \textbf{break condition}:
+    \texttt{rx\_i} (synchronised) is held continuously at logic\;0 for
+    $\geq$\;1 complete character time (start + data + parity + stop bits)
+    after the initial falling edge.
+    On detection, STATUS[7] (break\_det) \textit{shall} be set. &
+    Required for Linux \texttt{tty} break handling and RS-232 modem
+    signalling. \\
+  \hline
+  UART-ER-005 &
+    The error flags STATUS[7:4] \textit{shall} be sticky (latched):
+    they \textit{shall} remain set until explicitly cleared by writing\;1
+    to the corresponding bit in \textbf{UART0\_ICR}. &
+    Prevents loss of error information if the ISR runs after a delay. \\
+  \hline
+  UART-ER-006 &
+    Each of the four error types (frame, parity, overrun, break)
+    \textit{shall} generate an individual interrupt source in RIS
+    (see UART-IR-004). &
+    Allows driver to classify the error without reading STATUS separately. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Interrupt Requirements (IR)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Interrupts}
+\label{tab:asUartReqIR}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-IR-001 &
+    The UART \textit{shall} provide an \textbf{rx\_ready} interrupt source
+    (RIS[0]) asserted when the RX FIFO fill level is $\geq$
+    \textbf{UART0\_RXTHRES}. &
+    Primary trigger for the receive interrupt service routine. \\
+  \hline
+  UART-IR-002 &
+    The UART \textit{shall} provide a \textbf{tx\_ready} interrupt source
+    (RIS[1]) asserted when the TX FIFO fill level falls below
+    \textbf{UART0\_RXTHRES} (space available for writing). &
+    Allows SW to refill the TX FIFO in an interrupt-driven transmit loop
+    without polling. \\
+  \hline
+  UART-IR-003 &
+    The UART \textit{shall} provide an \textbf{rx\_timeout} interrupt source
+    (RIS[2]) asserted when the RX FIFO contains at least one byte and no
+    new byte has been received for $\geq$\;4 character times. &
+    Prevents data stranded in the RX FIFO below the threshold from being
+    silently ignored when a frame does not exactly fill the FIFO to RXTHRES. \\
+  \hline
+  UART-IR-004 &
+    The UART \textit{shall} provide individual interrupt sources:
+    frame\_err (RIS[3]), parity\_err (RIS[4]),
+    overrun\_err (RIS[5]), break\_det (RIS[6]). &
+    See UART-ER-006. \\
+  \hline
+  UART-IR-005 &
+    Each interrupt source \textit{shall} be individually maskable via
+    the corresponding bit in \textbf{UART0\_IMSC}.
+    The interrupt output signal (\texttt{uart\_irq\_o})
+    \textit{shall} equal the bitwise OR of all (RIS\,\&\,IMSC) bits:
+    \texttt{uart\_irq\_o}\,=\,\texttt{|}\,(RIS\,\&\,IMSC). &
+    One-IRQ-line model consistent with GPIO0 and QSPI0. \\
+  \hline
+  UART-IR-006 &
+    Any bit in RIS \textit{shall} be clearable by writing\;1 to the
+    corresponding bit of \textbf{UART0\_ICR} (write-1-to-clear). &
+    Consistent with QSPI0 interrupt model. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Software Interface Requirements (SW)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Software Interface}
+\label{tab:asUartReqSW}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-SW-001 &
+    All configuration, status, FIFO access, and interrupt control
+    \textit{shall} be accessible through exactly 12 memory-mapped,
+    64-bit registers on a Wishbone B4 Classic slave interface
+    implemented by \texttt{as\_slave\_bpi}. &
+    Consistent with GPIO0 and QSPI0. \\
+  \hline
+  UART-SW-002 &
+    Registers \textit{shall} be 8-byte aligned and occupy the address
+    range UART0\_BASE\,+\,0x00 to UART0\_BASE\,+\,0x5F (12\,$\times$\,8\;bytes). &
+    Fits within the reserved address range
+    0x0000\-0001\-0000\-0120 -- 0x0000\-0001\-0000\-017F. \\
+  \hline
+  UART-SW-003 &
+    The base address of UART0 \textit{shall} be
+    \texttt{0x0000\_0001\_0000\_0120}. &
+    As defined in the system memory map (\texttt{as\_pack.sv}:
+    \texttt{uart0\_start\_address\_c}). \\
+  \hline
+  UART-SW-004 &
+    Write accesses to read-only register fields \textit{shall} have no
+    effect; the field value \textit{shall} not change. &
+    Standard HW register protection. \\
+  \hline
+  UART-SW-005 &
+    Read accesses to write-only registers (ICR, and DATA when read
+    returns RX FIFO data) \textit{shall} return the correct value:
+    ICR reads as 0x0; DATA read pops the RX FIFO. &
+    DATA register is bi-directional: write pushes TX FIFO, read pops
+    RX FIFO (standard UART DATA register model). \\
+  \hline
+  UART-SW-006 &
+    The Wishbone interface \textit{shall} respond with zero wait states
+    (ACK asserted one clock after STB\,\&\,CYC). &
+    Consistent with all other Wishbone slaves in the system. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Hardware Interface Requirements (HW)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{UART Requirements -- Hardware Interface}
+\label{tab:asUartReqHW}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  UART-HW-001 &
+    The peripheral \textit{shall} expose exactly two external serial I/O
+    signals: \texttt{tx\_o} (output) and \texttt{rx\_i} (input). &
+    Standard asynchronous UART interface; no modem control signals
+    (RTS/CTS) required for this application. \\
+  \hline
+  UART-HW-002 &
+    \texttt{rx\_i} \textit{shall} be treated as an asynchronous input
+    and synchronised by a 2-stage flip-flop synchroniser in the
+    peripheral clock domain before use (see UART-RX-001). &
+    Mandatory for FPGA synthesis tool to infer proper placement
+    of the input register chain and to suppress metastability. \\
+  \hline
+  UART-HW-003 &
+    The peripheral clock (\texttt{clk\_i}) \textit{shall} be 125\;MHz
+    (Zybo board system clock). &
+    Determines the achievable baud rate resolution (UART-BR-001). \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% System Integration of UART0
+%=============================================================
+\subsection{System Integration of UART0}
+
+%------------------------
+\subsubsection{History}
+
+\begin{table}[H]
+\caption{UART0 Authors}
+\label{tab:uartauth01}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  Author & Department & From \\
+  \hline
+  \hline
+  Andreas Siggelkow & Fac. E & June 2026 \\
+  \hline
+  & & \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{UART0 Section History}
+\label{tab:uarthistory01}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  Date & Name & Content Changes \\
+  \hline
+  \multicolumn{3}{|l|}{Version of this document: V0.1} \\
+  \hline
+  2026-06-05 & A. Siggelkow, Claude & First draft: Requirements section \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{Functional Configuration of UART0}
+\textcolor{red}{This section should describe the product-specific instantiation of this module's feature set.}
+
+The standard features of the UART peripheral are described in its functional
+description in Section~\ref{subsec:uartfunc01}.
+Generic features for UART0 are listed in
+Table~\ref{tab:asUartPer01a}.
+
+\begin{table}[H]
+\caption{UART0 Feature Set}
+\label{tab:asUartPer01a}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Generic UART Feature Set & Details \\
+  \hline
+  \hline
+  yes & Separate Kernel Clock         & 125\;MHz \\
+  \hline
+  yes & Configurable Data Bits        & 5, 6, 7, 8 bits via LCR \\
+  \hline
+  yes & Configurable Parity           & None (reset), odd, even via LCR \\
+  \hline
+  yes & Configurable Stop Bits        & 1 (reset) or 2 via LCR \\
+  \hline
+  yes & Programmable Baud Rate        & $f_{baud} = 125\,\text{MHz} / (16 \times \text{CLKDIV})$; reset: 115\,200\;Baud \\
+  \hline
+  yes & TX FIFO                       & 16 entries $\times$ 8\;bit \\
+  \hline
+  yes & RX FIFO                       & 16 entries $\times$ 8\;bit \\
+  \hline
+  yes & RX FIFO Threshold             & Configurable 1\ldots16, reset: 8 \\
+  \hline
+  yes & Loopback Mode                 & CTRL[0] \\
+  \hline
+  yes & Break Generation              & LCR[5] \\
+  \hline
+  yes & RX Input Synchroniser         & 2-stage FF, mandatory metastability protection \\
+  \hline
+  yes & Frame Error Detection         & STATUS[4], RIS[3] \\
+  \hline
+  yes & Parity Error Detection        & STATUS[5], RIS[4] \\
+  \hline
+  yes & Overrun Error Detection       & STATUS[6], RIS[5] \\
+  \hline
+  yes & Break Detect                  & STATUS[7], RIS[6] \\
+  \hline
+  yes & RX Timeout Interrupt          & RIS[2], after 4 character times of FIFO inactivity \\
+  \hline
+  yes & Interrupt Generation          & 7 sources, maskable via IMSC \\
+  \hline
+  yes & FIFO Flush                    & tx\_flush / rx\_flush in CTRL \\
+  \hline
+  no  & 9-bit Data Words              & Not required \\
+  \hline
+  no  & 1.5 Stop Bits                 & Not required \\
+  \hline
+  no  & Hardware Flow Control (RTS/CTS) & Not required \\
+  \hline
+  no  & Modem Control Signals         & Not required \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{HW Interfaces}
+The following table lists all hardware interfaces relevant for normal operation.
+
+\begin{table}[H]
+\caption{HW Interfaces of Module UART0}
+\label{tab:asUartPer02}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Module internal name & Chip level name \\
+  \hline
+  \hline
+  Supply &  &  \\
+  \hline
+  Clock & clk\_i & clk\_i \\
+  \hline
+  Bus & Wishbone slave & Wishbone B4 Classic \\
+  \hline
+  Interrupt & uart\_irq\_o & uart0\_irq\_s \\
+  \hline
+  DMA & None & - \\
+  \hline
+  External Signals & tx\_o & uart0\_tx\_o \\
+                   & rx\_i & uart0\_rx\_i \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{Bus Interface}
+The UART controller exposes one bus interface:
+
+\begin{description}
+  \item[Wishbone Slave (configuration port)] Provides software access to all
+    configuration registers, the TX/RX FIFOs, and the interrupt registers.
+    Implemented by \texttt{as\_slave\_bpi}.
+    Protocol: Wishbone B4 Classic, zero-wait-state, 64-bit data width.
+    See Section~\ref{subsec:asSlaveBpi} (Architecture Concepts: Bus Concept).
+\end{description}
+
+%------------------------
+\subsubsection{Registers}
+
+\begin{table}[H]
+\caption{Register List of Module UART0}
+\label{tab:asUartPer03}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Offset & External Name & Internal Name & Mode & Description \\
+  \hline
+  \hline
+  0x00 & \textbf{UART0\_ID}       & id\_reg\_s       & ro   & Peripheral identification \\
+  \hline
+  0x08 & \textbf{UART0\_LCR}      & lcr\_reg\_s      & rw   & Line Control: data bits, parity, stop bits, break \\
+  \hline
+  0x10 & \textbf{UART0\_CLKDIV}   & clkdiv\_reg\_s   & rw   & Baud rate divisor (16-bit) \\
+  \hline
+  0x18 & \textbf{UART0\_CTRL}     & ctrl\_reg\_s     & rw   & Control: loopback, tx\_flush, rx\_flush \\
+  \hline
+  0x20 & \textbf{UART0\_STATUS}   & status\_reg\_s   & ro   & TX/RX busy flags; sticky error flags \\
+  \hline
+  0x28 & \textbf{UART0\_DATA}     & data\_reg\_s     & rw   & Write: push TX FIFO; Read: pop RX FIFO \\
+  \hline
+  0x30 & \textbf{UART0\_FIFOSTAT} & fifostat\_reg\_s & ro   & TX/RX FIFO level, full, half, empty \\
+  \hline
+  0x38 & \textbf{UART0\_RXTHRES}  & rxthres\_reg\_s  & rw   & RX FIFO interrupt threshold (1\ldots16) \\
+  \hline
+  0x40 & \textbf{UART0\_RIS}      & ris\_reg\_s      & ro   & Raw Interrupt Status \\
+  \hline
+  0x48 & \textbf{UART0\_IMSC}     & imsc\_reg\_s     & rw   & Interrupt Mask Control \\
+  \hline
+  0x50 & \textbf{UART0\_MIS}      & mis\_reg\_s      & ro   & Masked Interrupt Status (= RIS\,\&\,IMSC) \\
+  \hline
+  0x58 & \textbf{UART0\_ICR}      & icr\_reg\_s      & wo   & Interrupt Clear (write-1-to-clear RIS bits) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{Related Sections of this Spec}
+\begin{itemize}
+  \item UART functional description starting with Section~\ref{subsec:uartfunc01}.
+  \item Interrupt and DMA Concept in Chapter ``Architecture Concepts''.
+  \item Peripheral Architecture Concept in Chapter ``Architecture Concepts'':
+  \begin{itemize}
+    \item Slave WB (Wishbone) BPI.
+    \item Peripheral ID Registers.
+    \item Peripheral Clocking Concept.
+    \item Horizontal Interrupt and DMA Register Structure.
+    \item Basic Interrupt and DMA Register Set.
+    \item Synchronization Block.
+    \item Standardized Flip-Flop based FIFO.
+    \item TX-FIFO Registers.
+    \item RX-FIFO Registers.
+  \end{itemize}
+  \item Requirements: Section~\ref{subsec:uartreq01}.
+\end{itemize}
+
+%=============================================================
+% History of UART
+%=============================================================
+\subsection{History of UART}
+
+\begin{table}[H]
+\caption{History of UART Section}
+\label{tab:uarthistory02}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  \multicolumn{3}{|l|}{History} \\
+  \hline
+  \multicolumn{1}{|l}{Target Spec.} &
+  \multicolumn{1}{l}{Current version: 0.1, 2026-06-05} &
+  \multicolumn{1}{l|}{Author: A. Siggelkow} \\
+  \multicolumn{1}{|l}{ } &
+  \multicolumn{1}{l}{Previous version: none} &
+  \multicolumn{1}{l|}{ } \\
+  \hline
+  \hline
+  Paragraph (prev.) & Paragraph (current) / date & Changes \\
+  \hline
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.1; Date: 2026-06-05} \\
+  \hline
+  --- & \ref{sec:uartfunc01} / 2026-06-05 & First draft: Requirements + System Integration stubs (AS, Claude) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% Functional Overview
+%=============================================================
+\subsection{Functional Overview}
+\label{subsec:uartfunc01}
+\textcolor{red}{To be written.}
+
+The UART peripheral provides standard asynchronous serial communication in
+half- or full-duplex mode.
+It interfaces to the system via a Wishbone B4 Classic slave bus and
+forwards received bytes to software via an RX FIFO and interrupts.
+
+\paragraph{General Features:}
+\begin{itemize}
+  \item Configurable frame format (data bits, parity, stop bits)
+  \item Programmable baud rate
+  \item TX and RX FIFOs
+  \item RX input synchroniser (metastability protection)
+  \item Frame, parity, overrun, and break error detection
+  \item RX timeout interrupt
+  \item Loopback mode for self-test
+  \item Interrupt generation (7 sources, maskable)
+\end{itemize}
+
+%=============================================================
+% Structural Overview
+%=============================================================
+\subsection{Structural Overview}
+\textcolor{red}{To be written.}
+
+%\subsubsection{I/O of the UART Kernel}
+%\subsubsection{I/O of the UART BPI}
+%\subsubsection{Internals of the UART BPI}
+%\subsubsection{I/O of the UART Top}
+
+%=============================================================
+% Service Requests
+%=============================================================
+\subsection{Service Requests of the UART}
+
+Table~\ref{tab:asUartPer06b} shows the interrupt service requests of UART0.
+
+\begin{table}[H]
+\caption{UART0 Service Requests}
+\label{tab:asUartPer06b}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Service Request & RIS Bit & IRQ & Explanation \\
+  \hline
+  \hline
+  rx\_ready    & RIS[0] & uart0\_irq\_s & RX FIFO level $\geq$ RXTHRES. \\
+  \hline
+  tx\_ready    & RIS[1] & uart0\_irq\_s & TX FIFO level $<$ RXTHRES (space available). \\
+  \hline
+  rx\_timeout  & RIS[2] & uart0\_irq\_s & Data in RX FIFO; no new byte for $\geq$ 4 character times. \\
+  \hline
+  frame\_err   & RIS[3] & uart0\_irq\_s & Stop bit received as logic\;0. \\
+  \hline
+  parity\_err  & RIS[4] & uart0\_irq\_s & Received parity bit differs from computed parity. \\
+  \hline
+  overrun\_err & RIS[5] & uart0\_irq\_s & RX FIFO full; incoming byte discarded. \\
+  \hline
+  break\_det   & RIS[6] & uart0\_irq\_s & rx\_i held low for $\geq$ 1 full character time. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% Peripheral Kernel
+%=============================================================
+\subsection{The UART Peripheral Kernel}
+\label{subsec:uartfunc02}
+\textcolor{red}{To be written.}
+
+%=============================================================
+% Registers
+%=============================================================
+\subsection{Registers}
+\textcolor{red}{To be written -- detailed bit-field descriptions.}
+
+\subsubsection{UART Register Overview}
+
+\begin{table}[H]
+\caption{UART Register List}
+\label{tab:asUartRegList}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |l |l|}
+  \hline
+  Register Group & Register Name & Symbol & Offset \\
+  \hline
+  \hline
+  System Registers  & Identification Register     & \textbf{UART0\_ID}       & 0x00 \\
+  \hline
+  Configuration     & Line Control Register       & \textbf{UART0\_LCR}      & 0x08 \\
+                    & Baud Rate Divisor Register  & \textbf{UART0\_CLKDIV}   & 0x10 \\
+                    & Control Register            & \textbf{UART0\_CTRL}     & 0x18 \\
+  \hline
+  Status            & Status Register             & \textbf{UART0\_STATUS}   & 0x20 \\
+                    & FIFO Status Register        & \textbf{UART0\_FIFOSTAT} & 0x30 \\
+  \hline
+  Data              & Data Register (TX/RX)       & \textbf{UART0\_DATA}     & 0x28 \\
+  \hline
+  Threshold         & RX Threshold Register       & \textbf{UART0\_RXTHRES}  & 0x38 \\
+  \hline
+  Interrupt         & Raw Interrupt Status        & \textbf{UART0\_RIS}      & 0x40 \\
+  Registers         & Interrupt Mask Control      & \textbf{UART0\_IMSC}     & 0x48 \\
+                    & Masked Interrupt Status     & \textbf{UART0\_MIS}      & 0x50 \\
+                    & Interrupt Clear Register    & \textbf{UART0\_ICR}      & 0x58 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Read-Write Features}
+\begin{itemize}
+  \item \textbf{w}: writable by SW
+  \item \textbf{r}: readable by SW
+  \item \textbf{h}: set by HW only
+  \item \textbf{w1c}: write-1-to-clear
+\end{itemize}
+
+\subsubsection{LCR -- Line Control Register (offset 0x08, rw)}
+
+\begin{table}[H]
+\caption{UART0\_LCR Bit Fields}
+\label{tab:asUartLCR}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [1:0] & DATABITS & rw & Data word length:
+    00\,=\,5\;bit, 01\,=\,6\;bit, 10\,=\,7\;bit, 11\,=\,8\;bit (reset). \\
+  \hline
+  [3:2] & PARITY   & rw & Parity mode:
+    00\,=\,none (reset), 01\,=\,odd, 10\,=\,even, 11\,=\,reserved. \\
+  \hline
+  [4]   & STOPBITS & rw & Stop bit count:
+    0\,=\,1 stop bit (reset), 1\,=\,2 stop bits. \\
+  \hline
+  [5]   & BREAK    & rw & Force break: 0\,=\,normal (reset), 1\,=\,TX held low. \\
+  \hline
+  [63:6] & --      & r  & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{CTRL -- Control Register (offset 0x18, rw)}
+
+\begin{table}[H]
+\caption{UART0\_CTRL Bit Fields}
+\label{tab:asUartCTRL}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0]    & LOOPBACK & rw & 0\,=\,normal (reset), 1\,=\,loopback (TX connected internally to RX). \\
+  \hline
+  [1]    & TX\_FLUSH & w  & Write\;1 to flush TX FIFO; auto-clears after one clock cycle. \\
+  \hline
+  [2]    & RX\_FLUSH & w  & Write\;1 to flush RX FIFO; auto-clears after one clock cycle. \\
+  \hline
+  [63:3] & --        & r  & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{STATUS -- Status Register (offset 0x20, ro)}
+
+\begin{table}[H]
+\caption{UART0\_STATUS Bit Fields}
+\label{tab:asUartSTATUS}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0]    & TX\_BUSY    & rh  & 1 while TX shift register is active. \\
+  \hline
+  [1]    & RX\_BUSY    & rh  & 1 while RX shift register is active (frame in progress). \\
+  \hline
+  [3:2]  & --          & r   & Reserved. \\
+  \hline
+  [4]    & FRAME\_ERR  & rh  & Sticky: frame error detected. Cleared by ICR[3]. \\
+  \hline
+  [5]    & PARITY\_ERR & rh  & Sticky: parity error detected. Cleared by ICR[4]. \\
+  \hline
+  [6]    & OVERRUN\_ERR & rh & Sticky: overrun error. Cleared by ICR[5]. \\
+  \hline
+  [7]    & BREAK\_DET  & rh  & Sticky: break condition detected. Cleared by ICR[6]. \\
+  \hline
+  [63:8] & --          & r   & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{FIFOSTAT -- FIFO Status Register (offset 0x30, ro)}
+
+\begin{table}[H]
+\caption{UART0\_FIFOSTAT Bit Fields}
+\label{tab:asUartFIFOSTAT}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [4:0]  & TX\_LEVEL & rh & TX FIFO fill level (0\ldots FIFO\_DEPTH). \\
+  \hline
+  [5]    & TX\_EMPTY & rh & 1 when TX FIFO contains no entries. \\
+  \hline
+  [6]    & TX\_HALF  & rh & 1 when TX FIFO level\,$\leq$\,FIFO\_DEPTH/2. \\
+  \hline
+  [7]    & TX\_FULL  & rh & 1 when TX FIFO is full. \\
+  \hline
+  [15:8] & --        & r  & Reserved. \\
+  \hline
+  [20:16] & RX\_LEVEL & rh & RX FIFO fill level (0\ldots FIFO\_DEPTH). \\
+  \hline
+  [21]   & RX\_EMPTY & rh & 1 when RX FIFO contains no entries. \\
+  \hline
+  [22]   & RX\_HALF  & rh & 1 when RX FIFO level\,$\geq$\,FIFO\_DEPTH/2. \\
+  \hline
+  [23]   & RX\_FULL  & rh & 1 when RX FIFO is full. \\
+  \hline
+  [63:24] & --        & r  & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{RIS -- Raw Interrupt Status (offset 0x40, ro)}
+
+\begin{table}[H]
+\caption{UART0\_RIS Bit Fields}
+\label{tab:asUartRIS}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0]    & RX\_READY   & rh  & RX FIFO level\,$\geq$\,RXTHRES. \\
+  \hline
+  [1]    & TX\_READY   & rh  & TX FIFO level\,$<$\,RXTHRES (space available). \\
+  \hline
+  [2]    & RX\_TIMEOUT & rh  & Data in RX FIFO; no new byte for\,$\geq$\,4 character times. \\
+  \hline
+  [3]    & FRAME\_ERR  & rh  & Frame error (see UART-ER-001). Cleared by ICR[3]. \\
+  \hline
+  [4]    & PARITY\_ERR & rh  & Parity error (see UART-ER-002). Cleared by ICR[4]. \\
+  \hline
+  [5]    & OVERRUN\_ERR & rh & Overrun error (see UART-ER-003). Cleared by ICR[5]. \\
+  \hline
+  [6]    & BREAK\_DET  & rh  & Break detected (see UART-ER-004). Cleared by ICR[6]. \\
+  \hline
+  [63:7] & --           & r   & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{ICR -- Interrupt Clear Register (offset 0x58, wo)}
+
+\begin{table}[H]
+\caption{UART0\_ICR Bit Fields}
+\label{tab:asUartICR}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0]    & CLR\_RX\_READY    & w1c & Write\;1 clears RIS[0] (rx\_ready). \\
+  \hline
+  [1]    & CLR\_TX\_READY    & w1c & Write\;1 clears RIS[1] (tx\_ready). \\
+  \hline
+  [2]    & CLR\_RX\_TIMEOUT  & w1c & Write\;1 clears RIS[2] (rx\_timeout). \\
+  \hline
+  [3]    & CLR\_FRAME\_ERR   & w1c & Write\;1 clears RIS[3] and STATUS[4]. \\
+  \hline
+  [4]    & CLR\_PARITY\_ERR  & w1c & Write\;1 clears RIS[4] and STATUS[5]. \\
+  \hline
+  [5]    & CLR\_OVERRUN\_ERR & w1c & Write\;1 clears RIS[5] and STATUS[6]. \\
+  \hline
+  [6]    & CLR\_BREAK\_DET   & w1c & Write\;1 clears RIS[6] and STATUS[7]. \\
+  \hline
+  [63:7] & --                & --  & Reserved; writes ignored. \\
+  \hline
+\end{tabularx}
+\end{table}

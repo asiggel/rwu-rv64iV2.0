@@ -1,8 +1,7 @@
 `timescale 1ns/1ps
 
 module asScratch #(
-    parameter int SP_DEPTH = 1024,   // 64-bit words; must be power of 2
-    parameter int PA_WIDTH = 32      // physical address width (unused; for doc)
+    parameter int SP_DEPTH = 1024    // 64-bit words; must be power of 2
 ) (
     input  logic clk_i,
     input  logic rst_i,

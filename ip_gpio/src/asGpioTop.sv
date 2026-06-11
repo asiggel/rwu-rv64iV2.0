@@ -32,7 +32,7 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
   logic [reg_width-1:0]      data_s;    // data from bus/BPI to kernel
   logic [nr_gpios-1:0]       dataok_s;  // data from kernel to BPI
   logic [reg_width-1:0]      dataob_s;  // data from BPI to bus
-  logic                      en_s, rd_s;
+  logic                      en_s;
 
   // IRQ
   logic [nr_gpios-1:0]	     irq_s;        // IRQs from kernel
@@ -48,7 +48,9 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
   logic [reg_width-1:0]      irqss_reg_s;   // GPIO Interrupt Request Source Status Register;  address=24 (0x18)
   logic [reg_width-1:0]      irqsc_reg_s;   // GPIO Interrupt Request Source Clear Register;   address=40 (0x28)
   logic [reg_width-1:0]      irqsm_reg_s;   // GPIO Interrupt Request Source Mask Register;    address=32 (0x20)
+  /* verilator lint_off UNUSEDSIGNAL */ // only bit 0 used: single interrupt source in current implementation
   logic [reg_width-1:0]      isr_reg_s;     // GPIO Interrupt Set Register;                    address=48 (0x30)
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [reg_width-1:0]      ris_reg_s;     // GPIO Raw Interrupt Status Register;             address=56 (0x38)
   logic [reg_width-1:0]      imsc_reg_s;    // GPIO Interrupt Mask Control Register;           address=64 (0x40)
   logic [reg_width-1:0]      mis_reg_s;     // GPIO Masked Interrupt Status Register;          address=72 (0x48)
@@ -63,7 +65,7 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
                                      .dat_from_core_i(dataob_s), // data from kernel; should be mapped onto the wb-bus
                                      .dat_to_core_o(data_s),     // data to kernel; for kernel usage
                                      .wr_o(en_s),                // signal to kernel; for kernel usage
-                                     .rd_o(rd_s),
+                                     .rd_o(),
                                      .wb_s_addr_i(wbdAddr_i),
                                      .wb_s_dat_i(wbdDat_i),
                                      .wb_s_dat_o(wbdDat_o),

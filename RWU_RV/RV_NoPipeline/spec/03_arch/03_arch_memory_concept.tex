@@ -3,12 +3,15 @@
 %% Section: Memory Concept
 %% Chapter: Architecture Concepts
 %%
-%% Describes the two-level cache hierarchy (I-Cache / D-Cache),
-%% tag/data array organisation, replacement policy, the CPU-to-Cache
-%% interface, the AXI4 bus between cache controllers and the Memory
-%% Arbiter, and the read path to NOR Flash via QSPI.
+%% Describes both chip variants (Variant A: no-cache with on-chip memories;
+%% Variant B: I-Cache + D-Cache + Scratchpad + NOR Flash via QSPI),
+%% the two-level cache hierarchy, tag/data array organisation, replacement
+%% policy (PLRU), cache write policy (read-allocate, no-write; Flash is RO),
+%% the CPU-to-Cache interface, the AXI4 bus to the Memory Arbiter, and
+%% the SRAM macro selection.
 %%
-%% Status: v0.1 -- initial draft, subject to refinement.
+%% Status: v0.2 -- chip variant table added; WB+WA label corrected to
+%%                 read-allocate/no-write; stale "superseded" note removed.
 %%
 %% Integration in 00_rwurv64i_all.tex:
 %%   \section{Memory Concept}
@@ -19,7 +22,96 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Overview}
+\subsection{Chip Variants}
+\label{subsec:chipVariants}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The \aschip project comprises two distinct chip variants that share the same
+CPU core but differ in their memory subsystem:
+
+\begin{table}[H]
+\caption{Chip Variant Comparison}
+\label{tab:asChipVariants}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+   & \textbf{Variant~A -- No-Cache} & \textbf{Variant~B -- Cache} \\
+  \hline
+  \hline
+  RTL top & \texttt{RV\_NoPipeline} & \texttt{RV\_NoPipelineCache} \\
+  \hline
+  Instruction memory
+    & On-chip I-Mem (32\,KB), loaded via JTAG scan chain; no external Flash
+    & No on-chip I-Mem; instructions fetched from off-chip NOR Flash via QSPI, cached in I-Cache (4\,KB) \\
+  \hline
+  Data memory
+    & On-chip D-Mem (8\,KB), connected via Wishbone
+    & No on-chip D-Mem; read-only data cached in D-Cache (4\,KB); read-write data in on-chip Scratchpad SRAM (8\,KB) \\
+  \hline
+  External Flash
+    & None
+    & NOR Flash via QSPI (code + read-only data) \\
+  \hline
+  Cache subsystem
+    & None
+    & I-Cache + D-Cache + Memory Arbiter + Scratchpad \\
+  \hline
+  Peripheral bus
+    & Wishbone (I-Mem, D-Mem, GPIO, CGU)
+    & Wishbone (GPIO, CGU, QSPI ctrl); cache uses AXI4 \\
+  \hline
+  Design goal
+    & Minimal area; standalone execution from on-chip memory
+    & Higher performance via cache; runs from off-chip Flash, writable Scratchpad \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\noindent
+The remainder of this section (Sections~\ref{subsec:memCacheOverview}
+through the end) describes Variant~B.
+Variant~A does not use any cache and is described in
+Section~\ref{subsec:noCacheVariant}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Variant A -- No-Cache Memory Subsystem}
+\label{subsec:noCacheVariant}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Variant~A implements a simple Harvard memory subsystem with two on-chip SRAM
+blocks and no cache.
+
+\begin{itemize}
+  \item \textbf{Instruction Memory (I-Mem, 32\,KB):}
+    A single-port synchronous SRAM containing 8\,192 RISC-V 32-bit
+    instructions (word-addressed).
+    The CPU accesses I-Mem via a legacy flat bus.
+    At reset, I-Mem is empty; the content is loaded via the JTAG scan chain
+    (a dedicated instruction-memory shift register in the TAP).
+    I-Mem is read-only during normal CPU execution.
+
+  \item \textbf{Data Memory (D-Mem, 8\,KB):}
+    A single-port synchronous SRAM with a Wishbone~B3 slave interface.
+    Supports byte, halfword, word, and doubleword accesses controlled by the
+    Wishbone \texttt{SEL} byte-enable signal.
+    Holds \texttt{.data}, \texttt{.bss}, stack, and heap.
+    Address range: \texttt{0x0000\_0000}--\texttt{0x0000\_1FFF}
+    (8\,KB, mapped at base address 0).
+
+  \item \textbf{Peripheral Bus:}
+    All CPU data accesses are routed through a Wishbone master BPI.
+    Address decoding selects D-Mem, GPIO, CGU, or QSPI controller by chip
+    select (\texttt{csx\_s}).
+\end{itemize}
+
+There is no cache miss penalty in Variant~A: every fetch or load/store
+completes in a fixed number of Wishbone cycles.
+The trade-off is that all code and data must fit in the two 32\,KB + 8\,KB
+on-chip memories.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Variant B -- Cache Memory Subsystem: Overview}
+\label{subsec:memCacheOverview}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 The RWU-RV64I chip uses a Harvard-style split-cache architecture.
@@ -30,9 +122,14 @@ Both caches are 4-way set-associative with a fixed cache-line size of
 
 The backing store for both caches is an off-chip \textbf{NOR Flash} memory
 accessed through the on-chip QSPI controller.
-NOR Flash is read-only from the cache's perspective; accordingly the D-Cache
-operates as a \textbf{read-allocate, no-write-back} cache for the Flash
-address region.
+NOR Flash is \textbf{read-only} from the cache's perspective: the QSPI
+controller provides a cache-miss-driven read path only; there is no
+byte- or word-level write path to Flash.
+Accordingly the D-Cache is \textbf{read-allocate, no-write}: only load misses
+trigger cache-line fills from Flash; stores to the Flash address region cause a
+bus error (\texttt{dc\_err\_o}).
+Because no dirty line can ever exist, no dirty bit and no write-back FSM state
+are required.
 Cache data is held in two on-chip \textbf{SRAM macros} (X-Fab process),
 one per cache.
 A \textbf{Memory Arbiter} serialises simultaneous miss requests from the two
@@ -44,9 +141,6 @@ The D-Cache controller decodes the physical address of every load/store: if
 the address falls in the Flash region the request is served through the cache;
 if it falls in the Scratchpad region the cache is bypassed and the Scratchpad
 SRAM is accessed directly via a simple synchronous interface.
-Because the scratchpad is uncacheable, dirty evictions from the D-Cache
-can never occur; the dirty bit and the write-back FSM state are therefore
-eliminated.
 
 The on-chip bus between cache controllers and the Memory Arbiter uses a
 subset of the \textbf{AMBA AXI4} protocol with burst support, replacing the
@@ -106,7 +200,7 @@ memory subsystem.
   % D-Cache box
   \filldraw[fill=orange!10, draw=black] (6.5,8.5) rectangle (11.5,9.8);
   \node[align=center] at (9.5,9.35) {\textbf{D-Cache}};
-  \node[align=center,font=\small] at (9.0,8.95) {4-Way SA, 32\,B line, WB+WA};
+  \node[align=center,font=\small] at (9.0,8.95) {4-Way SA, 32\,B line, Read-alloc (Flash RO)};
 
   % I-SRAM label and arrow
   \node[font=\small] at (4.5,8.2) {SRAM I/F};
@@ -721,10 +815,9 @@ marked for write-back.
 As a direct consequence:
 
 \begin{itemize}
-  \item The D-Cache metadata does \textbf{not} contain a dirty bit
-    (contrast with Table~\ref{tab:asDCacheTag}, which is superseded:
-    the dirty field is removed; per-way metadata reduces from
-    $(1+1+22)=24$ to $(1+22)=23$ bits).
+  \item The D-Cache metadata (Table~\ref{tab:asDCacheTag}) does \textbf{not}
+    contain a dirty bit; per-way metadata is $(1+22)=23$ bits
+    (valid + tag only, no dirty field).
   \item The \texttt{WRITEBACK} FSM state and the full AXI4 write path
     (AW, W, B channels) are \textbf{eliminated} from the D-Cache
     controller.
@@ -1082,8 +1175,15 @@ routing logic.
 \end{tabularx}
 \end{table}
 
+\textbf{Note -- AW, W, B channels not implemented:}
+The D-Cache is read-allocate with no write-back (Flash is read-only; no dirty bit exists).
+The AW, W, and B channel tables below (Tables~\ref{tab:asAxi4AwCh}--\ref{tab:asAxi4BCh})
+and the write-burst timing figure (Fig.~\ref{fig:asAxi4Wb}) are retained for
+reference only and must \textbf{not} be implemented in \texttt{asDCacheCtrl}.
+The D-Cache AXI4 master uses AR and R channels exclusively.
+
 \begin{table}[H]
-\caption{AXI4 AW Channel (Write Address) -- D-Cache Master only}
+\caption{AXI4 AW Channel (Write Address) -- \textbf{NOT USED}; retained for reference only}
 \label{tab:asAxi4AwCh}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
@@ -1093,7 +1193,7 @@ routing logic.
   \hline
   \texttt{awid}    & M$\to$S & 4  & Always 4'h2 (D-Cache) \\
   \hline
-  \texttt{awaddr}  & M$\to$S & 32 & Start address of dirty line write-back; 32-byte aligned \\
+  \texttt{awaddr}  & M$\to$S & 32 & Start address of cache-line burst; 32-byte aligned \\
   \hline
   \texttt{awlen}   & M$\to$S & 8  & Always 8'h03 (4 beats) \\
   \hline
@@ -1113,7 +1213,7 @@ routing logic.
 \end{table}
 
 \begin{table}[H]
-\caption{AXI4 W Channel (Write Data) -- D-Cache Master only}
+\caption{AXI4 W Channel (Write Data) -- \textbf{NOT USED}; retained for reference only}
 \label{tab:asAxi4WCh}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
@@ -1121,7 +1221,7 @@ routing logic.
   Signal & Dir & Width & Description \\
   \hline
   \hline
-  \texttt{wdata}  & M$\to$S & 64 & One 64-bit beat of the dirty cache line \\
+  \texttt{wdata}  & M$\to$S & 64 & One 64-bit beat of the cache line \\
   \hline
   \texttt{wstrb}  & M$\to$S & 8  & Always 8'hFF (full 64-bit write per beat) \\
   \hline
@@ -1135,7 +1235,7 @@ routing logic.
 \end{table}
 
 \begin{table}[H]
-\caption{AXI4 B Channel (Write Response) -- D-Cache Master only}
+\caption{AXI4 B Channel (Write Response) -- \textbf{NOT USED}; retained for reference only}
 \label{tab:asAxi4BCh}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
@@ -1263,10 +1363,15 @@ used for a cache-line fill.
 \label{fig:asAxi4Fill}
 \end{figure}
 
-\subsubsection{Cache-Line Write-Back Transaction (Write Burst)}
+\subsubsection{Cache-Line Write-Back Transaction -- \textbf{NOT IMPLEMENTED}}
+\label{subsubsec:writeback}
 
-Figure~\ref{fig:asAxi4Wb} shows the timing of a 4-beat INCR write burst
-for a D-Cache dirty-line write-back.
+\textbf{This section is retained for reference only.}
+The current D-Cache design has no write-back path (AW/W/B channels
+eliminated; see Section~\ref{subsec:memCacheOverview}).
+
+Figure~\ref{fig:asAxi4Wb} shows how a 4-beat INCR write burst would look
+if write-back were added in a future revision.
 The AW and W channels are issued simultaneously.
 
 \begin{figure}[H]
@@ -1340,7 +1445,7 @@ pipeline implementations.
   Priority & Master & Notes \\
   \hline
   \hline
-  1 (highest) & D-Cache & Data miss / write-back; stalls the entire pipeline \\
+  1 (highest) & D-Cache & Data miss (read-only; no write-back); stalls the entire pipeline \\
   \hline
   2           & I-Cache & Instruction miss; stalls IF only \\
   \hline

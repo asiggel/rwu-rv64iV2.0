@@ -25,7 +25,7 @@ module as_cgu_top #(parameter cguaddr_width = 64)
   // registers
   logic [reg_width-1:0]      id_reg_s;      // CGU peripheral ID-register;                    address=00
 
-  logic                      en_s, rd_s;
+  logic                      en_s;
   logic [cguaddr_width-1:0]  addr_s;
   logic [reg_width-1:0]      data_s;    // data from bus/BPI to kernel
   logic [reg_width-1:0]      dataob_s;  // data from BPI to bus
@@ -40,7 +40,7 @@ module as_cgu_top #(parameter cguaddr_width = 64)
                                      .dat_from_core_i(dataob_s),  // data from CGU kernel
                                      .dat_to_core_o(data_s),      // data to CGU kernel
                                      .wr_o(en_s),                 // we to CGU kernel
-                                     .rd_o(rd_s),                 // read enable generated in BPI
+                                     .rd_o(),                     // read enable not used in this context
                                      .wb_s_addr_i(wbdAddr_i),     // WB
                                      .wb_s_dat_i(wbdDat_i),       // WB
                                      .wb_s_dat_o(wbdDat_o),       // WB

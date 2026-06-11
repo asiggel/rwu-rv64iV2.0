@@ -1,26 +1,26 @@
-# Scan test example
-- take an arbitrary mem-file, e.g. readgpioid
-- cp tb_rv64i_instr99scantest.sv tb_rv64i.sv
-- run simulation
+# Testbench-Struktur
+# ===================
+# Instruktions-Tests (instr01..instr29) verwenden eine gemeinsame Testbench:
+#   tb/tb_rv64i_instr.sv
+# Konfiguration via Plusargs (+TEST_NAME, +EXPECTED) — wird automatisch
+# durch CMakeLists.txt gesetzt, kein manueller Eingriff nötig.
+#
+# Eigene Testbenches behalten:
+#   tb_rv64i_instr99scantest.sv
+#   tb_rv64i_instr99loadimem.sv
+#   tb_rv64i_readgpioid.sv
 
 # Run simulations
-# ... remove old runs
-rm -rf build
-# generate source directory and build directory
-cmake -S . -B build
-cmake -B build -DSIMULATOR=xsim
-cmake -B build -DSIMULATOR=verilator
-cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
-# executes a single simulation (For waveform generation, un-comment the line
-#   in the SIM section of CMakeLists.txt. Do not forget to comment
-#   it after the single-run.)
-cmake -B build -DWAVES=ON
-cmake -B build -DWAVES=ON -DSIMULATOR=verilator
+# ================
+# Simulator wählen (Default: xsim):
+cmake -S . -B build -DSIMULATOR=xsim
+cmake -S . -B build -DSIMULATOR=verilator
+
+# Einzelnen Test simulieren:
 cmake --build build --target sim_readgpioid
 cmake --build build --target sim_instr06addi
-# executes all simulations as regression
-cmake --build build --target regression
-# executes all simulations as regression and collects the errors
+
+# Regression (alle Tests) + Ergebnisse sammeln:
 cmake --build build --target collect_errors
 
 Sequences:
@@ -33,28 +33,35 @@ cmake --build build --target sim_instr06addi
 cmake --build build --target sim_instr99loadimem
 
 - Single Verilator simulation with wave
----------------------------------------------
+----------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
 cmake --build build --target sim_instr06addi
 
 - Regression Vivado simulation without wave
-------------------------------------
+--------------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=xsim
 cmake --build build --target collect_errors
 
 - Regression Verilator simulation without wave
----------------------------------------------
+-----------------------------------------------
 rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator
 cmake --build build --target collect_errors
 
 - Regression Verilator simulation with wave
 ---------------------------------------------
-rm -rf build
-cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
-cmake --build build --target sim_test_trap
+rm -rf build_verilator
+cmake -S . -B build_verilator -DSIMULATOR=verilator -DWAVES=ON
+cmake --build build_verilator --target sim_test_trap
+
+- Separate Build-Verzeichnisse (kein rm -rf beim Simulator-Wechsel)
+--------------------------------------------------------------------
+cmake -S . -B build_xsim      -DSIMULATOR=xsim
+cmake -S . -B build_verilator -DSIMULATOR=verilator
+cmake --build build_xsim      --target collect_errors
+cmake --build build_verilator --target collect_errors
 
 
 
@@ -67,19 +74,69 @@ cmake --build build --target sim_test_trap
   * Get the speed of a typical NOR-flash.
 - Test suite: Verilator, cocotb, riscv-tests (https://github.com/riscv-software-src/riscv-tests), riscv-arch-test (https://github.com/riscv-non-isa/riscv-arch-test)
 
-cocotb-chain:
-============================
-- Directory structure:
-project/
-├── rtl (src)/
-│   ├── as_top_mem.sv
-│   └── ...
-├── sim/
-│   ├── Makefile
-│   ├── test_cpu.py
-│   └── waves/
-├── tests (rv64Sim)/
-│   ├── add.mem
-│   ├── branch.mem
-│   └── ...
+cocotb Compliance Suite (Verilator)
+====================================
+Verzeichnis: cocotb/   (parallel zu sim/)
+
+Voraussetzungen (einmalig):
+---------------------------
+# Python-venv anlegen und cocotb installieren:
+cd cocotb
+python3 -m venv venv
+venv/bin/pip install cocotb
+
+# Verilator muss im PATH sein (>= 5.x):
+verilator --version
+
+Vollständige Regression (57 Tests, ca. 3 min):
+-----------------------------------------------
+cd cocotb
+make
+
+# Ausgabe je Test:
+#   [PASS] instr30beq            expected=0x1e
+#   ...
+#   Regression PASSED  (57/57 passed)
+
+Einzelnen Test als Smoke-Test:
+-------------------------------
+cd cocotb
+make COCOTB_TEST_MODULES=test_poc              # instr06addi, expected=255
+
+Anderen Test laden (MEMFILE + EXPECTED):
+-----------------------------------------
+cd cocotb
+make COCOTB_TEST_MODULES=test_poc \
+     MEMFILE=../build_xsim/instr30beq/asm/rv64i.mem \
+     EXPECTED=30
+
+# Voraussetzung: build_xsim/instr30beq/asm/rv64i.mem existiert.
+# Assemblieren falls nötig:
+cmake -S . -B build_xsim -DSIMULATOR=xsim
+cmake --build build_xsim --target sim_instr30beq
+
+Neu kompilieren erzwingen (nach RTL-Änderung):
+------------------------------------------------
+cd cocotb
+rm -rf sim_build
+make
+
+Was wird geprüft:
+-----------------
+Die Suite lädt jedes Programm direkt in den I-Mem-Array des DUT (kein JTAG),
+setzt den CPU zurück und überprüft in jedem Takt zwei Dinge:
+
+1. GPIO-Check: Bei jeder cs_o-Flanke wird dut.asGpio.data_reg_s[7:0]
+   mit dem erwarteten Wert verglichen.
+
+2. ISS-Scoreboard (iss.py): Bei jeder instr_commit_s-Flanke
+   - PC_instr_r des DUT vs. ISS → erkennt falsche Sprungziele
+   - regfile_data_w_s des DUT vs. ISS → erkennt falsche Rechenergebnisse
+
+Der Test gilt als PASS nur wenn beide Checks ohne Abweichung bestehen.
+
+Gefundene Bugs (Beispiele aus der Erstinbetriebnahme):
+- SRAW/SRAIW: $signed() musste den Operanden wrappen, nicht den Ausdruck
+- JAL/JALR Rücksprungadresse: PC_instr_r+4 statt PC_s+4 (= PC_instr_r+8)
+- Diese wären im GPIO-Check allein nicht aufgefallen.
 

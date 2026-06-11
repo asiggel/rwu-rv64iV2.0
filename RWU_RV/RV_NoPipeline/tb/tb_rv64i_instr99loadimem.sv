@@ -39,7 +39,9 @@ module tb_rv64i ();
               .tdo_o(tdo_s),
               .gpio_io(gpio_s),
               //.gpioAddr_o(gpioAddr_s),
-              .cs_o(cs_s)
+              .cs_o(cs_s),
+              .uart0_tx_o(),
+              .uart0_rx_i(1'b1)
              );
   // read instructions
   initial
@@ -50,7 +52,7 @@ module tb_rv64i ();
   initial
   begin
     fd = $fopen("./error.txt", "a");
-    trst_s <= 0;
+    trst_s <= 1;
     tdi_s  <= 0;
     tms_s  <= 0;
   end
@@ -157,16 +159,17 @@ module tb_rv64i ();
     tms_s = 1; #(2*clk_2_t); // Select-DR-Scan
     tms_s = 1; #(2*clk_2_t); // Select-IR-Scan
     tdi_s = 0; tms_s = 0; #(2*clk_2_t); // Capture-IR
-    tdi_s = ir[7]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[6]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[5]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[4]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[3]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[2]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[1]; tms_s = 0; #(2*clk_2_t); // Shift-IR
-    tdi_s = ir[0]; tms_s = 1; #(2*clk_2_t); // Exit1-IR
+    tdi_s = 0; tms_s = 0; #(2*clk_2_t); // Shift-IR (dummy: parallel load absorbs this slot)
+    tdi_s = ir[7]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 7
+    tdi_s = ir[6]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 6
+    tdi_s = ir[5]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 5
+    tdi_s = ir[4]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 4
+    tdi_s = ir[3]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 3
+    tdi_s = ir[2]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 2
+    tdi_s = ir[1]; tms_s = 0; #(2*clk_2_t); // Shift-IR bit 1
+    tdi_s = ir[0]; tms_s = 1; #(2*clk_2_t); // Exit1-IR bit 0
     tdi_s = 0; tms_s = 1; #(2*clk_2_t); // Update-IR
-    tdi_s = 0; tms_s = 0; #(2*clk_2_t); // Run-Test_idle
+    tdi_s = 0; tms_s = 0; #(2*clk_2_t); // Run-Test-Idle
   end
   endtask // jtag_load_ir
 

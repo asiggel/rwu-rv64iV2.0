@@ -38,7 +38,8 @@ module jtag ( input logic  tck_i,        // Test Clock
   logic	tdo_ena_s, tdo_ena_n_s;
 
   logic	[ir_width:0]   ser_ir_s;
-  logic	[ir_width-1:0] ir_rst_s, ir_data_s;
+  localparam logic [ir_width-1:0] ir_rst_s  = 'h96;  // IR reset value (constant → clean FDCE/FDPE per bit)
+  localparam logic [ir_width-1:0] ir_data_s = 'hf1;  // IR capture value (constant)
   logic [ir_width-1:0] ir_s; //IR
   logic		       tdo_ir_s;
 
@@ -73,22 +74,20 @@ module jtag ( input logic  tck_i,        // Test Clock
                 .irdr_select_o(irdr_select_s), // to mux2: IR or DRs TDO
                 .tdo_ena_o(tdo_ena_s)          // to TDO TriState buffer
                );
-  assign jtag_rst_s = tapc_rst_s | trst_i;
+  assign jtag_rst_s = tapc_rst_s | ~trst_i;
   assign tap_rst_o  = jtag_rst_s;
 
   //----------------------------------------
   // IR
   //----------------------------------------
-  assign ir_rst_s  = 'h96;
-  assign ir_data_s = 'hf1;
   assign ser_ir_s[0] = tdi_i;
   genvar i;
   generate
     for (i=0;i<ir_width;i++)
     begin
-      ir_cell ircell (.tck_i(tck_i),           // from IO
+      ir_cell #(.IR_RST_VAL(ir_rst_s[i])) ircell (
+                      .tck_i(tck_i),           // from IO
                       .trst_i(jtag_rst_s),     // from rst OR
-                      .ir_rst_i(ir_rst_s[i]),  // from constant
                       .ir_shift_i(ir_shift_s), // from FSM
                       .ir_clock_i(ir_clock_s), // from FSM
                       .ir_upd_i(ir_upd_s),     // from FSM
@@ -178,10 +177,10 @@ module jtag ( input logic  tck_i,        // Test Clock
                   im_tdi_o   = 0; 
                   bs_tdi_o   = 0;  
                 end
-      1       : begin              // IDCODE
-                  sc01_tdi_o = 0; 
-                  im_tdi_o   = 0; 
-                  bs_tdi_o   = 0;  
+      1       : begin              // IDCODE (TDI not used in IDCODE DR path)
+                  sc01_tdi_o = 0;
+                  im_tdi_o   = 0;
+                  bs_tdi_o   = 0;
                 end
       2       : begin              // BS-Chain
                   sc01_tdi_o = 0; 
@@ -213,7 +212,7 @@ module jtag ( input logic  tck_i,        // Test Clock
   begin
     case(sel_tdo_s)
       0       : tdo_1st_s = tdo_by_s;   // BYPASS
-      1       : tdo_1st_s = tdo_by_s;   // IDCODE
+      1       : tdo_1st_s = tdo_id_s;   // IDCODE
       2       : tdo_1st_s = bs_tdo_i;   // BS-Chain
       3       : tdo_1st_s = im_tdo_i;   // I-Mem Chain
       4       : tdo_1st_s = sc01_tdo_i; // Scan Chain 01
@@ -244,10 +243,9 @@ module jtag ( input logic  tck_i,        // Test Clock
   end
 
   //----------------------------------------
-  // TDO Tri-State
+  // TDO Tri-State — driven on falling TCK edge per IEEE 1149.1
   //----------------------------------------
-  //assign tdo_o = (tdo_ena_n_s == 1) ? tdo_3rd_s : 1'bz;
-  assign tdo_o = (tdo_ena_s == 1) ? tdo_2nd_s : 1'bz;
+  assign tdo_o = (tdo_ena_n_s == 1) ? tdo_3rd_s : 1'bz;
 
 
 endmodule : jtag

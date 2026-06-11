@@ -46,8 +46,10 @@ module asMemTop #(
 
     // Combinatorial: is the current D-bus address in the scratchpad?
     logic sp_sel_s;
+    /* verilator lint_off UNSIGNED */ // SP_BASE=0 is a valid instantiation; lower bound is vacuously true for unsigned
     assign sp_sel_s = (dcpu_if.dc_addr[PA_WIDTH-1:0] >= SP_BASE) &&
                       (dcpu_if.dc_addr[PA_WIDTH-1:0] <  SP_TOP_C);
+    /* verilator lint_on UNSIGNED */
 
     // Registered: which module owns the current in-flight D-bus request.
     // Updated on every dc_req pulse so the output mux stays correct during
@@ -124,8 +126,7 @@ module asMemTop #(
 
     // ── Scratchpad SRAM ──────────────────────────────────────────
     asScratch #(
-        .SP_DEPTH(SP_DEPTH),
-        .PA_WIDTH(PA_WIDTH)
+        .SP_DEPTH(SP_DEPTH)
     ) scratch (
         .clk_i  (clk_i),
         .rst_i  (rst_i),

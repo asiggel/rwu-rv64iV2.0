@@ -23,9 +23,11 @@ module as_top_mem (input logic                       clk_i,
                   input  logic                       tdi_i,      // Test Data In
                   output logic                       tdo_o,      // Test Data Out
                   // GPIO
-                  inout tri [nr_gpios-1:0]        gpio_io,     // data of data bus (write to dmem)
-                  //output logic [gpio_addr_width-1:0] gpioAddr_o, // addr of data bus
-                  output logic                       cs_o
+                  inout tri [nr_gpios-1:0]           gpio_io,
+                  output logic                       cs_o,
+                  // UART0
+                  output logic                       uart0_tx_o,
+                  input  logic                       uart0_rx_i
                  );
 
   // data bus
@@ -34,6 +36,7 @@ module as_top_mem (input logic                       clk_i,
   logic [reg_width-1:0]   dBusDataRdGpio_s; // data out from GPIO
   logic [reg_width-1:0]   dBusDataRdQspi_s; // data out from QSPI
   logic [reg_width-1:0]   dBusDataRdCgu_s;  // data out from CGU
+  logic [reg_width-1:0]   dBusDataRdUart_s; // data out from UART0
   logic [reg_width-1:0]   dBusDataRd_s; // data out of MUX
   logic [reg_width-1:0]   dBusDataWr_s; // data in to dmem
   logic [daddr_width-1:0] dBusAddr_s;   // address for dmem
@@ -74,14 +77,15 @@ module as_top_mem (input logic                       clk_i,
   logic wbdstb1_s;
   logic wbdstbGpio_s;
   logic wbdstbCgu_s;
+  logic wbdstbUart_s;
   logic wbdcyc_s;
   logic [wbdSel-1:0]          sel_s;
-  //tri	[nr_gpios-1:0]        asGpio_s;
-  //logic [gpio_addr_width-1:0] asGpioAdr_s;
   logic asGpioCs_s;
-  logic	wdbAckGpio_s;
-  logic	wdbAckQspi_s;
-  logic	wdbAckCgu_s;
+  logic wdbAckGpio_s;
+  logic wdbAckQspi_s;
+  logic wdbAckCgu_s;
+  logic wdbAckUart_s;
+  logic irq_uart_s;
 
   logic	wbdstDMem_s;
   logic	wdbAckDmem_s;
@@ -128,18 +132,18 @@ module as_top_mem (input logic                       clk_i,
   //--------------------------------------------
   // Data Mux: Peripherals to Master
   //--------------------------------------------
-  assign dBusDataRdQspi_s = {reg_width{1'b0}}; // xxxxxxxxxxxxxxxxxxxxxxxxxxxxx remove when QSPI implemented
-  always_comb 
+  assign dBusDataRdQspi_s = {reg_width{1'b0}}; // QSPI not yet wired in RV_NoPipeline
+  always_comb
   begin
-    case(csx_s) // one hot code
-      0  :       dBusDataRd_s = {reg_width{1'b0}};
-      1  :       dBusDataRd_s = dBusDataRdDmem_s;
-      2  :       dBusDataRd_s = dBusDataRdGpio_s;
-      4  :       dBusDataRd_s = dBusDataRdQspi_s;
-      8  :       dBusDataRd_s = dBusDataRdCgu_s;
+    case (csx_s) // one-hot
+      5'b00001:  dBusDataRd_s = dBusDataRdDmem_s;
+      5'b00010:  dBusDataRd_s = dBusDataRdGpio_s;
+      5'b00100:  dBusDataRd_s = dBusDataRdQspi_s;
+      5'b01000:  dBusDataRd_s = dBusDataRdCgu_s;
+      5'b10000:  dBusDataRd_s = dBusDataRdUart_s;
       default:   dBusDataRd_s = {reg_width{1'b0}};
     endcase
-  end // always_comb
+  end
   
   //--------------------------------------------
   // GPIO Peripheral
@@ -185,16 +189,44 @@ module as_top_mem (input logic                       clk_i,
              );
   
   assign clk_div_s = (dr_cap_s) ? clk_i : clk_core_s; // During scan-test, the core clock must be controllable from the tester
-  
+
+  //--------------------------------------------
+  // UART0  (base 0x0000_0001_0000_0600, 512 B)
+  //--------------------------------------------
+  localparam int UART0_AW = 8;
+  assign wbdstbUart_s = wbdstb1_s & wbdcycarb_s & csx_s[4];
+
+  as_uart_top #(
+    .UART_ADDR_WIDTH(UART0_AW),
+    .UART_DATA_WIDTH(reg_width),
+    .FIFO_DEPTH(16)
+  ) uart0 (
+    .clk_i      (clk_div_s),
+    .rst_i      (rst_i),
+    .wbdAddr_i  (dBusAddr_s[UART0_AW-1:0]),
+    .wbdDat_i   (dBusDataWr_s),
+    .wbdDat_o   (dBusDataRdUart_s),
+    .wbdWe_i    (wbdwe_s),
+    .wbdSel_i   (sel_s),
+    .wbdStb_i   (wbdstbUart_s),
+    .wbdAck_o   (wdbAckUart_s),
+    .wbdCyc_i   (wbdcycarb_s),
+    .tx_o       (uart0_tx_o),
+    .rx_i       (uart0_rx_i),
+    .uart_irq_o (irq_uart_s)
+  );
+
   //--------------------------------------------
   // CPU
   //--------------------------------------------
   assign irq_external_s[7]   = irq_gpiox_s;
-  assign irq_external_s[6:0] = 7'b0;
-  
+  assign irq_external_s[6]   = irq_uart_s;
+  assign irq_external_s[5:0] = 6'b0;
+
   assign wdbAckQspi_s = 1'b0;
-  
-  assign wdbAckAll_s = (wdbAckDmem_s || wdbAckGpio_s || wdbAckQspi_s || wdbAckCgu_s) && gnt0_s;
+
+  assign wdbAckAll_s = (wdbAckDmem_s || wdbAckGpio_s || wdbAckQspi_s ||
+                        wdbAckCgu_s  || wdbAckUart_s) && gnt0_s;
   
   as_cpux cpu (.clk_i(clk_div_s), // divided functional clock or external TB clock (scan)
               .rst_i(rst_i),

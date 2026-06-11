@@ -4,9 +4,9 @@
 
 import as_pack::*;
 
-module ir_cell ( input logic  tck_i,      // Base clock
+module ir_cell #(parameter bit IR_RST_VAL = 1'b0)  // reset value of this IR bit (must be constant)
+               ( input logic  tck_i,      // Base clock
                  input logic  trst_i,     // TAPC reset
-                 input logic  ir_rst_i,   // Reset value of the IR
                  input logic  ir_shift_i, // For Mux: either shift tdi/tdo or capture data; Monitor only
                  input logic  ir_clock_i, // Clock the IR shift register (Latch?); Monitor only
                  input logic  ir_upd_i,   // Clock (activate) the IR hold register; Monitor only
@@ -36,12 +36,12 @@ module ir_cell ( input logic  tck_i,      // Base clock
           inter_s <= ser_i; // serial load
   end // always_ff @ (posedge tck_i, posedge trst_s)
 
-  // Slave FF
+  // Slave FF — async reset/preset to IR_RST_VAL (parameter constant → clean FDCE or FDPE, no set+reset conflict)
   always_ff @(posedge tck_i, posedge trst_s)
   begin
     if(trst_s == 1)
-      data_out_s <= ir_rst_i;
-    else 
+      data_out_s <= IR_RST_VAL;
+    else
       if(ir_upd_i == 1)
         data_out_s <= inter_s;
   end // always_ff @ (posedge tck_i, posedge trst_s)

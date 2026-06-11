@@ -16,8 +16,10 @@ import as_pack::*;
 //-----------------------------------------------
 module as_slave_bpi #( parameter addr_width = 64,
                        parameter data_width = 64 )  // passed by callers; not used internally (uses reg_width from package)
-                     ( input  logic                  rst_i,
+                     ( /* verilator lint_off UNUSEDSIGNAL */ // rst_i/clk_i kept for Wishbone interface symmetry; BPI logic is purely combinatorial
+                       input  logic                  rst_i,
                        input  logic                  clk_i,
+                       /* verilator lint_on UNUSEDSIGNAL */
                        // kernel side
                        output logic [addr_width-1:0] addr_o,
                        input  logic [reg_width-1:0]  dat_from_core_i,
