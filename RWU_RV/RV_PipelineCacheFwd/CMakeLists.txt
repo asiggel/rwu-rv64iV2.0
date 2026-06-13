@@ -111,6 +111,12 @@ set(ASM_TESTS
     scratchpad_intensive
     dcache_test
     memory_sections
+    # ---- Pipeline hazard tests (statistics testbench) ----
+    hazard_raw_alu
+    hazard_raw_load
+    hazard_waw_war
+    hazard_ctrl_branch
+    hazard_ctrl_jump
 )
 
 # -------------------------------------------------
@@ -176,6 +182,32 @@ set(INSTR_TB_CONFIG
     "instr58fence"     "fence"       "58"
 )
 
+# -------------------------------------------------
+# Hazard statistics tests
+#   format: <test_id>  <expected_gpio>  <instr_count>
+# instr_count = dynamic instruction count for CPI display (0 = skip CPI)
+# -------------------------------------------------
+set(HAZARD_STAT_CONFIG
+    "hazard_raw_alu"      "42"   "14"
+    "hazard_raw_load"      "7"   "15"
+    "hazard_waw_war"      "25"   "10"
+    "hazard_ctrl_branch"  "22"   "14"
+    "hazard_ctrl_jump"    "37"   "16"
+)
+
+list(LENGTH HAZARD_STAT_CONFIG _hcfg_len)
+set(_hi 0)
+while(_hi LESS _hcfg_len)
+    list(GET HAZARD_STAT_CONFIG ${_hi}             _htid)
+    math(EXPR _hni "${_hi} + 1")
+    math(EXPR _hei "${_hi} + 2")
+    list(GET HAZARD_STAT_CONFIG ${_hni}            _htexp)
+    list(GET HAZARD_STAT_CONFIG ${_hei}            _hticnt)
+    set(HAZARD_EXPECTED_${_htid}    "${_htexp}")
+    set(HAZARD_INSTR_CNT_${_htid}  "${_hticnt}")
+    math(EXPR _hi "${_hi} + 3")
+endwhile()
+
 list(LENGTH INSTR_TB_CONFIG _cfg_len)
 set(_i 0)
 while(_i LESS _cfg_len)
@@ -198,12 +230,18 @@ foreach(TEST ${ASM_TESTS})
 
     set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})
 
-    # Testbench selection: unified TB or test-specific TB
+    # Testbench selection: unified TB, hazard-stat TB, or test-specific TB
     if(DEFINED INSTR_TB_NAME_${TEST})
         set(_TB_FILE    ${TB_ROOT}/tb/tb_rv64i_instr.sv)
         set(_EXTRA_ARGS
             "-DTB_TEST_NAME=${INSTR_TB_NAME_${TEST}}"
             "-DTB_EXPECTED=${INSTR_TB_EXPECTED_${TEST}}")
+    elseif(DEFINED HAZARD_EXPECTED_${TEST})
+        set(_TB_FILE    ${TB_ROOT}/tb/tb_rv64i_hazard_stat.sv)
+        set(_EXTRA_ARGS
+            "-DTB_TEST_NAME=${TEST}"
+            "-DTB_EXPECTED=${HAZARD_EXPECTED_${TEST}}"
+            "-DTB_INSTR_COUNT=${HAZARD_INSTR_CNT_${TEST}}")
     else()
         set(_TB_FILE    ${TB_ROOT}/tb/tb_rv64i_${TEST}.sv)
         set(_EXTRA_ARGS "")
