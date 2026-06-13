@@ -522,6 +522,576 @@ for bg, txt in legend_rows:
 ws3.freeze_panes = ws3.cell(row=7, column=2)
 
 # ===========================================================================
+# SHEET 4 – CPI_Analyse
+# ===========================================================================
+def build_cpi_sheet(wb):
+    """
+    Erstellt das Tabellenblatt 'CPI_Analyse'.
+
+    Struktur
+    --------
+    Abschnitt 1  Einstellbare Parameter  (gelbe Zellen, manuell editierbar)
+    Abschnitt 2  Abgeleitete Zwischengrößen  (Excel-Formeln, automatisch)
+    Abschnitt 3  Design-Vergleich D1–D5  (Tabelle, alle Werte als Formeln)
+
+    Sämtliche Zahlenergebnisse in Abschnitt 2 und 3 sind reine Excel-Formeln,
+    die sich automatisch aktualisieren, sobald ein gelber Parameterwert geändert wird.
+
+    Designs
+    -------
+    D1  RV_NoPipeline       – kein Pipeline, flaches SRAM (BPI-Bus), kein Cache
+    D2  RV_NoPipelineCache  – kein Pipeline, I+D-Cache, SRAM-backed via AXI4
+    D3  RV_PipelineCache    – 5-stufig, stall-only, KEIN Forwarding, I+D-Cache
+    D4  Pipeline + SRAM     – hypothetisch: 5-stufig, direktes SRAM, kein Cache, kein Forwarding
+    D5  Pipeline+Cache+Fwd  – hypothetisch: wie D3, aber mit EX→EX / MEM→EX Forwarding-Netz
+
+    Zeilennummern der Parameterzellen (Spalte C)
+    --------------------------------------------
+    R_FLOAD=7   R_FSTORE=8  R_FBRANCH=9  R_FALU=10
+    R_PTAKEN=13 R_BPEN=14
+    R_HI=17     R_HD=18     R_MISS=19
+    R_RAW1=23   R_RAW2=24   R_RAW3=25
+    R_LU=29
+    R_CPIRAW=33 R_CPIRFW=34 R_CPIBR=35 R_MISSID=36 R_MISSDD=37
+    R_D1=41 R_D2=42 R_D3=43 R_D4=44 R_D5=45
+    """
+    ws = wb.create_sheet("CPI_Analyse")
+
+    # ── Spaltenbreiten ────────────────────────────────────────────────────────
+    # Cols 1-5 für Parameter-Block; cols 6-11 für den Design-Vergleich in Abschnitt 3
+    for col, w in {1:4, 2:42, 3:14, 4:16, 5:62,
+                   6:14, 7:14, 8:14, 9:14, 10:14, 11:42}.items():
+        ws.column_dimensions[get_column_letter(col)].width = w
+
+    # ── Lokale Füllfarben ─────────────────────────────────────────────────────
+    FILL_PARAM = fill("FFF2CC")   # hellgelb  – editierbare Zellen
+    FILL_CALC  = fill("EBF3FB")   # hellblau  – berechnete (read-only) Zellen
+    FILL_D1    = fill("D9E1F2")   # blaugrau  – Design D1
+    FILL_D2    = fill("E2EFD9")   # hellgrün  – Design D2
+    FILL_D3    = fill("FCE4D6")   # lachsrot  – Design D3
+    FILL_D4    = fill("FFF2CC")   # hellgelb  – Design D4 (hypothetisch)
+    FILL_D5    = fill("C6EFCE")   # kräftiggrün – Design D5 (hypothetisch, beste Option)
+
+    # ── Hilfsfunktion: Parameter-Zeile ────────────────────────────────────────
+    def param_row(row, label, value, unit, note, fmt="0.00"):
+        """
+        Schreibt eine editierbare Parameterzeile (Wert-Zelle gelb hinterlegt).
+        Spalte B: Bezeichnung, C: Wert (editierbar), D: Einheit, E: Beschreibung.
+        """
+        s(ws, row, 2, label, fnt=fbk(bold=True), wrap=True)
+        c = ws.cell(row=row, column=3)
+        c.value         = value
+        c.fill          = FILL_PARAM
+        c.font          = fbk(bold=True, color="7F4B00")
+        c.alignment     = Alignment(horizontal="center", vertical="center")
+        c.border        = THIN
+        c.number_format = fmt
+        s(ws, row, 4, unit, fnt=fbk(bold=False))
+        s(ws, row, 5, note, fnt=fbk(bold=False), wrap=True)
+        ws.row_dimensions[row].height = 18
+
+    # ── Hilfsfunktion: Berechnete Zeile (Abschnitt 2) ─────────────────────────
+    def calc_row(row, label, formula, unit, note):
+        """
+        Schreibt eine berechnete Zeile (Formel in Spalte C, hellblau hinterlegt).
+        Alle Formeln verweisen auf absolute Zellreferenzen aus Abschnitt 1.
+        """
+        s(ws, row, 2, label, fnt=fbk(bold=True))
+        c = ws.cell(row=row, column=3)
+        c.value         = formula
+        c.fill          = FILL_CALC
+        c.font          = fbk(bold=False, color="1F4E79")
+        c.alignment     = Alignment(horizontal="center", vertical="center")
+        c.border        = THIN
+        c.number_format = "0.000"
+        s(ws, row, 4, unit, fnt=fbk())
+        s(ws, row, 5, note, fnt=fbk(), wrap=True)
+        ws.row_dimensions[row].height = 18
+
+    # ── Hilfsfunktion: Design-Vergleichszeile (Abschnitt 3) ───────────────────
+    # ref_d1 / ref_d4 werden nach den Zeilennummern-Konstanten definiert.
+    def design_row(row, did, name, f_arch, f_hazard, f_miss, note, bg, ref_d1, ref_d4):
+        """
+        Schreibt eine vollständige Design-Zeile in den Vergleichs-Block.
+
+        Spalten
+        -------
+        B  Design-ID (z.B. "D1")
+        C  Beschreibung
+        D  CPI_arch   – strukturelle Zyklen aus FSM / Pipeline-Aufbau
+        E  CPI_hazard – Stall-Zyklen durch RAW- und Control-Hazards
+        F  CPI_miss   – Stall-Zyklen durch Cache-Misses
+        G  CPI_total  = D+E+F  (Excel-Formel)
+        H  IPC        = 1/G    (Excel-Formel)
+        I  Speedup vs D1 = CPI_D1/G  (> 1 → schneller als D1)
+        J  Speedup vs D4 = CPI_D4/G  (> 1 → schneller als hypothetisches SRAM-Design)
+        K  Anmerkungen
+        """
+        f_total  = f"=D{row}+E{row}+F{row}"
+        f_ipc    = f"=1/G{row}"
+        f_spd_d1 = f"={ref_d1}/G{row}"
+        f_spd_d4 = f"={ref_d4}/G{row}"
+
+        data = [
+            (2,  did,      "@",    FILL_DARK,  fwh(bold=True, sz=11), "center", False),
+            (3,  name,     "@",    bg,         fbk(bold=False),        "left",  True),
+            (4,  f_arch,   "0.000",bg,         fbk(color="1F4E79"),    "center",False),
+            (5,  f_hazard, "0.000",bg,         fbk(color="1F4E79"),    "center",False),
+            (6,  f_miss,   "0.000",bg,         fbk(color="1F4E79"),    "center",False),
+            (7,  f_total,  "0.000",bg,         fbk(bold=True),         "center",False),
+            (8,  f_ipc,    "0.000",bg,         fbk(),                  "center",False),
+            (9,  f_spd_d1, "0.00", bg,         fbk(),                  "center",False),
+            (10, f_spd_d4, "0.00", bg,         fbk(),                  "center",False),
+            (11, note,     "@",    bg,         fbk(bold=False),        "left",  True),
+        ]
+        for ci, val, nf, fill_, fnt, ha, wrap_ in data:
+            c = ws.cell(row=row, column=ci)
+            c.value         = val
+            c.fill          = fill_
+            c.font          = fnt
+            c.number_format = nf
+            c.alignment     = Alignment(horizontal=ha, vertical="center",
+                                        wrap_text=wrap_)
+            c.border        = THIN
+        ws.row_dimensions[row].height = 22
+
+    # =========================================================================
+    # Zeilennummern-Konstanten
+    # Alle Formeln in Abschnitt 2 und 3 referenzieren diese absoluten Adressen.
+    # Die assert-Anweisungen unten sichern, dass der Zähler r exakt passt.
+    # =========================================================================
+    # Abschnitt 1 – Parameter
+    R_FLOAD   = 7    # f_load   (editierbar)
+    R_FSTORE  = 8    # f_store  (editierbar)
+    R_FBRANCH = 9    # f_branch (editierbar)
+    R_FALU    = 10   # f_alu    (Formel: 1−load−store−branch)
+    R_PTAKEN  = 13   # p_taken  (editierbar)
+    R_BPEN    = 14   # cyc_branch (editierbar)
+    R_HI      = 17   # h_I      (editierbar)
+    R_HD      = 18   # h_D      (editierbar)
+    R_MISS    = 19   # m_cyc    (editierbar)
+    R_RAW1    = 23   # p_raw1   (editierbar)
+    R_RAW2    = 24   # p_raw2   (editierbar)
+    R_RAW3    = 25   # p_raw3   (editierbar)
+    R_LU      = 29   # p_lu     (editierbar)
+    # Abschnitt 2 – Zwischengrößen
+    R_CPIRAW  = 33   # CPI_raw   (kein Forwarding)
+    R_CPIRFW  = 34   # CPI_raw_fw (mit Forwarding)
+    R_CPIBR   = 35   # CPI_branch
+    R_MISSID  = 36   # CPI_miss_I
+    R_MISSDD  = 37   # CPI_miss_D
+    # Abschnitt 3 – Design-Zeilen (Spalte G = col 7 = CPI_total)
+    R_D1 = 41
+    R_D2 = 42
+    R_D3 = 43
+    R_D4 = 44
+    R_D5 = 45
+    COL_TOT = 7   # Spalte G: CPI_total
+
+    # Absolute Referenz-Strings für Speedup-Formeln
+    ref_d1 = f"${get_column_letter(COL_TOT)}${R_D1}"   # z.B. "$G$41"
+    ref_d4 = f"${get_column_letter(COL_TOT)}${R_D4}"   # z.B. "$G$44"
+
+    # =========================================================================
+    # TITEL
+    # =========================================================================
+    r = 1
+    s(ws, r, 1, "CPI-Analyse  —  RWU-RV64I Familie  (5 Design-Varianten)",
+      FILL_DARK, fwh(sz=13), ha="center", cs=11)
+    ws.row_dimensions[r].height = 28; r += 1
+
+    s(ws, r, 1,
+      "Grundlage: RTL-Analyse  as_cpux.sv (RV_NoPipeline / RV_NoPipelineCache)  und  "
+      "cc_cpupipe.sv (RV_PipelineCache)  |  Speicher: X-FAB synchrones SRAM  |  "
+      "Alle gelben Zellen in Abschnitt 1 sind editierbar",
+      FILL_MED, fwh(sz=9, bold=False), ha="center", cs=11)
+    r += 2   # r = 4
+
+    # =========================================================================
+    # ABSCHNITT 1 – PARAMETER
+    # =========================================================================
+    shdr(ws, r, 1,
+         "ABSCHNITT 1  —  Einstellbare Parameter  "
+         "( gelbe Zellen editieren → Abschnitt 2 und 3 aktualisieren sich automatisch )",
+         cs=11)
+    r += 1   # r = 5
+
+    # ── Block A: Code-Mix ─────────────────────────────────────────────────────
+    sh2(ws, r, 1, "A  Code-Mix  (typischer RISC-V Instruction-Mix)", cs=11); r += 1  # r = 6
+
+    s(ws, r, 2, "Randbedingung:  f_load + f_store + f_branch + f_alu = 1",
+      fnt=fbk(bold=False, color="666666"), cs=4)
+    r += 1   # r = 7
+
+    assert r == R_FLOAD
+    param_row(r, "f_load     Anteil Load-Instruktionen", 0.25, "–",
+        "LB/LH/LW/LD/LBU/LHU  –  typisch 25 % bei embedded RV64I-Code (Harris & Patterson)")
+    r += 1   # r = 8
+
+    assert r == R_FSTORE
+    param_row(r, "f_store    Anteil Store-Instruktionen", 0.10, "–",
+        "SB/SH/SW/SD  –  typisch 10 %")
+    r += 1   # r = 9
+
+    assert r == R_FBRANCH
+    param_row(r, "f_branch   Anteil Branch-Instruktionen", 0.15, "–",
+        "BEQ/BNE/BLT/BGE/BLTU/BGEU + JAL (für Loops)  –  typisch 15 %")
+    r += 1   # r = 10
+
+    assert r == R_FALU
+    s(ws, r, 2, "f_alu      Anteil ALU / sonstige  (automatisch)", fnt=fbk(bold=True))
+    c = ws.cell(row=r, column=3)
+    c.value         = f"=1-$C${R_FLOAD}-$C${R_FSTORE}-$C${R_FBRANCH}"
+    c.fill          = FILL_CALC
+    c.font          = fbk(bold=False, color="1F4E79")
+    c.alignment     = Alignment(horizontal="center", vertical="center")
+    c.border        = THIN
+    c.number_format = "0.00"
+    s(ws, r, 4, "–")
+    s(ws, r, 5, "= 1 − f_load − f_store − f_branch  "
+      "(ALU R/I-Type, LUI, AUIPC, CSR, JALR ohne Abhängigkeit)", fnt=fbk())
+    ws.row_dimensions[r].height = 18
+    r += 2   # r = 12
+
+    # ── Block B: Branch-Verhalten ─────────────────────────────────────────────
+    sh2(ws, r, 1, "B  Sprung-Verhalten", cs=11); r += 1  # r = 13
+
+    assert r == R_PTAKEN
+    param_row(r, "p_taken    Branch taken-Rate", 0.60, "–",
+        "Anteil tatsächlich ausgeführter Sprünge.  "
+        "Typisch ≈ 60 % (Schleifen dominieren den Programmfluss).  "
+        "Bei p_taken = 0 kein Flush-Overhead (alle Sprünge not-taken).")
+    r += 1   # r = 14
+
+    assert r == R_BPEN
+    param_row(r, "cyc_branch Branch-Flush-Penalty  [Takte]", 2, "Takte",
+        "Fest durch RTL cc_cpupipe.sv:  flush_s = ex_branch_taken_s  →  "
+        "IF- und ID-Stufe werden mit NOP überschrieben  →  2 verlorene Stufen.", fmt="0")
+    r += 2   # r = 16
+
+    # ── Block C: Speicher-Parameter ───────────────────────────────────────────
+    sh2(ws, r, 1, "C  Speicher-Parameter  (X-FAB synchrones SRAM)", cs=11); r += 1  # r = 17
+
+    assert r == R_HI
+    param_row(r, "h_I        I-Cache Hit-Rate", 0.98, "–",
+        "Trefferrate für Instruction-Fetches.  "
+        "0.98 = typisch für kleine embedded Loops.  "
+        "D1 und D4 ignorieren diesen Parameter  (kein Cache → effektiv h_I = 1.0).",
+        fmt="0.000")
+    r += 1   # r = 18
+
+    assert r == R_HD
+    param_row(r, "h_D        D-Cache Hit-Rate  (Loads)", 0.98, "–",
+        "Trefferrate für Data-Loads.  "
+        "Store-Misses = 0: Stores gehen direkt in den Scratchpad-SRAM (kein Evict).  "
+        "D1 und D4 ignorieren diesen Parameter.",
+        fmt="0.000")
+    r += 1   # r = 19
+
+    assert r == R_MISS
+    param_row(r, "m_cyc      Miss-Penalty  [Systemtakte]", 6, "Takte",
+        "Zyklen für Cache-Refill bei einem Miss.  "
+        "On-Chip SRAM hinter AXI4 (32B-Zeile, 64-bit-Bus):  "
+        "≈ 1(AR) + 1(SRAM-Adr.) + 4(R-Beats à 8 Byte) = 6 Takte.  "
+        "Flash-QSPI: 106×(f_sys/f_QSPI_SCK)  →  siehe Sheet 'AMAT_Szenarien'.",
+        fmt="0")
+    r += 2   # r = 21
+
+    # ── Block D: RAW-Hazards ohne Forwarding ──────────────────────────────────
+    sh2(ws, r, 1, "D  RAW Data-Hazards  –  OHNE Forwarding  (gilt für D3, D4)", cs=11)
+    r += 1   # r = 22
+
+    s(ws, r, 2,
+      "cc_cpupipe.sv besitzt kein Forwarding-Netz.  "
+      "Jede RAW-Abhängigkeit erzwingt Stall-Zyklen, bis der Produzent die WB-Stufe abgeschlossen hat.",
+      fnt=fbk(bold=False, color="444444"), wrap=True, cs=4)
+    ws.row_dimensions[r].height = 24
+    r += 1   # r = 23
+
+    assert r == R_RAW1
+    param_row(r, "p_raw1     RAW 1-back Häufigkeit", 0.25, "–",
+        "Instr. N liest ein Register, das Instr. N−1 schreibt  →  3 Stall-Zyklen.  "
+        "Produzent ist in EX, Konsument bleibt 3 Takte in ID stehen (EX→MEM→WB).  "
+        "Typisch ≈ 25 % (Harris & Patterson, Kap. 7).")
+    r += 1   # r = 24
+
+    assert r == R_RAW2
+    param_row(r, "p_raw2     RAW 2-back Häufigkeit", 0.08, "–",
+        "Instr. N liest ein Register, das Instr. N−2 schreibt  →  2 Stall-Zyklen.  "
+        "Typisch ≈ 8 %.")
+    r += 1   # r = 25
+
+    assert r == R_RAW3
+    param_row(r, "p_raw3     RAW 3-back Häufigkeit", 0.04, "–",
+        "Instr. N liest ein Register, das Instr. N−3 schreibt  →  1 Stall-Zyklus.  "
+        "Typisch ≈ 4 %.")
+    r += 2   # r = 27
+
+    # ── Block E: RAW mit Forwarding ───────────────────────────────────────────
+    sh2(ws, r, 1, "E  RAW Data-Hazards  –  MIT Forwarding  (gilt nur für D5, hypothetisch)", cs=11)
+    r += 1   # r = 28
+
+    s(ws, r, 2,
+      "Mit vollständigem EX→EX und MEM→EX Forwarding-Netz.  "
+      "Einziger verbleibender Stall: Load-Use-Hazard  "
+      "(Load-Ergebnis erst nach MEM verfügbar, Konsument braucht es sofort in EX  →  1 Stall-Zyklus).",
+      fnt=fbk(bold=False, color="444444"), wrap=True, cs=4)
+    ws.row_dimensions[r].height = 28
+    r += 1   # r = 29
+
+    assert r == R_LU
+    param_row(r, "p_lu       Load-Use Häufigkeit", 0.05, "–",
+        "Anteil aller Instruktionen, die ein Load-Ergebnis unmittelbar (1-back) lesen.  "
+        "Mit Forwarding der einzige verbleibende 1-Stall-Fall.  "
+        "Typisch ≈ 5 % (≈ 20 % aller Loads haben eine sofortige Abhängigkeit).")
+    r += 2   # r = 31
+
+    # =========================================================================
+    # ABSCHNITT 2 – ZWISCHENGROSSEN
+    # =========================================================================
+    shdr(ws, r, 1,
+         "ABSCHNITT 2  —  Abgeleitete Zwischengrößen  "
+         "(Excel-Formeln — aktualisieren sich automatisch bei Parameteränderung)",
+         cs=11)
+    r += 1   # r = 32
+
+    s(ws, r, 2, "Größe",                   f=FILL_LIGHT, fnt=fbk(bold=True))
+    s(ws, r, 3, "Wert",                    f=FILL_LIGHT, fnt=fbk(bold=True), ha="center")
+    s(ws, r, 4, "Einheit",                 f=FILL_LIGHT, fnt=fbk(bold=True))
+    s(ws, r, 5, "Formel und Erläuterung",  f=FILL_LIGHT, fnt=fbk(bold=True), cs=7)
+    r += 1   # r = 33
+
+    assert r == R_CPIRAW
+    calc_row(r,
+        "CPI_raw      RAW-Stall-Anteil  (kein Forwarding)",
+        f"=$C${R_RAW1}*3 + $C${R_RAW2}*2 + $C${R_RAW3}*1",
+        "Takte / Instr.",
+        f"p_raw1×3 + p_raw2×2 + p_raw3×1  —  Stall-Tiefe: 3 wenn Produzent in EX, "
+        f"2 wenn in MEM, 1 wenn in WB.  Kein Forwarding: Konsument wartet in ID, "
+        f"bis Produzent WB abgeschlossen hat.")
+    r += 1   # r = 34
+
+    assert r == R_CPIRFW
+    calc_row(r,
+        "CPI_raw_fw   RAW-Stall-Anteil  (mit Forwarding, D5)",
+        f"=$C${R_LU}*1",
+        "Takte / Instr.",
+        f"p_lu × 1  —  Mit EX→EX/MEM→EX-Forwarding bleibt nur der Load-Use-Fall "
+        f"(1 Stall-Zyklus), weil das Load-Ergebnis erst nach der MEM-Stufe vorliegt, "
+        f"nicht schon nach EX.")
+    r += 1   # r = 35
+
+    assert r == R_CPIBR
+    calc_row(r,
+        "CPI_branch   Branch-Penalty-Anteil",
+        f"=$C${R_FBRANCH}*$C${R_PTAKEN}*$C${R_BPEN}",
+        "Takte / Instr.",
+        f"f_branch × p_taken × cyc_branch  —  Branch wird in EX aufgelöst "
+        f"(cc_cpupipe.sv: flush_s = ex_branch_taken_s); 2 Stufen (IF, ID) werden "
+        f"mit NOP überschrieben.  Gilt für D3, D4, D5.")
+    r += 1   # r = 36
+
+    assert r == R_MISSID
+    calc_row(r,
+        "CPI_miss_I   I-Cache-Miss-Anteil  (pro Instruktion)",
+        f"=(1-$C${R_HI})*$C${R_MISS}",
+        "Takte / Instr.",
+        f"(1−h_I) × m_cyc  —  Bei jedem Instruction-Fetch-Miss friert die gesamte "
+        f"Pipeline ein bis ic_rvalid = 1 (icache_stall_s in cc_cpupipe.sv).  "
+        f"Gilt für D2, D3, D5.")
+    r += 1   # r = 37
+
+    assert r == R_MISSDD
+    calc_row(r,
+        "CPI_miss_D   D-Cache-Miss-Anteil  (pro Instruktion)",
+        f"=$C${R_FLOAD}*(1-$C${R_HD})*$C${R_MISS}",
+        "Takte / Instr.",
+        f"f_load × (1−h_D) × m_cyc  —  D-Cache-Miss tritt nur bei Loads auf; "
+        f"Stores gehen direkt in den SRAM (Scratchpad-Bypass, kein Evict).  "
+        f"Gilt für D2, D3, D5.")
+    r += 2   # r = 39
+
+    # =========================================================================
+    # ABSCHNITT 3 – DESIGN-VERGLEICH
+    # =========================================================================
+    shdr(ws, r, 1,
+         "ABSCHNITT 3  —  Design-Vergleich  D1–D5  "
+         "( Speedup > 1.0 = schneller als Referenz )",
+         cs=11)
+    r += 1   # r = 40
+
+    tbl_hdrs = [
+        "Design",
+        "Beschreibung",
+        "CPI  Architektur\n(FSM / Pipeline)",
+        "CPI  Hazard-\nStalls",
+        "CPI  Cache-\nMiss",
+        "CPI  gesamt",
+        "IPC",
+        "Speedup\nvs. D1",
+        "Speedup\nvs. D4",
+        "Anmerkungen",
+    ]
+    for ci, h in enumerate(tbl_hdrs, start=2):
+        shdr(ws, r, ci, h)
+        ws.cell(row=r, column=ci).alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[r].height = 38
+    r += 1   # r = 41
+
+    # ── D1: RV_NoPipeline ─────────────────────────────────────────────────────
+    # Strukturelle CPI aus der 4-Zustand-FSM (as_cpux.sv):
+    #   Nicht-Load: FETCH0(1) + FETCH1(1) + EXEC(1)      = 3 Takte
+    #   Load:       FETCH0(1) + FETCH1(1) + EXEC(1) + EXECLD(1) = 4 Takte
+    #   Gewichtet:  (1−f_load)×3 + f_load×4 = 3 + f_load
+    # Kein Pipeline → keine Hazard-Stalls; kein Cache → keine Miss-Stalls.
+    assert r == R_D1
+    design_row(r, "D1",
+        "RV_NoPipeline  —  kein Pipeline, flaches SRAM (BPI-Bus), kein Cache",
+        f"=3+$C${R_FLOAD}",   # 3 + f_load (gewichtetes Mittel über alle Instr.-Klassen)
+        "=0",                  # kein Pipeline → keine RAW- oder Branch-Stalls
+        "=0",                  # kein Cache → keine Miss-Stalls
+        "4-Zustand FSM F0→F1→EX→[ELD]→F0.  "
+        "Deterministisch: exakt 3 Takte (nicht-Load) bzw. 4 Takte (Load).  "
+        "Speedup vs. D1 = 1.00 (Referenz-Design).",
+        FILL_D1, ref_d1, ref_d4)
+    r += 1   # r = 42
+
+    # ── D2: RV_NoPipelineCache ────────────────────────────────────────────────
+    # Gleiche FSM wie D1 (identischer struktureller CPI).
+    # FETCH1 und EXECLD können N Takte stallieren, bis ic_rvalid / dc_rvalid = 1.
+    # CPI_miss = (1−h_I)·m  +  f_load·(1−h_D)·m
+    assert r == R_D2
+    design_row(r, "D2",
+        "RV_NoPipelineCache  —  kein Pipeline, I+D-Cache, SRAM-backed via AXI4",
+        f"=3+$C${R_FLOAD}",                            # gleiche FSM-Struktur wie D1
+        "=0",                                           # kein Pipeline → kein Hazard-Stall
+        f"=$C${R_MISSID}+$C${R_MISSDD}",               # Cache-Miss-Anteil
+        "Identische FSM wie D1, aber FETCH1 und EXECLD warten auf ic_rvalid/dc_rvalid.  "
+        "CPI_miss = CPI_miss_I + CPI_miss_D  (aus Abschnitt 2).  "
+        "Bei h_I = h_D = 1.0 identisch mit D1.",
+        FILL_D2, ref_d1, ref_d4)
+    r += 1   # r = 43
+
+    # ── D3: RV_PipelineCache ──────────────────────────────────────────────────
+    # 5-stufige Pipeline IF/ID/EX/MEM/WB, stall-only, KEIN Forwarding.
+    # CPI_arch = 1 (idealer Pipeline-Durchsatz).
+    # CPI_hazard = CPI_raw (RAW-Stalls, kein Forwarding) + CPI_branch (Control-Stalls).
+    # CPI_miss = CPI_miss_I + CPI_miss_D (globaler Pipeline-Freeze bei Cache-Miss).
+    assert r == R_D3
+    design_row(r, "D3",
+        "RV_PipelineCache  —  5-stufig, stall-only, KEIN Forwarding, I+D-Cache",
+        "=1",                                           # idealer Pipeline-Durchsatz
+        f"=$C${R_CPIRAW}+$C${R_CPIBR}",                # RAW (kein Fwd) + Branch-Penalty
+        f"=$C${R_MISSID}+$C${R_MISSDD}",               # Cache-Miss-Penalty
+        "5-stufig IF/ID/EX/MEM/WB (cc_cpupipe.sv).  Kein Forwarding: "
+        "RAW 1/2/3-back → 3/2/1 Stall-Zyklen in ID.  "
+        "Branch in EX aufgelöst → 2-Stufen-Flush.  "
+        "Cache-Miss → globaler Freeze (icache_stall_s | dcache_stall_s).",
+        FILL_D3, ref_d1, ref_d4)
+    r += 1   # r = 44
+
+    # ── D4: Hypothetisch Pipeline + direktes SRAM ─────────────────────────────
+    # Gleiche 5-stufige Architektur wie D3, aber I-SRAM und D-SRAM direkt
+    # angebunden (1-Takt-Latenz, immer, kein AXI4-Overhead, keine Misses).
+    # Äquivalent zu D3 mit h_I = h_D = 1.0.
+    assert r == R_D4
+    design_row(r, "D4",
+        "Pipeline + SRAM (hypothetisch)  —  5-stufig, direktes SRAM, kein Cache, kein Forwarding",
+        "=1",                                           # gleicher Pipeline-Aufbau wie D3
+        f"=$C${R_CPIRAW}+$C${R_CPIBR}",                # gleiche Hazard-Stalls wie D3
+        "=0",                                           # kein Cache → keine Miss-Stalls
+        "Wie D3, aber I-SRAM und D-SRAM direkt per SRAM-Interface angebunden.  "
+        "Kein AXI4, keine Cache-Misses, deterministisches Timing.  "
+        "Entspricht D3 mit h_I = h_D = 1.0.  "
+        "Einschränkung: Programm- und Datengröße durch SRAM-Kapazität begrenzt.",
+        FILL_D4, ref_d1, ref_d4)
+    r += 1   # r = 45
+
+    # ── D5: Hypothetisch Pipeline + Cache + Forwarding ────────────────────────
+    # Wie D3, aber mit vollständigem Forwarding-Netz (EX→EX, MEM→EX).
+    # Verbleibende Stalls: Load-Use (1 Zyklus) + Branch (unverändert).
+    # Entspricht einer typischen 5-stufigen In-Order-Pipeline (MIPS R3000-Klasse).
+    assert r == R_D5
+    design_row(r, "D5",
+        "Pipeline + Cache + Forwarding (hypothetisch)  —  5-stufig, EX→EX / MEM→EX Forwarding",
+        "=1",                                           # gleicher Pipeline-Aufbau
+        f"=$C${R_CPIRFW}+$C${R_CPIBR}",                # Load-Use (1 Stall) + Branch-Penalty
+        f"=$C${R_MISSID}+$C${R_MISSDD}",               # gleiche Cache-Miss-Penalty wie D3
+        "Wie D3, aber mit EX→EX/MEM→EX Forwarding-Netz.  "
+        "Einziger verbleibender Stall: Load-Use (1 Zyklus).  "
+        "Typische In-Order-Pipeline (MIPS R3000-Klasse).  "
+        "Implementierungsaufwand: ~50 LUT zusätzlich in cc_cpupipe.sv; "
+        "kritischer Pfad verlängert sich durch Forwarding-Mux leicht.",
+        FILL_D5, ref_d1, ref_d4)
+    r += 2
+
+    # ── Farblegende ───────────────────────────────────────────────────────────
+    shdr(ws, r, 1, "Farb-Legende", cs=11); r += 1
+    for bg, txt in [
+        (FILL_D1, "D1  RV_NoPipeline           – Referenz-Design  (CPI_total = Referenz für Speedup-Spalte I)"),
+        (FILL_D2, "D2  RV_NoPipelineCache       – Cache-Erweiterung ohne Pipeline"),
+        (FILL_D3, "D3  RV_PipelineCache         – implementierte Pipeline  (cc_cpupipe.sv, kein Forwarding)"),
+        (FILL_D4, "D4  Pipeline + SRAM          – hypothetisch, kein Cache, kein Forwarding  "
+                  "(= Referenz für Speedup-Spalte J: zeigt Cache-Miss-Overhead von D3/D5)"),
+        (FILL_D5, "D5  Pipeline+Cache+Fwd       – hypothetisch, optimale In-Order-Pipeline"),
+        (FILL_PARAM, "Gelb  – editierbare Parameterzelle (Abschnitt 1)"),
+        (FILL_CALC,  "Hellblau  – berechnete Zelle (Formel, nicht editieren)"),
+    ]:
+        s(ws, r, 1, txt, f=bg, fnt=fbk(), cs=11); r += 1
+
+    r += 1
+
+    # ── Annahmen und Einschränkungen ──────────────────────────────────────────
+    shdr(ws, r, 1, "Annahmen und Einschränkungen", cs=11); r += 1
+    notes = [
+        ("Speicher-Modell",
+         "Alle Designs: X-FAB synchrones SRAM, 1-Takt Read-Latenz "
+         "(Adresse an steigender Flanke N → Daten gültig vor steigender Flanke N+1). "
+         "D1/D4 greifen direkt per BPI/SRAM-Interface zu. "
+         "D2/D3/D5 nutzen I+D-Cache mit AXI4-Refill-Pfad zum Haupt-SRAM."),
+        ("Code-Mix",
+         "Typische Werte aus Harris & Patterson 'Digital Design and Computer Architecture' "
+         "und SPEC-CPU-Messungen für embedded RISC-V. "
+         "Für konkrete RWU-Testprogramme (UART, GPIO) empfiehlt sich eine Profiling-basierte Anpassung "
+         "von f_load, f_store, f_branch."),
+        ("RAW-Häufigkeiten (D3/D4)",
+         "p_raw1/2/3 gelten für typischen C-Code kompiliert mit gcc -O1. "
+         "Bei -O0 (kein Instruction Scheduling) steigen die Werte erheblich. "
+         "Bei -O2/-O3 (Reorder Buffer) sinken sie signifikant. "
+         "Assemblerprogramme (UART-Test) liegen je nach Schreibstil dazwischen."),
+        ("Branch-Modell",
+         "Kein Branch Predictor in allen fünf Designs. "
+         "Penalty gilt ausschließlich für genommene Sprünge (taken). "
+         "Not-taken Branches verursachen in der Pipeline keinen Flush-Overhead. "
+         "JAL (immer taken) ist in f_branch enthalten und zählt immer zur Penalty."),
+        ("Stores",
+         "D1/D2: Store schreibt in EXEC_ST (synchrones Schreiben, kein EXECLD) → CPI_store = 3. "
+         "D3/D4/D5: Store wird in der MEM-Stufe abgeschlossen (1 Takt). "
+         "Kein Miss-Stall für Stores in allen Designs (Scratchpad-/SRAM-Bypass, kein Evict)."),
+        ("Forwarding D5",
+         "Das hypothetische Forwarding-Netz leitet ALU-Ergebnisse aus EX und MEM "
+         "direkt in den EX-Eingangs-Mux zurück (zwei neue Mux-Stufen in cc_cpupipe.sv). "
+         "Kritischer Pfad: ALU → Forwarding-Mux → nächste ALU. "
+         "Implementierungsaufwand: ≈ 50 LUT (Schätzung für XO035, 4-LUT-Technologie)."),
+        ("Speedup-Interpretation",
+         "Speedup = CPI_Referenz / CPI_Design.  Wert > 1.0 bedeutet schneller als die Referenz. "
+         "Spalte I (vs. D1): absoluter Gewinn der Pipeline über das sequentielle Design. "
+         "Spalte J (vs. D4): zeigt den Cache-Miss-Overhead von D2/D3/D5 gegenüber "
+         "dem hypothetischen fehlerfreien SRAM-Design D4."),
+    ]
+    for i, (title, body) in enumerate(notes):
+        bg = FILL_GREY if i % 2 == 0 else FILL_WHITE
+        s(ws, r, 2, title, f=FILL_LIGHT, fnt=fbk(bold=True), cs=2)
+        s(ws, r, 4, body,  f=bg, fnt=fbk(bold=False), cs=8, wrap=True)
+        ws.row_dimensions[r].height = 44; r += 1
+
+    ws.freeze_panes = "B5"
+
+
+build_cpi_sheet(wb)
+
+# ===========================================================================
 # Save
 # ===========================================================================
 wb.save(OUT)

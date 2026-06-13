@@ -510,6 +510,10 @@ three-digit sequence number.
   \hline
   2026-06-05 & A. Siggelkow, Claude & First draft: Requirements section \\
   \hline
+  \multicolumn{3}{|l|}{Version of this document: V0.2} \\
+  \hline
+  2026-06-05 & A. Siggelkow, Claude & Simulation testbenches (uart\_tx, uart\_rx); RX FIFO pop bug fix (\texttt{rd\_data\_r} in \texttt{as\_uart\_top.sv}) \\
+  \hline
 \end{tabularx}
 \end{table}
 
@@ -692,10 +696,10 @@ The UART controller exposes one bus interface:
   \multicolumn{3}{|l|}{History} \\
   \hline
   \multicolumn{1}{|l}{Target Spec.} &
-  \multicolumn{1}{l}{Current version: 0.1, 2026-06-05} &
+  \multicolumn{1}{l}{Current version: 0.2, 2026-06-05} &
   \multicolumn{1}{l|}{Author: A. Siggelkow} \\
   \multicolumn{1}{|l}{ } &
-  \multicolumn{1}{l}{Previous version: none} &
+  \multicolumn{1}{l}{Previous version: 0.1, 2026-06-05} &
   \multicolumn{1}{l|}{ } \\
   \hline
   \hline
@@ -705,6 +709,10 @@ The UART controller exposes one bus interface:
   \multicolumn{3}{|l|}{Chapter Version: C0.1; Date: 2026-06-05} \\
   \hline
   --- & \ref{sec:uartfunc01} / 2026-06-05 & First draft: Requirements + System Integration stubs (AS, Claude) \\
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.2; Date: 2026-06-05} \\
+  \hline
+  --- & \ref{subsec:uartsimtest} / 2026-06-05 & Simulation testbenches (uart\_tx, uart\_rx); RX FIFO pop bug fix (AS, Claude) \\
   \hline
 \end{tabularx}
 \end{table}

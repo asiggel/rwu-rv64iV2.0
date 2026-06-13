@@ -4,9 +4,17 @@ import as_pack::*;
 
 `timescale 1ns/1ps
 
-module as_regfile (input  logic                    clk_i,
-                   input  logic	                   rst_i,
-                   input  logic	                   we_i,
+// WBR=0 (default): pure async read — rdata reflects the value stored in the FF
+//                  array; write and read at the same posedge yields the OLD value.
+// WBR=1          : write-before-read bypass — when a write is active (we_i=1) to
+//                  the same address being read, wdata01_i is forwarded combinatorially.
+//                  Required when the pipeline must capture the new value in the same
+//                  cycle the WB stage commits (SV NBA semantics: the assign RHS is
+//                  evaluated in the active region, before regfile_s[] is updated).
+module as_regfile #(parameter bit WBR = 0)
+                  (input  logic                    clk_i,
+                   input  logic                    rst_i,
+                   input  logic                    we_i,
                    input  logic [rwaddr_width-1:0] raddr01_i,
                    input  logic [rwaddr_width-1:0] raddr02_i,
                    input  logic [rwaddr_width-1:0] waddr01_i,
@@ -37,8 +45,11 @@ module as_regfile (input  logic                    clk_i,
     end
   end
 
-  assign rdata01_o = (raddr01_s != 0) ? regfile_s[raddr01_s] : 0;
-  assign rdata02_o = (raddr02_s != 0) ? regfile_s[raddr02_s] : 0;
-    
-endmodule : as_regfile
+  assign rdata01_o = (raddr01_s != 0)
+                   ? (WBR && we_i && waddr01_s == raddr01_s ? wdata01_i : regfile_s[raddr01_s])
+                   : '0;
+  assign rdata02_o = (raddr02_s != 0)
+                   ? (WBR && we_i && waddr01_s == raddr02_s ? wdata01_i : regfile_s[raddr02_s])
+                   : '0;
 
+endmodule : as_regfile

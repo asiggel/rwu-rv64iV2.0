@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
-project(rv64i_cache_regression LANGUAGES NONE)
+project(rv64i_pipelinecachefwd_regression LANGUAGES NONE)
 
 # -------------------------------------------------
 # Roots
 # -------------------------------------------------
 set(PROJECT_ROOT ${CMAKE_SOURCE_DIR})
-set(IP_ROOT ${PROJECT_ROOT}/../../ CACHE PATH "Root of shared IPs")
-set(NP_ROOT ${PROJECT_ROOT}/../RV_NoPipeline CACHE PATH "RV_NoPipeline shared sources")
+set(IP_ROOT  ${PROJECT_ROOT}/../../         CACHE PATH "Root of shared IPs")
+set(NP_ROOT  ${PROJECT_ROOT}/../RV_NoPipeline   CACHE PATH "RV_NoPipeline shared sources")
+# Testbenches are shared with RV_PipelineCache (same ISA, same interface)
+set(TB_ROOT  ${PROJECT_ROOT}/../RV_PipelineCache CACHE PATH "Testbench source directory")
 
 # -------------------------------------------------
 # Simulator
@@ -29,10 +31,7 @@ message(STATUS "SIMULATOR  = ${SIMULATOR}")
 message(STATUS "SIM_TARGET = ${SIM_TARGET}")
 
 # -------------------------------------------------
-# Test list
-# JTAG-scan tests excluded — no I-Mem scan chain in cache version.
-# Special tests keep their own testbenches; all instruction tests use the
-# unified tb_rv64i_instr.sv (same as RV_NoPipeline).
+# Test list (identical to RV_PipelineCache)
 # -------------------------------------------------
 set(ASM_TESTS
     readgpioid
@@ -117,9 +116,6 @@ set(ASM_TESTS
 
 # -------------------------------------------------
 # Unified instruction testbench configuration
-# Format: TEST_ID  DISPLAY_NAME  EXPECTED_GPIO
-# All listed tests use tb/tb_rv64i_instr.sv with plusargs.
-# Tests NOT listed here use tb/tb_rv64i_<name>.sv.
 # -------------------------------------------------
 set(INSTR_TB_CONFIG
     "instr01loadbyte"  "load_byte"   "128"
@@ -205,12 +201,12 @@ foreach(TEST ${ASM_TESTS})
 
     # Testbench selection: unified TB or test-specific TB
     if(DEFINED INSTR_TB_NAME_${TEST})
-        set(_TB_FILE    ${PROJECT_ROOT}/tb/tb_rv64i_instr.sv)
+        set(_TB_FILE    ${TB_ROOT}/tb/tb_rv64i_instr.sv)
         set(_EXTRA_ARGS
             "-DTB_TEST_NAME=${INSTR_TB_NAME_${TEST}}"
             "-DTB_EXPECTED=${INSTR_TB_EXPECTED_${TEST}}")
     else()
-        set(_TB_FILE    ${PROJECT_ROOT}/tb/tb_rv64i_${TEST}.sv)
+        set(_TB_FILE    ${TB_ROOT}/tb/tb_rv64i_${TEST}.sv)
         set(_EXTRA_ARGS "")
     endif()
 

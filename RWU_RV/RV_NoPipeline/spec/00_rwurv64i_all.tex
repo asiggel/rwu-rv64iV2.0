@@ -50,6 +50,7 @@
 \subsection{Functional Block Diagram}
 \input{\TEXTprod 02_product_text04}
 \input{\TEXTprod 02_product_bild02}
+\input{\TEXTprod 02_product_bild03}
 \subsection{Package}
 \input{\TEXTprod 02_product_text05}
 \section{System View}
@@ -371,7 +372,54 @@
 % C: Test & Debug
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \chapter{Test and Debug}
-Not yet
+
+\section{Simulation Test Suite}
+\label{sec:simtest01}
+
+The \texttt{RV\_NoPipeline} and \texttt{RV\_NoPipelineCache} projects include a
+regression test suite driven by CMake.
+Each test assembles a dedicated firmware program, runs it under xsim, and checks
+the result via GPIO output (0x55\,=\,pass, 0xFF\,=\,fail) or a waveform monitor.
+
+\subsection{UART0 Simulation Tests}
+\label{subsec:uartsimtest}
+
+Two system-level tests verify UART0 end-to-end.
+Firmware uses \texttt{CLKDIV\,=\,4}, giving a bit period of
+$16 \times 4 \times 800\,\text{ns} = 51\,200\,\text{ns}$ at the 1.25\,MHz core clock.
+
+\paragraph{uart\_tx}
+Firmware writes twelve ASCII bytes (\textit{``Hello Rocker''}) to the UART TX FIFO
+one by one, polling STATUS[0] (tx\_busy) before each write.
+The testbench monitors \texttt{uart0\_tx\_o} and decodes each 8N1 frame,
+comparing against the expected string.
+On success GPIO\,=\,0x55 is written.
+
+\paragraph{uart\_rx}
+The testbench injects a pre-built 8N1 serial stream
+(\textit{``We will rock you.''}, 17\,bytes) onto \texttt{uart0\_rx\_i}.
+Firmware polls FIFOSTAT[21] (rx\_empty) until cleared, then reads the DATA
+register; each received byte is compared against the expected ASCII value.
+On full match GPIO\,=\,0x55; on any mismatch GPIO\,=\,0xFF.
+
+\subsubsection{RX FIFO Pop Bug (Fixed 2026-06-05)}
+\label{subsubsec:rxfifobug}
+
+During development, UART RX reads returned 0x00 for every received byte.
+Root cause: the non-pipelined CPU (\texttt{as\_cpux}) uses a two-cycle load
+sequence --- EXEC\_ST (address and read-enable asserted) followed by EXECLD\_ST
+(data captured by the register file).
+The Wishbone master (\texttt{asMBpi}) holds STB\,=\,CYC\,=\,1 throughout both
+cycles, so the UART slave's \texttt{rd\_data\_s} signal was high during EXEC\_ST,
+popping the show-ahead RX FIFO at the EXEC$\to$EXECLD clock edge.
+EXECLD\_ST then saw an empty FIFO and captured 0x00.
+
+Fix: a one-cycle delay register \texttt{rd\_data\_r} was added in
+\texttt{ip\_uart\_v2/src/as\_uart\_top.sv} and used as the FIFO \texttt{rd\_en\_i}.
+The pop now fires at EXECLD$\to$FETCH0, leaving the FIFO head valid throughout
+EXECLD\_ST.
+The same pattern must be applied to any future read-once (clear-on-read) register
+on this Wishbone bus.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % C: Electrical Characteristics

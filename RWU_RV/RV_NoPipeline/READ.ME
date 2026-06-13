@@ -19,6 +19,7 @@ cmake -S . -B build -DSIMULATOR=verilator
 # Einzelnen Test simulieren:
 cmake --build build --target sim_readgpioid
 cmake --build build --target sim_instr06addi
+cmake --build build --target sim_instr01loadbyte
 
 # Regression (alle Tests) + Ergebnisse sammeln:
 cmake --build build --target collect_errors
@@ -57,6 +58,8 @@ cmake -S . -B build_verilator -DSIMULATOR=verilator
 cmake --build build_xsim      --target collect_errors
 cmake --build build_verilator --target collect_errors
 
+
+cmake --build build --target regression -j 1
 
 
 2Do:
@@ -133,4 +136,804 @@ Gefundene Bugs (Beispiele aus der Erstinbetriebnahme):
 - SRAW/SRAIW: $signed() musste den Operanden wrappen, nicht den Ausdruck
 - JAL/JALR Rücksprungadresse: PC_instr_r+4 statt PC_s+4 (= PC_instr_r+8)
 - Diese wären im GPIO-Check allein nicht aufgefallen.
+
+Neural Network
+==============
+Eine Frage für die Zukunft. Ein drittes Projekt wird werden: RV_PipelineCache (die Pipeline wird eingezogen). Kann ich diesen RISC-V dann verwenden, um Neuronale Netze aufzubauen? Welche Änderungen am Kern  
+  wären wünschenswert? Welche Speicherhierarchie?                                                                                                                                                                
+  
+● Gute strategische Frage. Kurze Antwort: Ja, aber RV64I allein ist zu schwach — die Kernfrage ist, wie weit du den ISA und die Peripherie erweiterst.
+
+  ---
+  Was RV64I (Integer only) für NNs kann und nicht kann
+  
+  Inference auf kleinen quantisierten Netzen (INT8, CNN < 1M Parameter) ist grundsätzlich möglich, aber ohne Multiplikation und ohne SIMD ist jede MAC-Operation aus Shifts und Additionen zusammengebaut —
+  qualvoll langsam.
+
+  Training: vergiss es auf einfachem RISC-V ohne FPU und Vektor-Engine.
+
+  ---
+  Wünschenswerte Kern-Erweiterungen (Priorität absteigend)
+
+  ┌──────┬─────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Prio │    Extension    │                                                           Warum                                                           │
+  ├──────┼─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1    │ M (mul/div)     │ Ohne mul ist jede MAC aus Additions-Shifts — absolutes Minimum                                                            │
+  ├──────┼─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2    │ F (float32)     │ Ermöglicht FP32-Inference ohne Quantisierung; fmadd.s = FMA gratis                                                        │
+  ├──────┼─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3    │ Zfh / Bf16      │ BF16 ist der heutige ML-Standard (8-Bit-Exponent = selber Dynamikbereich wie FP32); weniger DSP-Ressourcen als FP32       │
+  ├──────┼─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4    │ V (Vector)      │ RISC-V Vector Extension: VLEN konfigurierbar (128…1024 Bit); transformiert Throughput; aber hoher Implementierungsaufwand │
+  ├──────┼─────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5    │ Custom SIMD MAC │ Einfacher als V-Extension: eigene Instruktion vmacc.4b a0, a1, a2 für 4× INT8-MACs parallel — 1 DSP48 pro Lane            │
+  └──────┴─────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Für ein Lehrprojekt am FPGA (Zybo) ist die pragmatische Stufe:
+  RV64I + M + F = RV64IMF — in Vivado mit DSP48-Primitiven für Mul und FPU (Xilinx hat IP oder du baut as_fpu.sv).
+
+  ---
+  Pipeline-Architektur
+  
+  Für NN-typische Schleifen (dichte fmadd-Ketten) wichtig:
+
+  - Forwarding/Bypassing im EX-Stage — vermeidet RAW-Stalls bei aufeinanderfolgenden MACs
+  - Multi-Cycle FPU mit separater Latenz (z. B. 4 Zyklen FMA) + Scoreboard — FPU-Stalls isolieren, ohne Integer-Pipeline zu blockieren
+  - Branch Predictor (zumindest Static: backward branches taken) — reduziert Loop-Overhead bei Matrix-Multiplikation erheblich
+
+  ---
+  Speicherhierarchie
+
+  NN-Workloads haben zwei sehr unterschiedliche Zugriffscharakteristiken:
+
+  ┌────────────┬──────────┬─────────┬─────────────────────┬──────────────────────────────┐
+  │   Ebene    │  Größe   │ Latenz  │         Typ         │          Verwendung          │
+  ├────────────┼──────────┼─────────┼─────────────────────┼──────────────────────────────┤
+  │ L1-I$      │ 8 KB     │ 1 Zy.   │ 4-way SA            │ Schon geplant                │
+  ├────────────┼──────────┼─────────┼─────────────────────┼──────────────────────────────┤
+  │ L1-D$      │ 8 KB     │ 1–2 Zy. │ 4-way SA            │ Aktivierungen (kleine Layer) │
+  ├────────────┼──────────┼─────────┼─────────────────────┼──────────────────────────────┤
+  │ Scratchpad │ 16–32 KB │ 1 Zy.   │ BRAM, direct mapped │ Gewichte eines Layers        │
+  ├────────────┼──────────┼─────────┼─────────────────────┼──────────────────────────────┤
+  │ L2 / SRAM  │ 256 KB   │ 3–5 Zy. │ BRAM via AXI4       │ Modell-Gewichte gesamt       │
+  ├────────────┼──────────┼─────────┼─────────────────────┼──────────────────────────────┤
+  │ Extern     │ —        │ ~20 Zy. │ QSPI / HyperRAM     │ Code, große Modelle          │
+  └────────────┴──────────┴─────────┴─────────────────────┴──────────────────────────────┘
+
+  Warum Scratchpad statt mehr Cache?
+  Gewichte eines NN-Layers werden für jede Input-Aktivierung erneut gelesen — das ist ein vollständig vorhersagbares Zugriffsmuster. Ein Software-gesteuerter Scratchpad (ähnlich dem in deiner Architektur schon
+  vorhandenen scratchpad_intensive-Test) vermeidet Cache-Thrashing und gibt dir deterministische Latenz — wichtig für Echtzeit-Inferenz.
+
+  HyperRAM statt QSPI für Gewichte:
+  QSPI NOR Flash (~40 MB/s Read) ist für Code gut, aber für Weight-Streaming bei Laufzeit zu langsam. HyperRAM (IS66WVS4M8, 3,3 V, bis 200 MB/s) wäre sinnvoller für ein größeres Modell.
+
+  ---
+  Realistische Einstiegsstufe für RV_PipelineCache
+
+  RV64IMF  +  5-stage Pipeline  +  L1-I$/D$ (schon geplant)
+           +  16 KB Scratchpad  +  FMA-Unit (4 Zyklen, DSP48)
+
+  Damit kannst du ein kleines CNN (LeNet-5, ~60K Parameter, INT8) auf Zybo inferieren — machbar als Studienarbeit oder Master-Thesis. Für MNIST oder einfache Keyword-Spotting-Demos reicht das.
+
+JTAG-Download
+=============
+Eine zweite Frage. Ein Student hat einen Bit-Banging Python Code für ein chinesischen FTDI232 USB auf JTAG Converter geschrieben. Kann ich dazu auch die in meinem Labor vorhandenen Amontec JTAGKey2 Module   
+  verwenden? Wenn ja, wie sieht das Programm aus um meine Assembler Codes in das RV_NoPipeline Design zu bringen? Unter Ubuntu Linux.                                                                            
+  
+● JTAGKey2 ist sogar besser als FT232-Bit-Bang
+
+  Der Amontec JTAGKey2 verwendet einen FT2232H (Dual-Channel, High-Speed USB), der den MPSSE (Multi-Protocol Synchronous Serial Engine) hat — ein Hardware-JTAG-Engine im Chip. Das ist kein Bit-Banging mehr,
+  sondern echtes Protokoll-Offloading bis 30 MHz TCK.
+
+  ---
+  Ubuntu Setup
+
+  # 1. libusb und pyftdi
+  sudo apt install libusb-1.0-0-dev python3-pip
+  pip3 install pyftdi
+
+  # 2. Kernel-Modul entfernen (blockiert sonst pyftdi)
+  sudo rmmod ftdi_sio
+  sudo rmmod usbserial
+
+  # 3. udev-Regel für unprivilegierten Zugriff
+  sudo tee /etc/udev/rules.d/99-amontec.rules <<'EOF'
+  SUBSYSTEM=="usb", ATTR{idVendor}=="0403", ATTR{idProduct}=="cff8", \
+      MODE="0666", GROUP="plugdev", TAG+="uaccess"
+  EOF
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+
+  Das rmmod muss nach jedem Einstecken wiederholt werden — oder du blacklistest das Modul dauerhaft in /etc/modprobe.d/blacklist-ftdi.conf:
+  blacklist ftdi_sio
+
+  ---
+  Hardware-Verbindung
+
+  Der JTAGKey2 hat einen 20-Pin ARM JTAG Header (2×10, 2.54 mm). Die JTAG-Signale:
+
+  ┌──────────────┬──────────────┬─────────────────────────────────────┐
+  │ JTAGKey2 Pin │    Signal    │            → FPGA Header            │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 1            │ VREF (3.3 V) │ VCC (Referenz, nicht speisen)       │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 2, 4, …      │ GND          │ GND                                 │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 5            │ TDI          │ tdi_i                               │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 7            │ TMS          │ tms_i                               │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 9            │ TCK          │ tck_i                               │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 11           │ RTCK         │ — (offen lassen)                    │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 13           │ TDO          │ tdo_o                               │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 15           │ SRST#        │ — (offen lassen)                    │
+  ├──────────────┼──────────────┼─────────────────────────────────────┤
+  │ 3            │ TRST#        │ trst_i (mit Inverter — siehe unten) │
+  └──────────────┴──────────────┴─────────────────────────────────────┘
+
+  TRST-Polarität beachten: Das JTAGKey2 treibt TRST# aktiv-LOW (Standard JTAG), dein Design verwendet intern aktiv-HIGH TRST. Entweder ein Inverter-Gate auf dem Board oder im Python-Code TRST weglassen und
+  stattdessen via TMS-Sequenz (5× TMS=1) den TAP resetten — das ist der sichere Weg.
+
+  ---
+  Python-Programm
+
+  #!/usr/bin/env python3
+  """
+  rv_load_imem.py  — Loads a .mem file into RV_NoPipeline I-MEM via JTAG
+  Hardware: Amontec JTAGKey2 (FT2232H, Channel A, MPSSE)
+  """
+
+  from pyftdi.jtag import JtagController
+  from pyftdi.bits import BitSequence
+  import sys
+
+  # ── Design-spezifische Konstanten (aus dem RTL ablesen) ──────────────────────
+  IR_LEN        = 4       # Länge des Instruction Register (TAP)
+  IR_SCAN_IMEM  = 0x2     # IR-Wert für IMEM-Scan-Chain  ← aus deinem TAP-RTL
+  IMEM_DEPTH    = 1024    # Wörter (aus imemdepth in as_pack)
+  WORD_BITS     = 32      # Breite eines Instruktionsworts
+  TCK_FREQ_HZ   = 1_000_000  # 1 MHz — konservativ; erhöhbar auf 10 MHz
+
+  # ── JTAGKey2: VID=0x0403, PID=0xCFF8, Channel A = JTAG ─────────────────────
+  JTAGKEY2_URL  = 'ftdi://0x0403:0xcff8/1'
+
+  def load_mem(filename: str) -> list[int]:
+      """Reads a Verilog .mem file (hex words, one per line) into a list."""
+      words = []
+      with open(filename) as f:
+          for line in f:
+              line = line.strip()
+              if not line or line.startswith('//') or line.startswith('@'):
+                  continue
+              words.append(int(line, 16))
+      return words
+
+  def rv_load(mem_file: str):
+      words = load_mem(mem_file)
+      if len(words) > IMEM_DEPTH:
+          raise ValueError(f"Program too large: {len(words)} > {IMEM_DEPTH} words")
+
+      ctrl = JtagController(trst=False)          # TRST via TMS-Reset statt Pin
+      ctrl.configure(JTAGKEY2_URL, frequency=TCK_FREQ_HZ)
+
+      try:
+          # 1. TAP-Reset via TMS-Sequenz (5× TMS=1 bringt jeden Zustand nach TLR)
+          ctrl.reset()
+
+          # 2. IR laden: Scan-Chain für IMEM auswählen
+          ctrl.change_state('shift_ir')
+          ctrl.write_tms(BitSequence(IR_SCAN_IMEM, msb=False, length=IR_LEN))
+          ctrl.change_state('update_ir')
+
+          # 3. Alle Instruktionswörter als DR-Shift einspeisen
+          ctrl.change_state('shift_dr')
+
+          for i, word in enumerate(words):
+              bits = BitSequence(word, msb=False, length=WORD_BITS)
+              # Letztes Wort: TMS=1 beim letzten Bit → wechselt nach Exit1-DR
+              last = (i == len(words) - 1)
+              ctrl.shift_register(bits, read=False)
+              if i % 64 == 0:
+                  print(f"  {i}/{len(words)} words loaded...", end='\r')
+
+          ctrl.change_state('update_dr')
+          ctrl.change_state('run_test_idle')
+
+          print(f"\nDone: {len(words)} words loaded into I-MEM.")
+
+      finally:
+          ctrl.close()
+
+  if __name__ == '__main__':
+      if len(sys.argv) != 2:
+          print(f"Usage: {sys.argv[0]} <riscvtest.mem>")
+          sys.exit(1)
+      rv_load(sys.argv[1])
+
+  ---
+  Was du aus dem RTL anpassen musst
+
+  Bevor das Programm läuft, musst du aus deinem TAP-RTL drei Dinge ablesen:
+
+  1. IR_LEN        — Breite des IR-Registers im TAP-Controller
+  2. IR_SCAN_IMEM  — der IR-Wert, der die IMEM-Scan-Chain aktiviert
+  3. Scan-Reihenfolge — werden Wörter MSB-first oder LSB-first, Adresse 0 zuerst?
+
+  Diese stehen in der TAP-RTL-Datei (wahrscheinlich asTopMem.sv oder ein eigenes asTap.sv). Wenn du mir die Datei zeigst, passe ich die Konstanten direkt an.
+
+  ---
+  Alternative: OpenOCD (kein Python nötig)
+  
+  Falls der Student den Python-Weg aufgibt, hat OpenOCD native JTAGKey2-Unterstützung und ein fertiges Interface-File:
+
+  # jtagkey2.cfg (bereits in OpenOCD enthalten)
+  interface ftdi
+  ftdi_vid_pid 0x0403 0xcff8
+  ftdi_layout_init 0x0c08 0x0f1b
+  adapter_khz 1000
+
+  Dann lässt sich Speicher mit load_image oder einem Custom-TCL-Skript laden — schneller zu debuggen als raw Python.
+
+
+Der JTAL liegt unter ip_jtag (ich hoffe, ich habe die Polarität des TRST bereits korrigiert). Der Einbau ist in RWU_RV/RV_NoPipeline/src/asTopMem.sv gemacht. Die Scan-Chain für das Laden des I-Mem auch.     
+
+● Ich lese die relevanten Dateien.
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● Jetzt lese ich das as_pack.sv für ir_width und asTopMem.sv für die I-Mem-Scan-Chain-Verbindung und TRST-Polarität.
+
+  Searched for 4 patterns, read 5 files (ctrl+o to expand)
+
+● Ich habe alles aus dem RTL extrahiert. Hier sind die Ergebnisse und das vollständige Programm.
+
+  ---
+  Extrahierte TAP-Parameter
+  
+  ┌───────────────────┬──────────────────────────────┬─────────────────────────────────────────────┐
+  │     Parameter     │             Wert             │                   Quelle                    │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ ir_width          │ 8 Bit                        │ ip_jtag/src/as_pack.sv Zeile 37             │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ I-MEM IR-Code     │ 0x80 (= 128)                 │ ir_decode.sv Zeile 133                      │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ DR-Breite         │ 48 Bit                       │ im_scan_length = 15 + 32 + 1                │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ DR-Frame          │ {addr[14:0], data[31:0], WE} │ asTopMem.sv Zeilen 297–299                  │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ Shift-Reihenfolge │ MSB zuerst                   │ dr_cell.sv: erster TDI-Bit → höchster Index │
+  ├───────────────────┼──────────────────────────────┼─────────────────────────────────────────────┤
+  │ TRST-Polarität    │ aktiv LOW (TRST#)            │ tap_fsm.sv Zeile 44: trst_s = ~trst_i       │
+  └───────────────────┴──────────────────────────────┴─────────────────────────────────────────────┘
+
+  TRST ist bereits korrekt — der Kommentar in tap_fsm.sv sagt explizit // active-low TRST# per IEEE 1149.1. Kein Inverter nötig, JTAGKey2 passt direkt.
+
+  ---
+  DR-Frame im Detail
+
+  Bit 47 ─── Bit 33 │ Bit 32 ─── Bit 1 │ Bit 0
+    addr[14:0]       │  data[31:0]       │  WE
+    (15 Bit)         │  (32 Bit)         │  (1 Bit)
+
+  Shift-Reihenfolge (TDI): addr[14] zuerst, WE=1 zuletzt.
+
+  Wichtig: Der Write-Enable-Mechanismus in asTopMem.sv hat eine 1-Takt-Verzögerung (im_upd_del_s): Der eigentliche SRAM-Schreibvorgang passiert einen TCK-Takt nach Update-DR — genau beim Übergang Update-DR →
+  RTI. Das Programm berücksichtigt das.
+
+  ---
+  Vollständiges Python-Programm
+
+  #!/usr/bin/env python3
+  """
+  rv_load_imem.py  –  Lädt eine .mem-Datei in den RV_NoPipeline I-Mem via JTAG.
+  Hardware : Amontec JTAGKey2  (FT2232H, Kanal A = MPSSE/JTAG)
+  Target   : as_top_mem  (RWU_RV/RV_NoPipeline)
+
+  TAP-Parameter (aus ip_jtag + as_pack.sv):
+    ir_width   = 8 Bit,  IR_IMEM = 0x80 (= 128)
+    DR-Frame   = 48 Bit: {addr[14:0], data[31:0], WE=1}, MSB zuerst
+    TRST#      = aktiv-LOW (IEEE 1149.1, passt direkt zum JTAGKey2)
+
+  Setup Ubuntu:
+    sudo rmmod ftdi_sio
+    pip3 install pyftdi
+    # udev-Regel: ATTR{idVendor}=="0403", ATTR{idProduct}=="cff8", MODE="0666"
+  """
+
+  import sys
+  from pyftdi.jtag import JtagController
+  from pyftdi.bits import BitSequence
+
+  # ── Hardware ──────────────────────────────────────────────────────────────────
+  JTAGKEY2_URL = 'ftdi://0x0403:0xcff8/1'   # Kanal A (JTAG/MPSSE)
+  TCK_FREQ_HZ  = 1_000_000                  # 1 MHz; auf 5–10 MHz erhöhbar wenn stabil
+
+  # ── TAP-Konstanten (aus ip_jtag/src/ir_decode.sv und as_pack.sv) ─────────────
+  IR_WIDTH   = 8
+  IR_IMEM    = 0x80   # I-Mem-Scan-Chain-Instruktion
+  IR_BYPASS  = 0xFF   # BYPASS
+  DR_WIDTH   = 48     # im_scan_length = 15 + 32 + 1
+  IMEM_DEPTH = 8192   # Wörter (imemdepth in as_pack.sv)
+
+
+  def parse_mem(path: str) -> list[tuple[int, int]]:
+      """
+      Liest eine Verilog-$readmemh-Datei.
+      @<hex>-Direktiven setzen die aktuelle Wortadresse.
+      Gibt [(byte_addr, word), ...] zurück.
+      """
+      result, word_addr = [], 0
+      with open(path) as f:
+          for raw in f:
+              line = raw.split('//')[0].strip()
+              if not line:
+                  continue
+              if line.startswith('@'):
+                  word_addr = int(line[1:], 16)   # Wortadresse aus Direktive
+                  continue
+              for tok in line.split():
+                  result.append((word_addr * 4, int(tok, 16) & 0xFFFF_FFFF))
+                  word_addr += 1
+      return result
+
+
+  def tap_reset(ctrl: JtagController):
+      """TAP-Reset: 5 × TMS=1 (Test-Logic-Reset), dann TMS=0 (Run-Test-Idle)."""
+      ctrl.reset()   # pyftdi sendet 5×TMS=1, dann TMS=0
+
+
+  def shift_ir(ctrl: JtagController, ir_val: int):
+      """
+      Lädt IR: RTI → (1,1,0,0) → Shift-IR → 8 Bit MSB-first → Exit1-IR → (1,0) → RTI.
+      TMS-Sequenz von RTI nach Shift-IR:
+        TMS=1: RTI → Select-DR-Scan
+        TMS=1: Select-DR-Scan → Select-IR-Scan
+        TMS=0: Select-IR-Scan → Capture-IR
+        TMS=0: Capture-IR → Shift-IR
+      """
+      ctrl.write_tms(BitSequence('1100', msb=False))
+      ctrl.shift_register(BitSequence(ir_val, msb=True, length=IR_WIDTH), read=False)
+      # shift_register beendet den letzten Bit mit TMS=1 → Exit1-IR
+      # Exit1-IR → Update-IR (TMS=1), Update-IR → RTI (TMS=0)
+      ctrl.write_tms(BitSequence('10', msb=False))
+
+
+  def write_word(ctrl: JtagController, byte_addr: int, data: int):
+      """
+      Schreibt ein 32-Bit-Wort via I-Mem-Scan-Chain.
+      DR-Frame: {byte_addr[14:0], data[31:0], WE=1} = 48 Bit, MSB zuerst.
+      Der eigentliche SRAM-Write passiert beim Update-DR → RTI-Übergang
+      (wegen im_upd_del_s in asTopMem.sv).
+      TMS-Sequenz von RTI nach Shift-DR:
+        TMS=1: RTI → Select-DR-Scan
+        TMS=0: Select-DR-Scan → Capture-DR
+        TMS=0: Capture-DR → Shift-DR
+      """
+      frame_val = (byte_addr << 33) | (data << 1) | 1
+      ctrl.write_tms(BitSequence('100', msb=False))
+      ctrl.shift_register(BitSequence(frame_val, msb=True, length=DR_WIDTH), read=False)
+      # Exit1-DR → Update-DR (TMS=1) → RTI (TMS=0)
+      # Beim posedge TCK des RTI-Übergangs: im_upd_del_s=1 → iMemWr_s=1 → Write ✓
+      ctrl.write_tms(BitSequence('10', msb=False))
+
+
+  def rv_load(mem_file: str):
+      words = parse_mem(mem_file)
+      if not words:
+          sys.exit("FEHLER: Keine Daten in .mem-Datei gefunden.")
+
+      max_addr = max(a for a, _ in words)
+      if max_addr >= IMEM_DEPTH * 4:
+          sys.exit(f"FEHLER: Adresse 0x{max_addr:04x} überschreitet I-Mem ({IMEM_DEPTH} Wörter).")
+
+      print(f"Lade {len(words)} Wort/Wörter aus '{mem_file}' …")
+      print(f"  Adressbereich: 0x0000 – 0x{max_addr:04x}")
+
+      ctrl = JtagController(trst=False)
+      ctrl.configure(JTAGKEY2_URL, frequency=TCK_FREQ_HZ)
+      try:
+          tap_reset(ctrl)            # TMS-Reset, TRST-Pin nicht nötig
+          shift_ir(ctrl, IR_IMEM)    # IR = 0x80 → I-Mem-Scan-Chain aktiv
+
+          for idx, (addr, data) in enumerate(words):
+              write_word(ctrl, addr, data)
+              if (idx + 1) % 64 == 0 or idx + 1 == len(words):
+                  pct = (idx + 1) * 100 // len(words)
+                  print(f"  [{pct:3d}%] {idx+1}/{len(words)} Wörter\r", end='', flush=True)
+
+          print(f"\nFertig. {len(words)} Wort/Wörter erfolgreich in I-Mem geschrieben.")
+
+          # TAP aufräumen: BYPASS laden und reset
+          shift_ir(ctrl, IR_BYPASS)
+          tap_reset(ctrl)
+
+      finally:
+          ctrl.close()
+
+
+  if __name__ == '__main__':
+      if len(sys.argv) != 2:
+          print(f"Aufruf: python3 {sys.argv[0]} <riscvtest.mem>")
+          sys.exit(1)
+      rv_load(sys.argv[1])
+
+  ---
+  Aufruf
+
+  # mem-Datei liegt nach cmake-Build hier:
+  python3 rv_load_imem.py \
+    RWU_RV/RV_NoPipeline/build/uart_rx/asm/rv64i.mem
+
+  ---
+  Was noch zu prüfen ist
+
+  Vor dem ersten Hardware-Test empfehle ich einen IDCODE-Lesetest — er verifiziert, dass der TAP antwortet, bevor man I-Mem beschreibt:
+
+  # Zwischen tap_reset() und shift_ir() einfügen:
+  shift_ir(ctrl, 0x04)   # IDCODE-Instruktion (ir_decode.sv Zeile 93)
+  ctrl.write_tms(BitSequence('100', msb=False))   # RTI → Shift-DR
+  idcode = ctrl.shift_register(
+      BitSequence(0, msb=True, length=32), read=True)
+  ctrl.write_tms(BitSequence('10', msb=False))
+  print(f"IDCODE = 0x{int(idcode):08x}")  # Erwartet: 0xdeadbeef
+
+  Wenn 0xdeadbeef erscheint (Zeile 133 in jtag.sv), ist der TAP erreichbar und die Bitrichtung korrekt.
+
+
+Un mit OpenOcd?                                                                                                                                                                                                
+
+● Zwei Dateien genügen
+
+  rv_nopipeline.cfg — Interface + TAP-Deklaration
+
+  # Amontec JTAGKey2: FT2232H, VID=0x0403 PID=0xCFF8
+  adapter driver ftdi
+  ftdi vid_pid 0x0403 0xcff8
+  ftdi channel 0
+
+  # FT2232H Pin-Belegung JTAGKey2:
+  #   ADBUS0=TCK  ADBUS1=TDI  ADBUS2=TDO  ADBUS3=TMS
+  #   ACBUS0=nTRST (aktiv-LOW, OE über ACBUS2)
+  ftdi layout_init 0x0c08 0x0f1b
+  ftdi layout_signal nTRST -data 0x0100 -noe 0x0400
+  ftdi layout_signal nSRST -data 0x0200 -noe 0x0800
+
+  adapter speed 1000
+
+  # TAP: IR=8 Bit (as_pack.sv: ir_width=8)
+  # Kein -expected-id: IR-Reset-Wert 0x96 → BYPASS, kein IDCODE sichtbar für OpenOCD
+  jtag newtap rv_nopipeline tap -irlen 8
+
+  ---
+  load_imem.tcl — Bit-Umkehr + Lader
+  
+  Warum Bit-Umkehr? OpenOCD shiftet LSB-first; das Schieberegister (dr_cell.sv) speichert den ersten TDI-Bit am höchsten Index. Deshalb gilt: hardware_value = bitrev(openocd_value).
+
+  ┌─────────────────┬────────────┬────────────────────────────────────┐
+  │      Wert       │  Hardware  │          OpenOCD-Argument          │
+  ├─────────────────┼────────────┼────────────────────────────────────┤
+  │ I-MEM IR        │ 0x80       │ bitrev(0x80,8) = 0x01              │
+  ├─────────────────┼────────────┼────────────────────────────────────┤
+  │ IDCODE IR       │ 0x04       │ bitrev(0x04,8) = 0x20              │
+  ├─────────────────┼────────────┼────────────────────────────────────┤
+  │ BYPASS IR       │ 0xFF       │ 0xFF (symmetrisch)                 │
+  ├─────────────────┼────────────┼────────────────────────────────────┤
+  │ IDCODE Readback │ 0xdeadbeef │ bitrev(0xdeadbeef,32) = 0xF77DB57B │
+  └─────────────────┴────────────┴────────────────────────────────────┘
+
+  # load_imem.tcl — I-MEM Lader für RV_NoPipeline
+  #
+  # DR-Frame (48 Bit): {addr[14:0], data[31:0], WE=1}
+  #   im_scan_length = 15 + 32 + 1 = 48  (as_pack.sv)
+  #   Für OpenOCD: jedes Feld einzeln bit-umkehren.
+
+  proc bitrev {val nbits} {
+      set r 0
+      for {set i 0} {$i < $nbits} {incr i} {
+          set r   [expr {($r << 1) | ($val & 1)}]
+          set val [expr {$val >> 1}]
+      }
+      return $r
+  }
+
+  # Sanity-Check: IDCODE lesen bevor geladen wird
+  proc rv_check_tap {} {
+      irscan rv_nopipeline.tap 0x20          ;# IR = 0x04 (IDCODE), bitrev → 0x20
+      set got [drscan rv_nopipeline.tap 32 0x00000000]
+      set exp "0xf77db57b"                   ;# bitrev(0xdeadbeef, 32)
+      if {[string equal -nocase $got $exp]} {
+          puts "TAP OK  (IDCODE = $got)"
+          return 1
+      }
+      puts "WARNUNG: IDCODE erwartet $exp, gelesen $got — Verdrahtung prüfen!"
+      return 0
+  }
+
+  proc parse_mem {path} {
+      set result {}
+      set waddr  0
+      set fp [open $path r]
+      while {[gets $fp line] >= 0} {
+          set line [regsub {//.*} $line ""]
+          set line [string trim $line]
+          if {$line eq ""} continue
+          if {[string match "@*" $line]} {
+              set waddr [expr "0x[string range $line 1 end]"]
+              continue
+          }
+          foreach tok [split $line " \t"] {
+              if {$tok eq ""} continue
+              lappend result [list $waddr [expr "0x$tok"]]
+              incr waddr
+          }
+      }
+      close $fp
+      return $result
+  }
+
+  proc rv_load_imem {mem_file} {
+      set words [parse_mem $mem_file]
+      if {[llength $words] == 0} { error "Keine Daten in $mem_file" }
+
+      rv_check_tap
+
+      puts "Lade [llength $words] Wörter aus '$mem_file' ..."
+
+      # IR = 0x80 laden (I-MEM-Scan-Chain) → OpenOCD: bitrev(0x80,8) = 0x01
+      irscan rv_nopipeline.tap 0x01
+      runtest 2
+
+      set idx 0
+      set n   [llength $words]
+      foreach entry $words {
+          set waddr     [lindex $entry 0]
+          set data      [lindex $entry 1]
+          set byte_addr [expr {$waddr * 4}]
+
+          # DR-Frame für OpenOCD (LSB-first):
+          #   V[0]  = addr[14]  →  im_datao_s[47]
+          #   V[14] = addr[0]
+          #   V[15] = data[31]  →  im_datao_s[32]
+          #   V[46] = data[0]
+          #   V[47] = WE = 1    →  im_datao_s[0]
+          set ar [bitrev $byte_addr 15]
+          set dr [bitrev $data      32]
+          set frame [expr {(1 << 47) | ($dr << 15) | $ar}]
+
+          # drscan führt automatisch: RTI → ShiftDR → UpdateDR → RTI
+          # Der UpdateDR→RTI-Übergang liefert den TCK-Puls für im_upd_del_s
+          drscan rv_nopipeline.tap 48 [format "0x%012llx" $frame]
+
+          incr idx
+          if {$idx % 64 == 0 || $idx == $n} {
+              puts -nonewline "  $idx/$n\r"; flush stdout
+          }
+      }
+
+      puts "\nFertig — $n Wörter in I-MEM geschrieben."
+
+      irscan rv_nopipeline.tap 0xff    ;# zurück auf BYPASS
+      runtest 2
+  }
+
+  ---
+  Aufruf
+
+  # Einmalig: ftdi_sio entladen
+  sudo rmmod ftdi_sio
+
+  # Nicht-interaktiv (ein Befehl):
+  openocd -f rv_nopipeline.cfg \
+          -c "source load_imem.tcl" \
+          -c "init; rv_load_imem build/uart_rx/asm/rv64i.mem; shutdown"
+
+  # Interaktiv (Telnet-Port 4444):
+  openocd -f rv_nopipeline.cfg -c "source load_imem.tcl"
+  # In einem zweiten Terminal:
+  telnet localhost 4444
+  # > rv_load_imem build/uart_rx/asm/rv64i.mem
+  # > shutdown
+
+  ---
+  Zusammenfassung: Python vs. OpenOCD
+
+  ┌─────────────────┬──────────────────────────────────┬─────────────────────────────────────┐
+  │                 │         Python / pyftdi          │               OpenOCD               │
+  ├─────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+  │ IR-Wert im Code │ 0x80 (msb=True)                  │ 0x01 (bitrev)                       │
+  ├─────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+  │ DR-Wert         │ (addr<<33)|(data<<1)|1, msb=True │ bitrev(addr,15), bitrev(data,32)    │
+  ├─────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+  │ TRST            │ kein Pin nötig (TMS-Reset)       │ nTRST via layout_signal             │
+  ├─────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+  │ Geschwindigkeit │ gut (MPSSE direkt)               │ vergleichbar                        │
+  ├─────────────────┼──────────────────────────────────┼─────────────────────────────────────┤
+  │ Overhead        │ minimal                          │ leichter zu debuggen (Telnet-Shell) │
+  └─────────────────┴──────────────────────────────────┴─────────────────────────────────────┘
+
+
+
+=============================================================================================================
+Das ist ein fantastisches und ambitioniertes Lehr- und Forschungsprojekt! Ein eigenes RISC-V (RV64I) Design in der Lehre aufzubauen und iterativ zu erweitern (Multi-Core / heterogener ASIC für KI), bietet den Studierenden einen unglaublich tiefen Einblick in das moderne Chipdesign.
+Für Ihr Fernziel – einen dedizierten Neuronalen-Netz-Prozessor (NPU) auf Basis mehrerer RV64IMF-Kerne – unterscheidet sich die optimale Speicherhierarchie grundlegend von klassischen Allzweck-CPUs (General-Purpose CPUs). Bei KI-Workloads dominiert das Phänomen des Daten-Logistik-Problems: Matrizen-Multiplikationen erfordern gigantische Datenmengen, aber die Rechenoperationen selbst sind relativ simpel.
+Hier sind die architektonischen Stellschrauben und Empfehlungen, die für Ihr ASIC-Fernziel im Fokus der aktuellen Forschung stehen:
+## 1. Scratchpad-Memory (SPM) statt Hardware-Caches
+Klassische, hardware-verwaltete Caches (wie der zuvor besprochene 4-Way Cache) sind für neuronale Netze oft ineffizient. KI-Datenströme haben eine extrem vorhersagbare Struktur (Schleifen über Tensoren). Ein klassischer Cache verbraucht hier zu viel Chipfläche und Energie für die Tag-Vergleiche und erzeugt unnötige Cache-Misses.
+
+* Der NPU-Ansatz: Nutzen Sie einen Scratchpad-Speicher (ein softwaregesteuertes SRAM direkt am Kern).
+* Vorteil: Der Compiler oder Programmierer schiebt die Gewichte und Aktivierungen explizit per DMA (Direct Memory Access) in diesen Speicher. Das spart die komplette Tag-Vergleichs-Logik, spart massiv Energie und garantiert deterministische Latenzen.
+
+## 2. Tightly-Coupled Memory (TCM) für die RV64IMF-Kerne
+Da Sie die Erweiterungen M (Multiplikation) und F (Single-Precision Floating-Point) einführen, werden Ihre Kerne fähig, Gleitkomma-Skalarprodukte zu berechnen.
+
+* Wenn Sie bei klassischen Caches bleiben wollen, ist ein Tightly-Coupled L1-Cache (Instruction & Data getrennt) direkt an der Pipeline jedes Kerns Pflicht.
+* Um die Komplexität auf dem ASIC niedrig zu halten, empfiehlt sich ein Write-Through-Ansatz für den L1-Daten-Cache, da dies die Cache-Kohärenz im Multi-Core-Verbund drastisch vereinfacht.
+
+## 3. Das Kohärenz-Dilemma im Multi-Core-Verbund
+Wenn mehrere RV64IMF-Kerne auf dieselben Feature-Maps oder Gewichte zugreifen, müssen Sie sich entscheiden:
+
+* Hardware-Kohärenz (MESI/MOESI-Protokoll): Sehr komplex im ASIC-Design, benötigt Directory-Strukturen oder Snooping-Busse. Für ein studentisches Projekt oft zu fehleranfällig.
+* Software-basiert / Nicht-kohärent: Jeder Kern arbeitet auf seinem eigenen Speicherbereich (Scratchpad). Daten-Sharing passiert explizit über ein globaleres Netzwerk (NoC). Für neuronale Netze ist dies meist der performantere und wissenschaftlich modernere Weg (siehe Architekturen wie Google TPU oder Tenstorrent).
+
+## 4. Network-on-Chip (NoC) als Rückgrat der Hierarchie
+Abseits von 4 oder 8 Kernen skaliert ein klassischer gemeinsamer Bus nicht mehr.
+
+* Für Ihren zukünftigen ASIC sollten Sie über ein einfaches Network-on-Chip (NoC) (z. B. eine 2D-Mesh-Topologie) nachdenken.
+* Die Speicherhierarchie sieht dann so aus: Jeder Kern hat sein lokales SRAM (L1/Scratchpad). Über das NoC können die Kerne entweder auf ein großes, verteiltes On-Chip L2-SRAM (Shared Memory) oder direkt auf die Speicher-Controller (z. B. DDR oder HBM-Interfaces) zugreifen.
+
+## Empfehlung für den nächsten Schritt mit den Studierenden
+Da Sie aktuell von RV64I auf RV64IMF hochrüsten, steht die Pipeline-Struktur im Vordergrund (die FPU-Operationen wie fadd.s oder fmul.s benötigen meist mehrere Taktzyklen und eine Out-of-Phase-Execution oder saubere Forwarding-Pfade).
+Setzen Sie für die Speicheranbindung der aktuellen Kerne ein modulares Interface ein (z. B. den offenen TileLink- oder AXI4-Lite-Standard). Wenn das Interface der Kerne standardisiert ist, können Sie (oder die nächste Studierenden-Generation) später flexibel entscheiden, ob Sie dort einen 4-Way Cache, ein Scratchpad oder ein NoC-Interface anflanschen, ohne den RV64IMF-Kern selbst wieder anfassen zu müssen.
+Möchten Sie im Detail besprechen, wie man die FPU-Erweiterung (F) am besten strukturell an die bestehende RV64I-Speicher-Pipeline anbindet?
+
+
+Dieses auf den 4. DAN Shotokan-Karate ausgerichtete Kihon-Programm verzichtet auf kniebelastende Fußtritte (wie Yoko-Geri und Mawashi-Geri). Es konzentriert sich auf die im Shotokan für den Meistergrad essenziellen Schwerpunkte: starke Hüftarbeit, kompakte Stände, variables Hikite (Rückzugshand) sowie die Beherrschung komplexer Armkombinationen und explosiver Vorwärtsbewegungen (Kizami-Zuki, Gyaku-Zuki, Uraken).
+Für die Ausführung aller Techniken gilt: Die Stabilität und die korrekte Hüftrotation haben absolute Priorität.
+Kihon-Programm: 4. DAN (Knie-schonend)
+Führen Sie die folgenden Kombinationen jeweils 5-mal vorwärts aus. Achten Sie streng auf tiefe Stabilität (ohne das Knie übermäßig zu strapazieren, indem Sie den Druck sauber auf den Außenrist des Standbeins und die Hüfte verlagern) und kraftvolles Kime.
+1. Basiskraft und Hüfteinsatz (Zenkutsu-Dachi)
+
+    Vorwärtsbewegung: Oi-Zuki (Vorfauststoß) Jodan
+    Rückwärtsbewegung: Age-Uke (Aufwärtsblock) – Gyakuzuki (Fauststoß) Chudan
+
+2. Schnelle Richtungswechsel und Verteidigung (Shuto-Uke)
+
+    Vorwärts: Shuto-Uke (Messerhandblock) Kokutsu-Dachi
+    Im Stand auf der Stelle: Gyaku-Shuto-Uke (in Kokutsu-Dachi)
+    Übergang nach dem Block: Vorwärts eindrehen in Zenkutsu-Dachi mit Nukite (Speerhand) oder Tettsui (Eisenfaust)
+
+3. Fortgeschrittene Armkombinationen & Konter
+
+    Aus der Vorwärtsbewegung (Zenkutsu-Dachi): Uchi-Uke (Innnenblock) gefolgt von Kizami-Zuki (schneller Fauststoß mit der vorderen Hand), abschließend Gyaku-Zuki in die Tiefe.
+    Aus der Vorwärtsbewegung (Zenkutsu-Dachi): Soto-Uke (Außenblock), Uraken-Uchi (Handrückenstoß) und finaler Gyaku-Zuki.
+
+4. Fließende Übergänge & Tai-Sabaki (Ausweichbewegungen)
+
+    Aus dem Zenkutsu-Dachi nach hinten zurückfallen in Kiba-Dachi mit Gedan-Barai (Tiefblock), gefolgt von einer schnellen Körperdrehung und Yoko-Empi-Uchi (Ellenbogenstoß in die Handfläche der offenen Hand).
+
+5. Fußtechniken-Ersatz (Fokus auf Beinarbeit und Hüfte)
+
+    Anstelle von Yoko-Geri oder Mawashi-Geri fokussieren Sie sich auf die Stabilität und den Einsatz der Hüfte:
+    Ausführung von Mae-Geri (Tritt nach vorn, ohne Abdrehen im Knie) – nach dem Absetzen direkter Konter mit Gyaku-Zuki.
+
+
+
+CPI-Vergleich der drei Designs
+  
+  Grundlagen aus dem RTL
+
+  ICache Hit-Latenz (bestätigt):
+  - IDLE → LOOKUP (posedge nach ic_req) → rvalid_r <=1 in LOOKUP_ST, ic_rvalid erscheint 2 Takte nach ic_req
+  
+  DCache Hit-Latenz (gleiche FSM-Struktur):
+  - Ebenfalls 2 Takte (IDLE → LOOKUP → IDLE, rvalid_r gesetzt am Ende von LOOKUP_ST)
+  
+  CGU: clk_core_div = 80 → Kernfrequenz = 125 MHz / 80 = 1,5625 MHz (FPGA)
+
+  ---
+  1 — RV_NoPipeline (BRAM, 1-Takt-Speicher)
+  
+  Feste Phasenlängen: FETCH0 = 1T, FETCH1 = 1T, EXEC = 1T, EXECLD = 1T
+
+  ┌───────────────────────┬───────┬────────────────────┐
+  │    Instruktionstyp    │ Takte │   Phase-Sequenz    │
+  ├───────────────────────┼───────┼────────────────────┤
+  │ ALU, Branches, Stores │ 3     │ F0 + F1 + EX       │
+  ├───────────────────────┼───────┼────────────────────┤
+  │ Loads                 │ 4     │ F0 + F1 + EX + ELD │
+  └───────────────────────┴───────┴────────────────────┘
+
+  CPI = 0,70 × 3  +  0,15 × 3  +  0,15 × 4
+      = 2,10      +  0,45      +  0,60  =  3,15
+
+
+2 — RV_NoPipelineCache (Cache, 2-Takt Hit)
+  
+  FETCH1 wartet auf ic_rvalid (2 Takte), EXECLD wartet auf dc_rvalid (2 Takte). Stores feuern den DCache in EXEC ohne zu warten → kein EXECLD.
+
+  ┌───────────────────────┬───────┬────────────────────────────────┐
+  │    Instruktionstyp    │ Takte │         Phase-Sequenz          │
+  ├───────────────────────┼───────┼────────────────────────────────┤
+  │ ALU, Branches, Stores │ 4     │ F0(1) + F1(2) + EX(1)          │
+  ├───────────────────────┼───────┼────────────────────────────────┤
+  │ Loads                 │ 6     │ F0(1) + F1(2) + EX(1) + ELD(2) │
+  └───────────────────────┴───────┴────────────────────────────────┘
+
+  CPI = 0,85 × 4  +  0,15 × 6
+      = 3,40      +  0,90  =  4,30
+
+  Bemerkenswert: Durch die Cache-Hit-Latenz ist dieses Design langsamer als NoPipeline — der Vorteil liegt nicht im CPI, sondern in der Adressierbarkeit großer Programmspeicher (QSPI-Flash via Cache).
+
+  ---
+3 — RV_PipelineCache (5-Stufen-Pipeline, 2-Takt ICache)
+  
+  Dieses Design ist komplexer. Die ICache-Latenz dominiert den CPI-Boden.
+
+  Basis-CPI durch ICache (kein anderer Stall)
+
+  ICache liefert im Steady-State 1 Instruktion alle 2 Takte (pipelined Requests: ic_req bei T → ic_rvalid bei T+2, sofort neuer Request). Der icache_stall_s-Takt liegt je zwischen zwei Advances.
+
+  → CPI_basis = 2,0 (ohne jede weitere Stall-Quelle)
+
+  Stall-Beiträge
+
+  ┌─────────────────────────────┬──────────────────────┬─────────────┐
+  │           Ursache           │      Berechnung      │ CPI-Beitrag │
+  ├─────────────────────────────┼──────────────────────┼─────────────┤
+  │ ICache 2-Takt-Latenz        │ 1 Stall/Instruktion  │ +1,00       │
+  ├─────────────────────────────┼──────────────────────┼─────────────┤
+  │ DCache (Loads)              │ 15% × 2 Takte        │ +0,30       │
+  ├─────────────────────────────┼──────────────────────┼─────────────┤
+  │ RAW-Hazards ohne Forwarding │ siehe unten          │ +0,5 … 1,5  │
+  ├─────────────────────────────┼──────────────────────┼─────────────┤
+  │ Branch-Flush (taken)        │ ~10% × 70% × 2 Takte │ +0,14       │
+  ├─────────────────────────────┼──────────────────────┼─────────────┤
+  │ Branch-Flush (taken)        │ ~10% × 70% × 2 Takte │ +0,14       │
+  └─────────────────────────────┴──────────────────────┴─────────────┘
+
+RAW-Hazards ohne Forwarding:
+  Die 2-Takt ICache-Latenz verändert die effektive Distanz zwischen Instruktionen:
+
+  ┌─────────────────────────────────┬───────────────────────────────────┐
+  │        Programm-Abstand         │         Extra-Stall-Takte         │
+  ├─────────────────────────────────┼───────────────────────────────────┤
+  │ 1 (i+1 liest Ergebnis von i)    │ 3                                 │
+  ├─────────────────────────────────┼───────────────────────────────────┤
+  │ 2 (eine Instruktion dazwischen) │ 1                                 │
+  ├─────────────────────────────────┼───────────────────────────────────┤
+  │ 3+ (zwei oder mehr dazwischen)  │ 0 (absorbiert durch ICache-Stall) │
+  └─────────────────────────────────┴───────────────────────────────────┘
+
+  Schätzung für typischen Maschinencode: ~0,90 Takte/Instruktion
+
+  Gesamt CPI
+
+  CPI_min    = 2,0 + 0,30 + 0,14           ≈  2,4   (kein Datenhazard)
+  CPI_typisch = 2,0 + 0,30 + 0,90 + 0,14   ≈  3,3   (typischer Code)
+  CPI_worst  = 2,0 + 0,30 + 1,50 + 0,14   ≈  3,9   (alle Instr. abhängig)
+
+  ---
+  Gesamtübersicht
+
+  ┌────────────────────────────┬──────┬─────────────────────┐
+  │           Design           │ CPI  │ MIPS bei 1,5625 MHz │
+  ├────────────────────────────┼──────┼─────────────────────┤
+  │ RV_NoPipeline              │ 3,15 │ 0,50                │
+  ├────────────────────────────┼──────┼─────────────────────┤
+  │ RV_NoPipelineCache         │ 4,30 │ 0,36                │
+  ├────────────────────────────┼──────┼─────────────────────┤
+  │ RV_PipelineCache (min)     │ 2,4  │ 0,65                │
+  ├────────────────────────────┼──────┼─────────────────────┤
+  │ RV_PipelineCache (typisch) │ ~3,3 │ 0,47                │
+  └────────────────────────────┴──────┴─────────────────────┘
+
+  Fazit
+
+  - NoPipeline hat den besten CPI unter allen drei Designs bei gleicher Taktfrequenz — der direkte BRAM-Zugriff (1 Takt) schlägt die Cache-Latenz.
+  - NoPipelineCache ist durch die 2-Takt-Cache-Latenz langsamer als NoPipeline, kann aber beliebig große Programme (QSPI-Flash) ausführen.
+  - PipelineCache erreicht nur dann einen Vorteil, wenn entweder (a) der Compiler Instruktionen so scheduliert, dass RAW-Abstände ≥ 3 sind, oder (b) die Pipeline durch erhöhten Takt (kürzerer kritischer Pfad
+  pro Stufe) schneller betrieben wird. Mit dem aktuellen CGU-Teiler (÷80) und typischem Handassembler-Code ergibt sich kein messbarer Laufzeitvorteil gegenüber NoPipeline.
+
 

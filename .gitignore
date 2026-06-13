@@ -107,8 +107,12 @@ Thumbs.db
 # Custom build directories
 # =========================
 build/
+build_vlt/
 dist/
 out/
+syn/
+regression.txt
+xxxxas*
 # Vivado
 sim/
 !sim/Makefile

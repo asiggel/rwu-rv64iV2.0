@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(rv64i_cache_regression LANGUAGES NONE)
+project(rv64i_pipeline_regression LANGUAGES NONE)
 
 # -------------------------------------------------
 # Roots
@@ -29,10 +29,7 @@ message(STATUS "SIMULATOR  = ${SIMULATOR}")
 message(STATUS "SIM_TARGET = ${SIM_TARGET}")
 
 # -------------------------------------------------
-# Test list
-# JTAG-scan tests excluded — no I-Mem scan chain in cache version.
-# Special tests keep their own testbenches; all instruction tests use the
-# unified tb_rv64i_instr.sv (same as RV_NoPipeline).
+# Test list (same as RV_NoPipelineCache)
 # -------------------------------------------------
 set(ASM_TESTS
     readgpioid
@@ -117,9 +114,6 @@ set(ASM_TESTS
 
 # -------------------------------------------------
 # Unified instruction testbench configuration
-# Format: TEST_ID  DISPLAY_NAME  EXPECTED_GPIO
-# All listed tests use tb/tb_rv64i_instr.sv with plusargs.
-# Tests NOT listed here use tb/tb_rv64i_<name>.sv.
 # -------------------------------------------------
 set(INSTR_TB_CONFIG
     "instr01loadbyte"  "load_byte"   "128"

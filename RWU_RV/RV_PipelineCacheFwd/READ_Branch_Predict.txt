@@ -1,0 +1,215 @@
+================================================================================
+  RV_PipelineCacheFwd  –  Notiz: Dynamische Sprungvorhersage
+  Datum: 2026-06-10
+================================================================================
+
+AUSGANGSFRAGE (A. Siggelkow)
+-----------------------------
+"Wieviel Aufwand ist es, zu dem statischen BranchPredictor noch einen
+dynamischen hinzuzufügen? Ich behandle sehr häufig in meinen Vorlesungen die
+dynamische Sprungvorhersage mit einer 1-Bit-Historie (2-state-FSM) und auch
+2-Bit-Historie (4-state-FSM). Es wäre cool das einzubauen. Aber erst eine
+Nutzen-/Aufwandsabschätzung."
+
+
+================================================================================
+1. AKTUELLER ZUSTAND  –  Statischer Predictor "always-not-taken"
+================================================================================
+
+In cc_cpupipefwd.sv (und cc_cpupipe.sv) ist der Branch-Predictor implizit
+"always-not-taken":
+
+    flush_s = ex_branch_taken_s | wb_trap_taken_s | wb_mret_s
+
+Der Branch wird in der EX-Stufe aufgelöst. Wenn er genommen wird, werden IF und
+ID mit NOPs überschrieben (2 Takte Penalty). Wird er nicht genommen, kostet er
+0 Takte.
+
+    CPI_branch = f_branch * p_taken * 2  =  0.15 * 0.60 * 2  =  0.18
+
+
+================================================================================
+2. WAS EIN DYNAMISCHER PREDICTOR BRAUCHT
+================================================================================
+
+Eine Richtungsvorhersage (taken / not-taken) allein reicht nicht aus.
+Wenn man "predict taken" sagt, muss das IC-Request in Zyklus 1 bereits auf die
+vorhergesagte Sprungzieladresse zeigen. Dafür sind zwei Komponenten nötig:
+
+    PHT  (Pattern History Table)  –  taken/not-taken-Bit(s) pro Branch
+         z.B. 64 Einträge × 2 Bit = 128 Bit, indexiert über PC[7:2]
+
+    BTB  (Branch Target Buffer)   –  vorhergesagte Sprungzieladresse
+         z.B. 64 Einträge × 64 Bit = 4 KBit, gleicher Index wie PHT
+
+Ohne BTB kennt man in der IF-Stufe das Sprungziel nicht (es wird erst in ID
+aus PC + sign_ext(B-Imm) berechnet). Man könnte dann zwar "predict taken" sagen,
+hätte aber keine andere Adresse als PC+4 – der Predictor wäre nutzlos.
+
+Ausnahme: BTFNT (siehe Stufe 1 unten) – dort ist das Ziel direkt aus den
+Instruction-Bits berechenbar, ohne gespeicherten Zustand.
+
+
+================================================================================
+3. IMPLEMENTIERUNGSSTUFEN  –  AUFWAND UND KOMPLEXITÄT
+================================================================================
+
+------------------------------------------------------------------------
+Stufe 0  –  Aktuell: always-not-taken  (kein Aufwand)
+------------------------------------------------------------------------
+Implizit vorhanden. Penalty: 2 Zyklen für jeden genommenen Branch.
+
+
+------------------------------------------------------------------------
+Stufe 1  –  BTFNT: Backward-Taken / Forward-Not-Taken  (~20 Zeilen, 1–2 Stunden)
+------------------------------------------------------------------------
+Idee: Rückwärts-Branches (negative Offset-Kodierung) sind fast immer
+Loop-Rücksprünge → fast immer taken. Vorwärts-Branches → predict not-taken.
+
+In RISC-V ist das Vorzeichen des B-Type-Immediates Bit [31] der Instruktion:
+
+    predict_taken_s = (if_id_instr_r[6:0] == 7'b1100011)  // B-Type Opcode
+                    && if_id_instr_r[31];                  // imm[12]=1 → negativ
+
+Sprungziel: PC + sign_ext(B-Imm) – rein kombinatorisch aus der Instruktion
+berechenbar. Kein BTB, kein gespeicherter Zustand nötig.
+
+Neuer Flush-Pfad (Hauptänderung gegenüber D5):
+    Wenn predict-taken, aber der Branch wird in EX als not-taken aufgelöst
+    → Flush + PC wiederherstellen auf branch_pc + 4
+
+Nutzen:
+    Loop-Rücksprünge (typisch 90–100 % taken): 0 Zyklen Penalty statt 2
+    Vorwärts-Branches (if/else): unverändert, 2 Zyklen wenn taken
+
+
+------------------------------------------------------------------------
+Stufe 2  –  Vollständiges BTB + 1-Bit PHT  (~200–250 Zeilen, 1–2 Tage)
+------------------------------------------------------------------------
+PHT: pro Eintrag 1 Bit (last outcome: 0=not-taken, 1=taken)
+BTB: pro Eintrag 64 Bit Sprungzieladresse + Valid-Bit + Tag (PC[63:6])
+
+IF-Stufe (Lookup):
+    btb_hit_s  = btb_valid_r[index] && (btb_tag_r[index] == PC_r[63:6])
+    predict_s  = btb_hit_s && pht_r[index]
+    → wenn predict_s: nächster IC-Request auf btb_target_r[index]
+
+EX-Stufe (Update):
+    pht_r[index] <= ex_take_s              // 1-Bit: direkt überschreiben
+    // BTB: beim ersten genommenen Branch eintragen
+    if (ex_branch_taken_s && !btb_valid_r[index])
+        btb_target_r[index] <= ex_PCbr_s
+
+Neue Pipeline-Signale:
+    id_ex_predict_taken_r   – war dieser Branch predicted-taken?
+    id_ex_predict_pc_r      – welche PC wurde für die Vorhersage genutzt?
+
+Neuer Flush-Fall: predict-taken war falsch (Branch wurde not-taken):
+    mispred_wrong_taken_s = id_ex_valid_r && id_ex_predict_taken_r
+                          && !ex_take_s && !global_stall_s;
+    flush_s = ex_branch_taken_s       // bisher (not-taken predicted, taken)
+            | mispred_wrong_taken_s   // NEU (taken predicted, not-taken)
+            | wb_trap_taken_s
+            | wb_mret_s;
+
+    PC-Restore: if (mispred_wrong_taken_s) PC_r <= id_ex_pc_r + 64'd4
+
+
+------------------------------------------------------------------------
+Stufe 3  –  BTB + 2-Bit gesättigter Zähler  (~230–280 Zeilen, +0.5 Tage ggü. Stufe 2)
+------------------------------------------------------------------------
+PHT: pro Eintrag 2 Bit (gesättigter Zähler: 00, 01, 10, 11)
+
+Update-FSM (Zustandsübergang bei taken / not-taken):
+    00 (strongly NT) → taken → 01,  not-taken → 00
+    01 (weakly NT)   → taken → 10,  not-taken → 00
+    10 (weakly T)    → taken → 11,  not-taken → 01
+    11 (strongly T)  → taken → 11,  not-taken → 10
+
+Vorhersage: MSB des Zählers (pht_r[index][1])
+
+Vorteil gegenüber 1-Bit: Ein einzelnes "falsch liegendes" Ergebnis ändert
+die Vorhersage nicht sofort. Für Loop-Abschlüsse (last iteration: not-taken)
+bleibt die Vorhersage danach immer noch auf taken → weniger Fehlvorhersagen.
+
+RTL-Mehraufwand gegenüber Stufe 2: minimal (nur der Update-Case statt eines
+einfachen Flip-Flops). Alle Signale und Flush-Pfade sind identisch.
+
+
+================================================================================
+4. CPI-BENEFIT  –  QUANTITATIVE ABSCHÄTZUNG
+================================================================================
+
+Parameter (aus CPI-Analyse, typischer RV64I-Code-Mix):
+    f_branch = 0.15   (15 % aller Instruktionen sind Branches)
+    p_taken  = 0.60   (60 % der Branches werden genommen)
+
+                           Fehlvorhersage-   CPI_branch   Einsparung
+                           rate (typisch)    = fB*pm*2    vs. D5
+    ---------------------------------------------------------------
+    D5  always-not-taken   60 %              0.18         –
+    + BTFNT                ~15 %             0.045        −0.135
+    + 1-Bit PHT+BTB        ~10 %             0.030        −0.150
+    + 2-Bit PHT+BTB        ~ 5 %             0.015        −0.165
+    ---------------------------------------------------------------
+
+Gesamt-CPI D5 ≈ 1.29 → mit 2-Bit-Predictor ≈ 1.14 → ca. 13 % Speedup.
+
+Bei loop-intensivem Code (p_taken → 1.0, z.B. Matrizenmultiplikation):
+    D5 heute:        CPI_branch = 0.15 * 1.0 * 2 = 0.30
+    + 2-Bit Pred.:   CPI_branch ≈ 0.15 * 0.03 * 2 = 0.009
+    → fast vollständige Elimination der Branch-Penalty für Loops.
+
+
+================================================================================
+5. TECHNISCHE HAUPTRISIKEN
+================================================================================
+
+Die PHT- und BTB-Tabellen sind trivial (kleine Register-Arrays).
+Der schwierige Teil ist die Integration in die bestehende Fetch-FSM.
+
+cc_cpupipefwd.sv hat bereits eine komplexe Fetch-Logik:
+    fetch_in_flight_r  – ausstehender IC-Request
+    ibuf_valid_r       – gepufferter Instruktions-Response
+    discard_ic_r       – Fetch nach Flush verwerfen
+
+Ein BTB-Redirect in der IF-Stufe bedeutet:
+    – Sobald BTB-Hit + PHT=taken: neuen IC-Request auf das Sprungziel starten
+    – Das kann im selben Zyklus passieren, in dem ein anderer Request läuft
+    – discard_ic_r muss auch für den neuen Flush-Pfad (mispred_wrong_taken_s)
+      korrekt gesetzt werden
+
+→ Fehlerquelle Nr. 1: discard_ic_r bei gleichzeitigem BTB-Redirect und
+                       austehendem In-Flight-Request falsch behandeln.
+→ Fehlerquelle Nr. 2: wb_committed_r (WB one-shot guard) mit dem neuen
+                       Flush-Pfad korrekt interagieren.
+
+
+================================================================================
+6. EMPFEHLUNG UND VORLESUNGSKONTEXT
+================================================================================
+
+Für die Vorlesung ist die schrittweise Stufung ideal:
+
+    D5  →  D5_BTFNT  →  D5_Pred1  →  D5_Pred2
+            ~1–2h        ~2 Tage      +0.5 Tage
+
+BTFNT zuerst als "Aha-Erlebnis": zeigt, dass Loops ohne Hardware-Zustand
+fast kostenlos werden, nur durch Ausnutzung der Sprungrichtungs-Kodierung.
+
+Das eigentliche Vorlesungs-Highlight ist danach der 2-Bit-Predictor:
+    – PHT als Array mit Index = PC[N:2]
+    – 2-Bit-FSM je Eintrag (strongly/weakly taken/not-taken)
+    – BTB für den Ziel-PC
+    – Flush auf Fehlvorhersage in beide Richtungen
+
+Modulvorschlag:
+    cc_bht.sv         – Branch History Table (PHT), parameterierbar 1/2 Bit
+    cc_btb.sv         – Branch Target Buffer, parameterierbar Tiefe
+    cc_cpupipepred.sv – Pipeline-CPU mit Predictor (basiert auf cc_cpupipefwd.sv)
+    → Verzeichnis: RV_PipelineCacheFwdPred/
+
+
+================================================================================
+STATUS: Noch nicht implementiert. Zuerst Bugfixes in RV_PipelineCacheFwd.
+================================================================================

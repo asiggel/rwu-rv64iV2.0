@@ -146,3 +146,34 @@ When Claude **modifies** an existing `as_` module it keeps the original prefix.
 - Primary simulator: **xsim (Vivado)**
 - All VRFC 10-3380 warnings must be absent (enforced by rule 1)
 - No `initial` blocks in synthesisable RTL (testbenches only)
+
+---
+
+## 8. `rst_i` and `clk_i` belong only on FF pins — never in combinatorial logic
+
+`rst_i` is a reset input; its only permitted uses are:
+- the sensitivity list of an `always_ff`: `@(posedge clk_i, posedge rst_i)`
+- the reset branch inside that block: `if (rst_i) ...`
+
+`clk_i` is a clock input; its only permitted use is the sensitivity list of an `always_ff`.
+
+**Never** use `rst_i` or `clk_i` as a data signal in `assign` statements,
+`always_comb` blocks, or any other combinatorial expression.
+
+**Wrong** — `rst_i` used as a logic condition:
+```systemverilog
+assign start_fetch_s = !rst_i && !fetch_in_flight_r && ...;
+```
+
+**Right** — derive a registered "post-reset active" flag instead:
+```systemverilog
+always_ff @(posedge clk_i, posedge rst_i)
+  if (rst_i) rst_deasserted_r <= 1'b0;
+  else        rst_deasserted_r <= 1'b1;
+
+assign start_fetch_s = rst_deasserted_r && !fetch_in_flight_r && ...;
+```
+
+**Exception — clock-gating cell:** When a scan-test or power-management circuit
+must gate the clock through an AND cell, mark the line with `// CLOCK GATE:`
+and keep it isolated from all functional RTL.
