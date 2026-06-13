@@ -70,8 +70,8 @@ module as_top_mem (
   // QSPI IRQ
   logic qspi_irq_s;
 
-  // IRQ
-  logic [irq_total_num_ext_c-1:0] irq_external_s;
+  // IRQ — single combined line; real ICU will replace this signal
+  logic irq_combined_s;
 
   // ── Internal interfaces ─────────────────────────────────────────
   as_icache_if icpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
@@ -225,14 +225,12 @@ module as_top_mem (
   // ┌──────────────────────────────────────────────────────────────────────┐
   // │  STUDENT TASK: Replace this dummy ICU with your own implementation.  │
   // │  Inputs : irq_gpiox_s, qspi_irq_s, irq_uart_s  (add sources here)   │
-  // │  Output : irq_external_s[irq_total_num_ext_c-1:0] → CPU irq_ext_i   │
-  // │  The CPU samples bit [7] as the single external-interrupt line.      │
+  // │  Output : irq_combined_s  → CPU irq_ext_i bit [irq_total_num_ext_c-1]│
   // └──────────────────────────────────────────────────────────────────────┘
   //
-  // Dummy ICU: all peripheral interrupt sources are OR-combined into bit [7].
+  // Dummy ICU: all peripheral interrupt sources are OR-combined.
   // No priority resolution, no masking, no per-source enable.
-  assign irq_external_s[7]   = irq_gpiox_s | qspi_irq_s | irq_uart_s;
-  assign irq_external_s[6:0] = 7'b0;
+  assign irq_combined_s = irq_gpiox_s | qspi_irq_s | irq_uart_s;
   //
   // ── END STUDENT ICU ──────────────────────────────────────────────────────
 
@@ -263,7 +261,7 @@ module as_top_mem (
     .sc01_shift_i(sc01_shift_s), .sc01_clock_i(sc01_clock_s),
     .icpu_if(icpu_if_s),
     .dcpu_if(dcpu_if_s),
-    .irq_ext_i(irq_external_s)
+    .irq_ext_i({irq_combined_s, {(irq_total_num_ext_c-1){1'b0}}})
   );
 
   // ── Memory subsystem ─────────────────────────────────────────────
