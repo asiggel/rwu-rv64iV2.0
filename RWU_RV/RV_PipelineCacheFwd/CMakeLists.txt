@@ -7,8 +7,7 @@ project(rv64i_pipelinecachefwd_regression LANGUAGES NONE)
 set(PROJECT_ROOT ${CMAKE_SOURCE_DIR})
 set(IP_ROOT  ${PROJECT_ROOT}/../../         CACHE PATH "Root of shared IPs")
 set(NP_ROOT  ${PROJECT_ROOT}/../RV_NoPipeline   CACHE PATH "RV_NoPipeline shared sources")
-# Testbenches are shared with RV_PipelineCache (same ISA, same interface)
-set(TB_ROOT  ${PROJECT_ROOT}/../RV_PipelineCache CACHE PATH "Testbench source directory")
+set(TB_ROOT  ${PROJECT_ROOT}               CACHE PATH "Testbench source directory")
 
 # -------------------------------------------------
 # Simulator
@@ -31,7 +30,7 @@ message(STATUS "SIMULATOR  = ${SIMULATOR}")
 message(STATUS "SIM_TARGET = ${SIM_TARGET}")
 
 # -------------------------------------------------
-# Test list (identical to RV_PipelineCache)
+# Test list
 # -------------------------------------------------
 set(ASM_TESTS
     readgpioid
