@@ -176,6 +176,8 @@ module cc_cpupipefwd (
   logic                   wb_trap_taken_s;
   logic                   wb_mret_s;
   logic                   wb_is_mret_s;
+  logic                   wb_is_ecall_s;
+  logic                   wb_is_ebreak_s;
   logic                   wb_trap_illegal_s;
   logic                   wb_trap_misaligned_s;
   logic                   wb_irq_pending_s;
@@ -273,6 +275,12 @@ module cc_cpupipefwd (
   assign wb_is_mret_s = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
                         (mem_wb_instr_r[14:12] == 3'b000)     &&
                         (mem_wb_instr_r[31:20] == 12'h302);
+  assign wb_is_ecall_s  = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
+                          (mem_wb_instr_r[14:12] == 3'b000)     &&
+                          (mem_wb_instr_r[31:20] == 12'h000);
+  assign wb_is_ebreak_s = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
+                          (mem_wb_instr_r[14:12] == 3'b000)     &&
+                          (mem_wb_instr_r[31:20] == 12'h001);
 
   assign wb_commit_s      = mem_wb_valid_r && !wb_committed_r;
   assign csr_mstatus_mie  = csr_mstatus_r[3];
@@ -280,8 +288,13 @@ module cc_cpupipefwd (
   assign wb_irq_pending_s = csr_mip_r[11] && csr_mie_r[11] && csr_mstatus_mie;
   assign wb_trap_illegal_s = mem_wb_trap_illegal_r;
 
+  // ECALL/EBREAK need no early-redirect trick here (unlike RV_NoPipeline):
+  // this pipeline's I-cache uses a proper req/rvalid handshake with explicit
+  // fetch_in_flight_r/discard_ic_r bookkeeping, so the same commit-stage
+  // flush_s that already handles illegal/misaligned traps is sufficient.
   assign wb_trap_taken_s = wb_commit_s && !wb_is_mret_s &&
-                           (wb_trap_illegal_s || wb_trap_misaligned_s || wb_irq_pending_s);
+                           (wb_trap_illegal_s || wb_trap_misaligned_s ||
+                            wb_is_ecall_s || wb_is_ebreak_s || wb_irq_pending_s);
   assign wb_mret_s       = wb_commit_s && wb_is_mret_s;
 
   assign wb_regWr_final_s = mem_wb_regWr_r && wb_commit_s && !wb_trap_taken_s;
@@ -568,8 +581,30 @@ module cc_cpupipefwd (
       id_ex_regA_r         <= {XLEN{1'b0}};
       id_ex_regB_r         <= {XLEN{1'b0}};
       id_ex_immExt_r       <= {XLEN{1'b0}};
+    end else if (flush_s) begin
+      // flush_s (branch/trap/mret redirect) must squash regardless of
+      // global_stall_s: a routine 1-cycle icache-hit lookup stall can
+      // coincide with the exact cycle a trap/mret retires in WB. Gating
+      // this squash behind !global_stall_s (as before) let stale,
+      // wrong-path instructions already latched here survive the flush
+      // and get committed once the stall cleared.
+      id_ex_valid_r        <= 1'b0;
+      id_ex_instr_r        <= NOP_INSTR;
+      id_ex_regWr_r        <= 1'b0;
+      id_ex_dMemRd_r       <= 1'b0;
+      id_ex_dMemWr_r       <= 1'b0;
+      id_ex_aluSrcB_r      <= 1'b0;
+      id_ex_aluSrcA_r      <= SRC_REGA;
+      id_ex_resultSrc_r    <= RES_ALU;
+      id_ex_aluOp_r        <= ALU_ADD;
+      id_ex_brOp_r         <= BR_NONE;
+      id_ex_jump_r         <= 1'b0;
+      id_ex_trap_illegal_r <= 1'b0;
+      id_ex_regA_r         <= {XLEN{1'b0}};
+      id_ex_regB_r         <= {XLEN{1'b0}};
+      id_ex_immExt_r       <= {XLEN{1'b0}};
     end else if (!global_stall_s) begin
-      if (flush_s || data_stall_s) begin
+      if (data_stall_s) begin
         id_ex_valid_r        <= 1'b0;
         id_ex_instr_r        <= NOP_INSTR;
         id_ex_regWr_r        <= 1'b0;
@@ -622,31 +657,31 @@ module cc_cpupipefwd (
       ex_mem_csr_wdata_r    <= 64'h0;
       ex_mem_dc_wdata_r     <= 64'h0;
       ex_mem_dc_wstrb_r     <= 8'h0;
+    end else if (wb_trap_taken_s || wb_mret_s) begin
+      // WB-stage event: kill speculative instructions in EX, regardless of
+      // global_stall_s (see id_ex_r comment above for why this squash must
+      // not be gated behind the stall check).
+      // ex_branch_taken_s is NOT included: the branch/JAL in EX must reach
+      // WB to commit its rd write (e.g. jal x30 writes the return address).
+      ex_mem_valid_r        <= 1'b0;
+      ex_mem_regWr_r        <= 1'b0;
+      ex_mem_dMemRd_r       <= 1'b0;
+      ex_mem_dMemWr_r       <= 1'b0;
+      ex_mem_trap_illegal_r <= 1'b0;
     end else if (!global_stall_s) begin
-      if (wb_trap_taken_s || wb_mret_s) begin
-        // WB-stage event: kill speculative instructions in EX.
-        // ex_branch_taken_s is NOT included: the branch/JAL in EX must reach
-        // WB to commit its rd write (e.g. jal x30 writes the return address).
-        ex_mem_valid_r        <= 1'b0;
-        ex_mem_regWr_r        <= 1'b0;
-        ex_mem_dMemRd_r       <= 1'b0;
-        ex_mem_dMemWr_r       <= 1'b0;
-        ex_mem_trap_illegal_r <= 1'b0;
-      end else begin
-        ex_mem_valid_r        <= id_ex_valid_r;
-        ex_mem_instr_r        <= id_ex_instr_r;
-        ex_mem_pc_r           <= id_ex_pc_r;
-        ex_mem_regWr_r        <= id_ex_regWr_r;
-        ex_mem_dMemRd_r       <= id_ex_dMemRd_r;
-        ex_mem_dMemWr_r       <= id_ex_dMemWr_r;
-        ex_mem_resultSrc_r    <= id_ex_resultSrc_r;
-        ex_mem_trap_illegal_r <= id_ex_trap_illegal_r;
-        ex_mem_aluRes_r       <= ex_aluRes_s;
-        ex_mem_csr_rdata_r    <= ex_csr_rdata_s;
-        ex_mem_csr_wdata_r    <= ex_csr_wdata_s;
-        ex_mem_dc_wdata_r     <= ex_dc_wdata_s;
-        ex_mem_dc_wstrb_r     <= ex_dc_wstrb_s;
-      end
+      ex_mem_valid_r        <= id_ex_valid_r;
+      ex_mem_instr_r        <= id_ex_instr_r;
+      ex_mem_pc_r           <= id_ex_pc_r;
+      ex_mem_regWr_r        <= id_ex_regWr_r;
+      ex_mem_dMemRd_r       <= id_ex_dMemRd_r;
+      ex_mem_dMemWr_r       <= id_ex_dMemWr_r;
+      ex_mem_resultSrc_r    <= id_ex_resultSrc_r;
+      ex_mem_trap_illegal_r <= id_ex_trap_illegal_r;
+      ex_mem_aluRes_r       <= ex_aluRes_s;
+      ex_mem_csr_rdata_r    <= ex_csr_rdata_s;
+      ex_mem_csr_wdata_r    <= ex_csr_wdata_s;
+      ex_mem_dc_wdata_r     <= ex_dc_wdata_s;
+      ex_mem_dc_wstrb_r     <= ex_dc_wstrb_s;
     end
   end
 
@@ -772,10 +807,10 @@ module cc_cpupipefwd (
     if (rst_i)
       csr_mepc_r <= 64'h0;
     else if (wb_trap_taken_s) begin
-      if (wb_trap_illegal_s || wb_trap_misaligned_s)
+      if (wb_trap_illegal_s || wb_trap_misaligned_s || wb_is_ecall_s || wb_is_ebreak_s)
         csr_mepc_r <= mem_wb_pc_r;
       else
-        csr_mepc_r <= mem_wb_pc_r + 64'd4;
+        csr_mepc_r <= mem_wb_pc_r + 64'd4;  // IRQ: return address after the interrupted instruction
     end else if (wb_commit_s && !wb_trap_taken_s &&
                  mem_wb_instr_r[6:0] == 7'b1110011 &&
                  mem_wb_instr_r[31:20] == 12'h341)
@@ -812,7 +847,9 @@ module cc_cpupipefwd (
         if      (mem_wb_instr_r[6:0] == 7'b0000011) csr_mcause_r <= 64'd4;
         else if (mem_wb_instr_r[6:0] == 7'b0100011) csr_mcause_r <= 64'd6;
         else                                         csr_mcause_r <= 64'd0;
-      end else if (wb_irq_pending_s) csr_mcause_r <= {1'b1, 63'd11};
+      end else if (wb_is_ecall_s)    csr_mcause_r <= 64'd11;  // Environment call from M-mode
+      else if (wb_is_ebreak_s)       csr_mcause_r <= 64'd3;   // Breakpoint
+      else if (wb_irq_pending_s) csr_mcause_r <= {1'b1, 63'd11};
     end
   end
 

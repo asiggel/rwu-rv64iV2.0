@@ -107,6 +107,9 @@ set(ASM_TESTS
     instr57mret
     # ---- Fence ----
     instr58fence
+    # ---- Traps: ECALL / EBREAK ----
+    instr59ecall
+    instr60ebreak
     # ---- Cache-specific tests (own testbenches) ----
     scratchpad_intensive
     dcache_test
@@ -180,6 +183,8 @@ set(INSTR_TB_CONFIG
     "instr56csrrci"    "csrrci"      "20"
     "instr57mret"      "mret"        "57"
     "instr58fence"     "fence"       "58"
+    "instr59ecall"     "ecall"       "59"
+    "instr60ebreak"    "ebreak"      "60"
 )
 
 # -------------------------------------------------
