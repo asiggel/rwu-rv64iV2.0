@@ -1,7 +1,7 @@
 """
 RV64I Compliance Regression Suite with ISS Scoreboard.
 
-For each of the 57 instruction tests the runner:
+For each of the 60 instruction tests the runner:
   1. Writes the pre-assembled program directly into DUT I-Mem (iram_s array).
   2. Resets the CPU.
   3. Runs the simulation cycle by cycle.  On every *instr_commit_s* rising
@@ -107,6 +107,9 @@ PROGRAMS: list[tuple[str, int]] = [
     ("instr57mret",       57),
     # ---- Fence ----
     ("instr58fence",      58),
+    # ---- Traps: ECALL / EBREAK ----
+    ("instr59ecall",      59),
+    ("instr60ebreak",     60),
 ]
 
 
@@ -207,7 +210,7 @@ async def _run_program(dut, name: str, expected: int,
 @cocotb.test()
 async def test_all_programs(dut):
     """
-    Run all 57 RV64I programs with GPIO check + ISS scoreboard.
+    Run all 60 RV64I programs with GPIO check + ISS scoreboard.
 
     Each program is loaded directly into the DUT's I-Mem array and the CPU
     is reset before execution.  The test fails if any program's GPIO output

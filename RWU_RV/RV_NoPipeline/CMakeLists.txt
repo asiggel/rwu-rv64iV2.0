@@ -100,6 +100,8 @@ set(ASM_TESTS
     instr56csrrci
     instr57mret
     instr58fence
+    instr59ecall
+    instr60ebreak
 )
 
 # -------------------------------------------------
@@ -169,6 +171,8 @@ set(INSTR_TB_CONFIG
   "instr56csrrci"    "csrrci"      "20"
   "instr57mret"      "mret"        "57"
   "instr58fence"     "fence"       "58"
+  "instr59ecall"     "ecall"       "59"
+  "instr60ebreak"    "ebreak"      "60"
 )
 
 list(LENGTH INSTR_TB_CONFIG _cfg_len)

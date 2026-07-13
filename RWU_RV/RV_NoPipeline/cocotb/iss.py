@@ -207,15 +207,23 @@ class ISS:
             npc = _u64(pc + ji)
             val = _u64(pc + 4); self._wx(rd, val); wr = (rd, val)
 
-        elif op == 0x73:     # SYSTEM  (CSR / MRET)
+        elif op == 0x73:     # SYSTEM  (CSR / MRET / ECALL / EBREAK)
             csr = (raw >> 20) & 0xFFF
             if f3 == 0:
-                if (raw >> 20) == 0x302:   # MRET
+                if csr == 0x302:   # MRET
                     npc = _u64(self.csrs.get(0x341, 0))  # PC = mepc
                     ms  = self.csrs.get(0x300, 0)
                     mpie = (ms >> 7) & 1
                     # MIE ← MPIE, MPIE ← 1
                     self.csrs[0x300] = (ms & ~0x88) | (mpie << 3) | (1 << 7)
+                elif csr in (0x000, 0x001):   # ECALL (0x000) / EBREAK (0x001)
+                    self.csrs[0x342] = 11 if csr == 0x000 else 3       # mcause
+                    self.csrs[0x341] = pc                              # mepc = faulting instr addr
+                    ms  = self.csrs.get(0x300, 0)
+                    mie = (ms >> 3) & 1
+                    # MPIE ← MIE, MIE ← 0
+                    self.csrs[0x300] = (ms & ~0x88) | (mie << 7)
+                    npc = _u64(self.csrs.get(0x305, 0)) & ~0x3         # PC = mtvec (direct mode)
             elif f3 in (1, 2, 3, 5, 6, 7):   # CSR read-modify-write
                 old = self.csrs.get(csr, 0)
                 src = a if f3 < 5 else zi      # register vs. immediate variant
