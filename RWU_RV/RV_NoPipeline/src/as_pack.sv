@@ -156,8 +156,20 @@ package as_pack;
   localparam int       im_scan_length = im_addr_width + im_data_width + 1; // +1 for w_en; only writing
   /* verilator lint_on UNUSEDPARAM */
 
-  localparam int       chipsel = 5;   // DMem, GPIO, QSPI, CGU, UART0
+  localparam int       chipsel = 6;   // DMem, GPIO, QSPI, CGU, UART0, ICU0
   localparam int       wbdSel = 8;
+
+  // ICU (Interrupt Control Unit)
+  localparam int       icu_num_sources = 8; // fixed register-map width (1 byte per bitmap reg);
+                                             // only a subset is wired to real peripherals per chip,
+                                             // the rest are tied to 1'b0 (reserved for future IP)
+  // Source index assignment (identical on both chip variants -> shared FW driver)
+  localparam int       icu_src_gpio0_c  = 0;
+  localparam int       icu_src_uart0_c  = 1;
+  localparam int       icu_src_qspi0_c  = 2; // RV_PipelineCacheFwd only; tied to 0 in RV_NoPipeline
+  localparam int       icu_src_spare0_c = 3; // reserved, tied to 0 on both chips
+  localparam int       icu_src_spare1_c = 4; // reserved, tied to 0 on both chips
+                                             // 5,6,7: reserved, tied to 0 on both chips
 
   // CGU
   // Division factors: f_zybo = 125 MHz
@@ -186,6 +198,8 @@ package as_pack;
   //localparam logic [63:0]       cgu_end_address_c              = 64'h00000001_0000011F; // 12 regs     // unused (Verilator UNUSEDPARAM)
   localparam logic [63:0]       uart0_start_address_c          = 64'h00000001_00000600; // byte address, lower 8 bits = 0x00
   localparam logic [63:0]       uart0_end_address_c            = 64'h00000001_000007FF; // 512 bytes (64 x 8-byte registers)
+  localparam logic [63:0]       icu0_start_address_c           = 64'h00000001_00000800; // byte address, lower 8 bits = 0x00
+  localparam logic [63:0]       icu0_end_address_c             = 64'h00000001_000009FF; // 512 bytes
 
   // register addresses
   //localparam int       gpio_base_addr_c               = 64'h00000001_00000000; // byte address
@@ -252,6 +266,27 @@ package as_pack;
 
   localparam logic [63:0]       cgu_id_reg_addr_offs_c         =  0;
   localparam logic [63:0]       cgu_id_reg_addr_rst_c          = 64'h00000000_00000010;
+
+  // ICU (Interrupt Control Unit), base 0x00000001_00000800, cs[5]
+  // Register map (8-byte aligned, matches GPIO0/UART0 ID/RIS/IMSC/MIS/ICR/ISR
+  // naming convention): 1 bit per source in RIS/IMSC/MIS/ICR/ISR (icu_num_sources
+  // wide), 4-bit priority nibble per source packed into PRIO[31:0].
+  localparam logic [63:0]       icu_id_reg_addr_offs_c         =  0;
+  localparam logic [63:0]       icu_id_reg_rst_c               = 64'h00000000_00000040;
+  localparam logic [63:0]       icu_ris_reg_addr_offs_c        =  8; // ro: raw (sticky) pending, 1 bit/source
+  localparam logic [63:0]       icu_ris_reg_rst_c              = '0;
+  localparam logic [63:0]       icu_imsc_reg_addr_offs_c       = 16; // rw: per-source mask enable (1=enabled)
+  localparam logic [63:0]       icu_imsc_reg_rst_c             = 64'h00000000_000000FF; // all sources enabled by default
+  localparam logic [63:0]       icu_mis_reg_addr_offs_c        = 24; // ro: masked status = RIS & IMSC
+  localparam logic [63:0]       icu_mis_reg_rst_c              = '0;
+  localparam logic [63:0]       icu_icr_reg_addr_offs_c        = 32; // wo: write-1-to-clear (RIS)
+  localparam logic [63:0]       icu_isr_reg_addr_offs_c        = 40; // wo: write-1-to-set (SW test/force, RIS)
+  localparam logic [63:0]       icu_prio_reg_addr_offs_c       = 48; // rw: [31:0] = 8x4-bit priority, source i -> bits[4i+3:4i]
+  // Reset priorities: GPIO0=7, UART0=6, QSPI0=5, spares/reserved=0 (higher = more urgent)
+  localparam logic [63:0]       icu_prio_reg_rst_c             = 64'h00000000_00000567;
+  localparam logic [63:0]       icu_irqid_reg_addr_offs_c      = 56; // ro: bit[3]=VALID, bits[2:0]=id of highest-prio pending&masked source
+  localparam logic [63:0]       icu_ctrl_reg_addr_offs_c       = 64; // rw: bit[0]=GIE (global interrupt enable), reset=1
+  localparam logic [63:0]       icu_ctrl_reg_rst_c             = 64'h00000000_00000001;
 
   //localparam logic [63:0]       dmem_id_reg_addr_offs_c        =  0;                       // unused (Verilator UNUSEDPARAM)
   //localparam logic [63:0]       dmem_id_reg_addr_rst_c         = 64'h00000000_00000011;    // unused (Verilator UNUSEDPARAM)

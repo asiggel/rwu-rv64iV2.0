@@ -73,6 +73,7 @@
 \subsection{System Control Concept}
 \input{\TEXTprod 02_product_text13}
 \subsection{Interrupt Concept}
+\label{subsec:irqconcept}
 \input{\TEXTprod 02_product_text14}
 \subsection{Debug Concept}
 \input{\TEXTprod 02_product_text15}
@@ -104,6 +105,7 @@
 \section{Technology}
 \input{\TEXTarch 03_arch_history_tab01}
 \section{CPU Concept}
+\label{sec:archcpu}
 \input{\TEXTarch 03_arch_history_tab01a}
 \input{\TEXTarch 03_arch_text03}
 \input{\TEXTarch 03_arch_tab01}
@@ -116,6 +118,7 @@
 \input{\TEXTarch 03_arch_history_tab03}
 \section{Clock Concept}
 \input{\TEXTarch 03_arch_history_tab04}
+\input{\TEXTarch 03_arch_clock_concept}
 \section{System Control Concept}
 \input{\TEXTarch 03_arch_history_tab05}
 \section{Power Concept}
@@ -376,7 +379,7 @@
 \section{Simulation Test Suite}
 \label{sec:simtest01}
 
-The \texttt{RV\_NoPipeline} and \texttt{RV\_NoPipelineCache} projects include a
+The \texttt{RV\_NoPipeline} and \texttt{RV\_PipelineCacheFwd} projects include a
 regression test suite driven by CMake.
 Each test assembles a dedicated firmware program, runs it under xsim, and checks
 the result via GPIO output (0x55\,=\,pass, 0xFF\,=\,fail) or a waveform monitor.
@@ -439,7 +442,7 @@ Not yet
 Table~\ref{tab:sysmap} shows the complete address map of the \aschip{} system.
 The address space is 64-bit.
 Bit~32 of the address separates main memory (bit~32\,=\,0) from the peripheral
-bus (bit~32\,=\,1); the peripheral bridge in \textbf{RV\_NoPipelineCache} uses
+bus (bit~32\,=\,1); the peripheral bridge in \textbf{RV\_PipelineCacheFwd} uses
 this bit to route accesses.
 All peripheral registers are 64-bit wide and 8-byte aligned.
 The column \textit{AW} gives the address-width parameter passed to the
@@ -461,24 +464,144 @@ address; the base address is always aligned to $2^{AW}$ bytes so the lower
   \hline
   \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem / Scratchpad & --- &
     \textit{RV\_NoPipeline}: flat SRAM.
-    \textit{RV\_NoPipelineCache}: scratchpad. \\
+    \textit{RV\_PipelineCacheFwd}: scratchpad. \\
   \hline
   \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32\,=\,1)}} \\
   \hline
   \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. Both variants. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \textit{RV\_NoPipelineCache} only. \\
+  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \textit{RV\_PipelineCacheFwd} only. \\
   \hline
   \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. Both variants. \\
   \hline
   \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. Both variants. \\
   \hline
+  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Both variants; aggregates GPIO0/QSPI0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See \texttt{ip\_icu/README\_IMPL.txt} for the register map. \\
+  \hline
 \end{tabularx}}
 \end{table}
 
+Tables~\ref{tab:gpiooffsets}--\ref{tab:uartoffsets} repeat the register
+offsets of every peripheral (from its own base address, see
+Table~\ref{tab:sysmap}) for quick reference; full bit-field descriptions
+are in the peripheral's own chapter/section as noted below each table.
+Each table states which chip variant(s) (Table~\ref{tab:asChipVariants})
+it applies to.
+
+\begin{table}[H]
+\caption{GPIO0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0000}) -- \textit{Both variants}}
+\label{tab:gpiooffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asgpioIDRegExt   & rw & Peripheral ID \\
+  \hline
+  \texttt{0x08} & \asgpioDirRegExt  & rw & Direction, per pin: 1\,=\,input (pad\,$\rightarrow$\,reg), 0\,=\,output (reg\,$\rightarrow$\,pad, SW-writable) \\
+  \hline
+  \texttt{0x10} & \asgpioDatRegExt  & rw & Pin data: reads pad value (input pins) or driven value (output pins); writes set output pins \\
+  \hline
+  \texttt{0x18} & \asgpioIRQSSRegExt & ro & Interrupt Request Source Status (sticky, one bit per pin; hardware-set on pin change) \\
+  \hline
+  \texttt{0x20} & \asgpioIRQSMRegExt & rw & Interrupt Request Source Mask (per-pin; masks IRQSS into the single RIS[0] bit) \\
+  \hline
+  \texttt{0x28} & \asgpioIRQSCRegExt & wo & Interrupt Request Source Clear (write-1-to-clear IRQSS) \\
+  \hline
+  \texttt{0x30} & \asgpioISRRegExt  & wo & Interrupt Set Register (SW test: force RIS[0] without a pin change) \\
+  \hline
+  \texttt{0x38} & \asgpioRISRegExt  & ro & Raw Interrupt Status (single combined bit, RIS[0] only) \\
+  \hline
+  \texttt{0x40} & \asgpioIMSCRegExt & rw & Interrupt Mask Control (chip-level enable feeding \texttt{gpio\_irq\_o}) \\
+  \hline
+  \texttt{0x48} & \asgpioMISRegExt  & ro & Masked Interrupt Status ($=$ IMSC $\wedge$ RIS) \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize See Section~\ref{sec:gpiofunc01} (GPIO) for full bit-field descriptions.
+\normalsize
+\end{table}
+
+\begin{table}[H]
+\caption{QSPI0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0200}) -- \textit{RV\_PipelineCacheFwd only}}
+\label{tab:qspioffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asqspiIDRegExt      & ro & Peripheral ID \\
+  \hline
+  \texttt{0x08} & \asqspiCtrlRegExt    & rw & [11:4]\,=\,\texttt{qspi\_ctrl\_t} (addr\_len, cpol, cpha, dual, cs\_hold, xip, ddr, quad), [3]\,=\,start (pulse), [2]\,=\,rx\_flush, [1]\,=\,tx\_flush \\
+  \hline
+  \texttt{0x10} & \asqspiCmdRegExt     & rw & [7:0] SPI opcode (reset\,=\,\texttt{0x6B}, Quad Fast Read) \\
+  \hline
+  \texttt{0x18} & \asqspiAddrRegExt    & rw & [31:0] Flash address \\
+  \hline
+  \texttt{0x20} & \asqspiLenRegExt     & rw & [15:0] Transfer length in bytes (reset\,=\,8) \\
+  \hline
+  \texttt{0x28} & \asqspiDummyRegExt   & rw & [5:0] Dummy cycles (reset\,=\,8) \\
+  \hline
+  \texttt{0x30} & \asqspiClkdivRegExt  & rw & [7:0] SCK divider (reset\,=\,4) \\
+  \hline
+  \texttt{0x38} & \asqspiTimeoutRegExt & rw & [31:0] Timeout counter (reset\,=\,0, disabled) \\
+  \hline
+  \texttt{0x40} & \asqspiISRRegExt     & wo & Interrupt Set Register (write-1\,$\rightarrow$\,set RIS bit) \\
+  \hline
+  \texttt{0x48} & \asqspiRISRegExt     & ro & Raw Interrupt Status: [4]\,=\,TIMEOUT, [3]\,=\,ERR, [2]\,=\,TXHALF, [1]\,=\,RXHALF, [0]\,=\,DONE \\
+  \hline
+  \texttt{0x50} & \asqspiIMSCRegExt    & rw & Interrupt Mask Control \\
+  \hline
+  \texttt{0x58} & \asqspiMISRegExt     & ro & Masked Interrupt Status ($=$ RIS $\wedge$ IMSC) \\
+  \hline
+  \texttt{0x60} & \asqspiICRRegExt     & wo & Interrupt Clear Register (write-1\,$\rightarrow$\,clear RIS bit) \\
+  \hline
+  \texttt{0x68} & \asqspiRxdataRegExt  & ro & Pop from RX FIFO \\
+  \hline
+  \texttt{0x70} & \asqspiTxdataRegExt  & wo & Push to TX FIFO \\
+  \hline
+  \texttt{0x78} & \asqspiFifostatRegExt & ro & [28:24]\,=\,rx\_level, [20]\,=\,rx\_full, [19]\,=\,rx\_half, [12:8]\,=\,tx\_level, [4]\,=\,tx\_full, [3]\,=\,tx\_half \\
+  \hline
+  \texttt{0x80} & \asqspiXipRegExt     & rw & [7:0] XIP mode byte (reset\,=\,\texttt{0xA0}, Winbond mode) \\
+  \hline
+  \texttt{0x88} & \asqspiStatusRegExt  & ro & [4]\,=\,timeout, [3]\,=\,error, [2]\,=\,xip\_active, [1]\,=\,done, [0]\,=\,busy \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize QSPI0 does not exist in \textit{RV\_NoPipeline}
+(Table~\ref{tab:asChipVariants}); see Section~\ref{sec:memfunc01} (Memory
+System) for the AXI4 cache-refill path this peripheral also serves.
+\normalsize
+\end{table}
+
+\begin{table}[H]
+\caption{CGU Register Offsets (from base \texttt{0x0000\_0001\_0000\_0400}) -- \textit{Both variants}}
+\label{tab:cguoffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \ascguIDRegExt & rw & Peripheral ID \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize The CGU's clock-divider ratios
+(\texttt{clk\_core\_div}, \texttt{clk\_bus1\_div}, \texttt{clk\_bus2\_div},
+\texttt{clk\_qspi\_div}) are compile-time constants, not registers -- see
+the Clock Concept, Section~\ref{subsec:cguOverview}.
+\normalsize
+\end{table}
+
 Table~\ref{tab:uartoffsets} repeats the UART0 register offsets (from the UART0
-base address) for quick reference; full bit-field descriptions are in
-Section~\ref{sec:uartfunc01}.
+base address) for quick reference (\textit{both variants}); full bit-field
+descriptions are in Section~\ref{sec:uartfunc01}.
 
 \begin{table}[H]
 \caption{UART0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0600})}
@@ -520,29 +643,49 @@ Section~\ref{sec:uartfunc01}.
 \section{Interrupt Map}
 \label{sec:irqmap}
 
-Table~\ref{tab:irqmap} shows the assignment of external interrupt lines to the
-\aschip{} CPU.
+Table~\ref{tab:irqmap} shows how the peripheral interrupt sources map onto
+the 8-bit \texttt{irq\_ext\_i} vector at the CPU boundary, for each chip
+variant.
+As detailed in Section~\ref{subsec:irqconcept}, \textbf{only bit~7 of
+\texttt{irq\_ext\_i} is synchronised and evaluated by the CPU} (identically
+in \texttt{as\_cpux} and \texttt{cc\_cpupipefwd}); bits~\texttt{[6:0]} are
+declared \texttt{UNUSEDSIGNAL} in the CPU RTL and have no effect on program
+flow, regardless of what is wired to them at the top level.
 
 \begin{table}[H]
-\caption{External Interrupt Map}
+\caption{External Interrupt Map (\texttt{irq\_ext\_i})}
 \label{tab:irqmap}
 \centering
 {\footnotesize
-\begin{tabularx}{\textwidth}{|l |l |l |X|}
+\begin{tabularx}{\textwidth}{|l |X |X |X|}
   \hline
-  IRQ Bit & Source & Signal & Notes \\
+  Bit & \textit{RV\_NoPipeline} & \textit{RV\_PipelineCacheFwd} & Consumed by CPU? \\
   \hline
   \hline
-  7 & GPIO0 & \asgpioIRQ & Input change on any GPIO pin (masked via IMSC). \\
+  7 & GPIO0 (\asgpioIRQ) &
+    GPIO0 $\vert$ QSPI0 $\vert$ UART0, OR-combined into one line
+    (\texttt{irq\_combined\_s}, the "Dummy ICU" placeholder --
+    Section~\ref{subsec:irqconcept}) &
+    \textbf{Yes} -- drives \texttt{mip.MEIP} \\
   \hline
-  6 & QSPI0 & \asqspiIRQ & DONE / RXHALF / TXHALF / ERR / TIMEOUT
-    (\textit{RV\_NoPipelineCache} only). \\
+  6 & UART0 (\asuartIRQ), wired at the top level but not read by the CPU &
+    tied to 0 &
+    \textbf{No} -- firmware must poll UART0's status registers instead \\
   \hline
-  5 & UART0 & \asuartIRQ & RX-ready, TX-ready, timeout, frame/parity/overrun/break. \\
-  \hline
-  4\,--\,0 & reserved & --- & Tied to 0. \\
+  5\,--\,0 & tied to 0 & tied to 0 &
+    \textbf{No} -- reserved for a future multi-source interrupt controller \\
   \hline
 \end{tabularx}}
 \end{table}
+
+\textbf{Consequence for \texttt{RV\_PipelineCacheFwd}:} since GPIO0, QSPI0,
+and UART0 are OR-combined onto the single bit~7 before reaching the CPU,
+software cannot determine which peripheral interrupted from \texttt{mcause}
+alone -- the ISR must poll each peripheral's \texttt{MIS} register
+(\asgpioMISRegExt, \asqspiMISRegExt, \asuartMISRegExt) to identify the
+source.
+\textbf{Consequence for \texttt{RV\_NoPipeline}:} there is no QSPI0
+peripheral in this variant, and UART0 has no working interrupt path to the
+CPU at all -- UART0 status must always be polled.
 
 

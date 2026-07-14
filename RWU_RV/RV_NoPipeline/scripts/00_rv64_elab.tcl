@@ -80,6 +80,8 @@ set RTL_FILES [list \
   "$DESIGN_PATH/ip_cgu/src/asCguTop.sv" \
   "$DESIGN_PATH/ip_fifo/src/as_fifo.sv" \
   "$DESIGN_PATH/ip_uart_v2/src/as_uart_top.sv" \
+  "$DESIGN_PATH/ip_icu/src/cc_icu.sv" \
+  "$DESIGN_PATH/ip_icu/src/cc_icu_top.sv" \
   "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asTopMem.sv" \
 ]
 

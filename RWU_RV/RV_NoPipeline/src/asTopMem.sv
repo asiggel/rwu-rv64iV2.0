@@ -37,6 +37,7 @@ module as_top_mem (input logic                       clk_i,
   logic [reg_width-1:0]   dBusDataRdQspi_s; // data out from QSPI
   logic [reg_width-1:0]   dBusDataRdCgu_s;  // data out from CGU
   logic [reg_width-1:0]   dBusDataRdUart_s; // data out from UART0
+  logic [reg_width-1:0]   dBusDataRdIcu_s;  // data out from ICU0
   logic [reg_width-1:0]   dBusDataRd_s; // data out of MUX
   logic [reg_width-1:0]   dBusDataWr_s; // data in to dmem
   logic [daddr_width-1:0] dBusAddr_s;   // address for dmem
@@ -78,6 +79,7 @@ module as_top_mem (input logic                       clk_i,
   logic wbdstbGpio_s;
   logic wbdstbCgu_s;
   logic wbdstbUart_s;
+  logic wbdstbIcu_s;
   logic wbdcyc_s;
   logic [wbdSel-1:0]          sel_s;
   logic asGpioCs_s;
@@ -85,7 +87,9 @@ module as_top_mem (input logic                       clk_i,
   logic wdbAckQspi_s;
   logic wdbAckCgu_s;
   logic wdbAckUart_s;
+  logic wdbAckIcu_s;
   logic irq_uart_s;
+  logic icu_irq_s;
 
   logic	wbdstDMem_s;
   logic	wdbAckDmem_s;
@@ -136,12 +140,13 @@ module as_top_mem (input logic                       clk_i,
   always_comb
   begin
     case (csx_s) // one-hot
-      5'b00001:  dBusDataRd_s = dBusDataRdDmem_s;
-      5'b00010:  dBusDataRd_s = dBusDataRdGpio_s;
-      5'b00100:  dBusDataRd_s = dBusDataRdQspi_s;
-      5'b01000:  dBusDataRd_s = dBusDataRdCgu_s;
-      5'b10000:  dBusDataRd_s = dBusDataRdUart_s;
-      default:   dBusDataRd_s = {reg_width{1'b0}};
+      6'b000001:  dBusDataRd_s = dBusDataRdDmem_s;
+      6'b000010:  dBusDataRd_s = dBusDataRdGpio_s;
+      6'b000100:  dBusDataRd_s = dBusDataRdQspi_s;
+      6'b001000:  dBusDataRd_s = dBusDataRdCgu_s;
+      6'b010000:  dBusDataRd_s = dBusDataRdUart_s;
+      6'b100000:  dBusDataRd_s = dBusDataRdIcu_s;
+      default:    dBusDataRd_s = {reg_width{1'b0}};
     endcase
   end
   
@@ -217,16 +222,45 @@ module as_top_mem (input logic                       clk_i,
   );
 
   //--------------------------------------------
+  // ICU0  (base 0x0000_0001_0000_0800, 512 B, cs[5])
+  // Aggregates GPIO0 + UART0 (+2 tied-off spares, +3 further reserved) into
+  // the single external interrupt bit the CPU consumes. QSPI0 does not
+  // exist in this variant, so source 2 is permanently tied to 0.
+  // Note: RV_NoPipeline previously wired UART0 to irq_external_s[6], a bit
+  // as_cpux never reads (only bit 7 is consumed) -- UART0 IRQs had no
+  // effect on program flow. Routed through the ICU, UART0 now reaches the
+  // CPU for the first time (once unmasked in the ICU's IMSC); see
+  // ip_icu/README_IMPL.txt section 8.
+  //--------------------------------------------
+  localparam int ICU0_AW = 8;
+  assign wbdstbIcu_s = wbdstb1_s & wbdcycarb_s & csx_s[5];
+
+  cc_icu_top #(.ICU_ADDR_WIDTH(ICU0_AW), .ICU_DATA_WIDTH(reg_width))
+  icu0 (
+    .rst_i      (rst_i),
+    .clk_i      (clk_div_s),
+    .wbdAddr_i  (dBusAddr_s[ICU0_AW-1:0]),
+    .wbdDat_i   (dBusDataWr_s),
+    .wbdDat_o   (dBusDataRdIcu_s),
+    .wbdWe_i    (wbdwe_s),
+    .wbdSel_i   (sel_s),
+    .wbdStb_i   (wbdstbIcu_s),
+    .wbdAck_o   (wdbAckIcu_s),
+    .wbdCyc_i   (wbdcycarb_s),
+    .irq_src_i  ({5'b0, 1'b0, irq_uart_s, irq_gpiox_s}), // {reserved[7:3]=0, QSPI0(n/a)=0, UART0, GPIO0} = icu_num_sources(8) bits
+    .icu_irq_o  (icu_irq_s)
+  );
+
+  //--------------------------------------------
   // CPU
   //--------------------------------------------
-  assign irq_external_s[7]   = irq_gpiox_s;
-  assign irq_external_s[6]   = irq_uart_s;
-  assign irq_external_s[5:0] = 6'b0;
+  assign irq_external_s[7]   = icu_irq_s;
+  assign irq_external_s[6:0] = 7'b0;
 
   assign wdbAckQspi_s = 1'b0;
 
   assign wdbAckAll_s = (wdbAckDmem_s || wdbAckGpio_s || wdbAckQspi_s ||
-                        wdbAckCgu_s  || wdbAckUart_s) && gnt0_s;
+                        wdbAckCgu_s  || wdbAckUart_s || wdbAckIcu_s) && gnt0_s;
   
   as_cpux cpu (.clk_i(clk_div_s), // divided functional clock or external TB clock (scan)
               .rst_i(rst_i),

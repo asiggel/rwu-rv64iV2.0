@@ -54,8 +54,9 @@ module as_top_mem (
   logic [reg_width-1:0]   dBusDataRdQspi_s;
   logic [reg_width-1:0]   dBusDataRdCgu_s;
   logic [reg_width-1:0]   dBusDataRdUart_s;
+  logic [reg_width-1:0]   dBusDataRdIcu_s;
   logic [reg_width-1:0]   periph_rdata_s;
-  logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s, wbdstbUart_s;
+  logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s, wbdstbUart_s, wbdstbIcu_s;
   logic                   irq_uart_s;
   // WB ACK signals intentionally unconnected: bridge uses fixed 1-cycle dc_rvalid
   logic                   is_periph_req_s;
@@ -70,8 +71,8 @@ module as_top_mem (
   // QSPI IRQ
   logic qspi_irq_s;
 
-  // IRQ — single combined line; real ICU will replace this signal
-  logic irq_combined_s;
+  // IRQ — single line aggregated by the ICU
+  logic icu_irq_s;
 
   // ── Internal interfaces ─────────────────────────────────────────
   as_icache_if icpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
@@ -97,11 +98,12 @@ module as_top_mem (
   // Peripheral read-data mux
   always_comb
     case (csx_s)
-      5'b00010: periph_rdata_s = dBusDataRdGpio_s;
-      5'b00100: periph_rdata_s = dBusDataRdQspi_s;
-      5'b01000: periph_rdata_s = dBusDataRdCgu_s;
-      5'b10000: periph_rdata_s = dBusDataRdUart_s;
-      default:  periph_rdata_s = '0;
+      6'b000010: periph_rdata_s = dBusDataRdGpio_s;
+      6'b000100: periph_rdata_s = dBusDataRdQspi_s;
+      6'b001000: periph_rdata_s = dBusDataRdCgu_s;
+      6'b010000: periph_rdata_s = dBusDataRdUart_s;
+      6'b100000: periph_rdata_s = dBusDataRdIcu_s;
+      default:   periph_rdata_s = '0;
     endcase
 
   // ── Peripheral bridge ───────────────────────────────────────────
@@ -124,6 +126,7 @@ module as_top_mem (
   assign wbdstbQspi_s = is_periph_req_s & csx_s[2];
   assign wbdstbCgu_s  = is_periph_req_s & csx_s[3];
   assign wbdstbUart_s = is_periph_req_s & csx_s[4];
+  assign wbdstbIcu_s  = is_periph_req_s & csx_s[5];
 
   // ── Route CPU → asMemTop (non-peripheral only) ───────────────────
   assign dcpu_mem_if_s.dc_addr  = dcpu_if_s.dc_addr;
@@ -220,19 +223,29 @@ module as_top_mem (
     .uart_irq_o (irq_uart_s)
   );
 
-  // ── ICU: Interrupt Control Unit ──────────────────────────────────────────
-  //
-  // ┌──────────────────────────────────────────────────────────────────────┐
-  // │  STUDENT TASK: Replace this dummy ICU with your own implementation.  │
-  // │  Inputs : irq_gpiox_s, qspi_irq_s, irq_uart_s  (add sources here)   │
-  // │  Output : irq_combined_s  → CPU irq_ext_i bit [irq_total_num_ext_c-1]│
-  // └──────────────────────────────────────────────────────────────────────┘
-  //
-  // Dummy ICU: all peripheral interrupt sources are OR-combined.
-  // No priority resolution, no masking, no per-source enable.
-  assign irq_combined_s = irq_gpiox_s | qspi_irq_s | irq_uart_s;
-  //
-  // ── END STUDENT ICU ──────────────────────────────────────────────────────
+  // ── ICU0: Interrupt Control Unit (base 0x0000_0001_0000_0800, 512 B, cs[5]) ─
+  localparam int ICU0_AW = 8;
+  // Replaces the former "dummy ICU" OR-combine placeholder: real priority
+  // resolution, per-source masking, and a cause-identification register
+  // (IRQID) so firmware does not have to poll every peripheral's own MIS.
+  // See ip_icu/README_IMPL.txt for the full register map and design
+  // rationale, and ip_icu/README_REQ.txt for the requirements this
+  // implements.
+  cc_icu_top #(.ICU_ADDR_WIDTH(ICU0_AW), .ICU_DATA_WIDTH(reg_width))
+  icu0 (
+    .rst_i      (rst_i),
+    .clk_i      (clk_div_s),
+    .wbdAddr_i  (dBusAddr_periph_s[ICU0_AW-1:0]),
+    .wbdDat_i   (dBusDataWr_periph_s),
+    .wbdDat_o   (dBusDataRdIcu_s),
+    .wbdWe_i    (wbdwe_s),
+    .wbdSel_i   (sel_s),
+    .wbdStb_i   (wbdstbIcu_s),
+    .wbdAck_o   (),
+    .wbdCyc_i   (is_periph_req_s),
+    .irq_src_i  ({5'b0, qspi_irq_s, irq_uart_s, irq_gpiox_s}), // {reserved[7:3]=0, QSPI0, UART0, GPIO0} = icu_num_sources(8) bits
+    .icu_irq_o  (icu_irq_s)
+  );
 
   // ── JTAG ─────────────────────────────────────────────────────────
   assign bs_tdo_s = 1'b0;
@@ -261,7 +274,7 @@ module as_top_mem (
     .sc01_shift_i(sc01_shift_s), .sc01_clock_i(sc01_clock_s),
     .icpu_if(icpu_if_s),
     .dcpu_if(dcpu_if_s),
-    .irq_ext_i({irq_combined_s, {(irq_total_num_ext_c-1){1'b0}}})
+    .irq_ext_i({icu_irq_s, {(irq_total_num_ext_c-1){1'b0}}})
   );
 
   // ── Memory subsystem ─────────────────────────────────────────────

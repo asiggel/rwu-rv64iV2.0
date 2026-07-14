@@ -59,6 +59,8 @@ VERILOG_SOURCES := \
   $(abspath $(IP_ROOT)/ip_cgu/src/asCguTop.sv)      \
   $(abspath $(IP_ROOT)/ip_fifo/src/as_fifo.sv)      \
   $(abspath $(IP_ROOT)/ip_uart_v2/src/as_uart_top.sv) \
+  $(abspath $(IP_ROOT)/ip_icu/src/cc_icu.sv)        \
+  $(abspath $(IP_ROOT)/ip_icu/src/cc_icu_top.sv)    \
   $(abspath ../src/asTopMem.sv)
 
 # ---------------------------------------------------------------------------

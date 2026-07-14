@@ -55,6 +55,8 @@ VERILOG_SOURCES := \
   $(abspath $(IP_ROOT)/ip_uart_v2/src/as_uart_top.sv) \
   $(abspath $(IP_ROOT)/ip_qspi/src/as_qspi.sv)      \
   $(abspath $(IP_ROOT)/ip_qspi/src/asQspiTop.sv)    \
+  $(abspath $(IP_ROOT)/ip_icu/src/cc_icu.sv)        \
+  $(abspath $(IP_ROOT)/ip_icu/src/cc_icu_top.sv)    \
   $(abspath $(IP_ROOT)/ip_icache/src/as_icache_data_ram.sv) \
   $(abspath $(IP_ROOT)/ip_icache/src/as_icache_tag_ram.sv)  \
   $(abspath $(IP_ROOT)/ip_icache/src/as_icache_valid_reg.sv) \
