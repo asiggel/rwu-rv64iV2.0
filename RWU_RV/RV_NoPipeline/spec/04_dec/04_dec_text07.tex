@@ -1,1 +1,28 @@
-None.
+\begin{table}[H]
+\caption{Instruction Decoder Service Requests}
+\label{tab:asDecServiceReq}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  Service Request & Explanation \\
+  \hline
+  \hline
+  \texttt{trap\_illegal\_instr\_o} &
+    Synchronous, combinational request: any \texttt{instr\_opcode\_i}/
+    \texttt{instr\_func3\_i} combination that does not decode to a valid
+    RV64I instruction. This is the \emph{sole} source of the
+    illegal-instruction exception (\texttt{mcause}\,=\,2) on both chip
+    variants -- the decoder itself does not distinguish \texttt{ecall},
+    \texttt{ebreak}, or \texttt{mret} (all legal opcode=115 encodings from
+    its point of view); those are recognized directly on the instruction
+    word by the CPU top level. See Section~\ref{subsec:irqconcept}
+    (Interrupt Concept) for the full trap-priority chain and CSR update
+    sequence this signal feeds into. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The Instruction Decoder has no other service request: it is a
+combinational block with no clock, no interrupt/DMA request of its own
+kind, and no error condition beyond the single illegal-instruction case
+above.

@@ -4,12 +4,14 @@
 \centering
 \begin{tabularx}{\textwidth}{|l |l |X|}
   \hline
-   & Generic GPIO Feature Set & Details \\
+   & Generic InstrDec Feature Set & Details \\
   \hline
   \hline
-  no & Seperate Kernel Clock & not needed \\
+  no & Seperate Kernel Clock & Pure combinational block (\texttt{as\_instr\_decode}); no clock input, no internal state \\
   \hline
   no & FIFO Data Buffering & not needed \\
+  \hline
+  yes & Synchronous exception request & \texttt{trap\_illegal\_instr\_o}, see Section~\ref{sec:decfunc01} Service Requests \\
   \hline
 \end{tabularx}
 \end{table}

@@ -9,32 +9,53 @@
   \hline
   Supply &  &  \\
   \hline
-  Clock & - & - \\
+  Clock & - & - (pure combinational block, no \texttt{clk\_i}/\texttt{rst\_i}) \\
   \hline
   Bus & - & - \\
   \hline
-  Interrupt & - & - \\
+  Interrupt & \texttt{trap\_illegal\_instr\_o} &
+    \textit{RV\_NoPipeline} (\texttt{asCPUx.sv}): \texttt{trap\_illegal\_instrx\_s}.
+    \textit{RV\_PipelineCacheFwd} (\texttt{cc\_cpupipefwd.sv}):
+    \texttt{id\_trap\_illegal\_s}. Both feed \texttt{mcause}\,=\,2 directly;
+    see Section~\ref{subsec:irqconcept}. \\
   \hline
   DMA & - & - \\
   \hline
   External Signals & - & - \\
   \hline
-  Others & opcode\_i(6:0) & iBusDataRd\_s(6:0) \\
-         & func3\_i(2:0) & iBusDataRd\_s(14:12) \\
-         & func7b5\_i & iBusDataRd\_s(30) \\
-         & zero\_i & zero\_s \\
-         & resultSrc\_o(1:0) & resultSrc\_s(1:0) \\
-         & dMemWr\_o & dMemWr\_s \\
-         & dMemRd\_o & dMemRd\_s \\
-         & PCSrc\_o & PCSrc\_s (not for pipeline) \\
-         & aluSrcB\_o & aluSrcB\_s \\
-         & aluSrcA\_o & aluSrcA\_s \\
-         & regWr\_o & regWr\_s \\
-         & jump\_o & jump\_s \\
-         & immSrc\_o(2:0) & immSrc\_s(2:0) \\
-         & aluSel\_o(4:0) & aluSel\_s(4:0) \\
-         & branch\_s\_o & only for pipeline \\
-         & jumo\_s\_o & only for pipeline \\
+  Others & \texttt{instr\_opcode\_i}(6:0) &
+    \textit{NoPipeline}: \texttt{ir\_s}(6:0). \textit{PipelineCacheFwd}:
+    \texttt{if\_id\_instr\_r}(6:0) \\
+         & \texttt{instr\_func3\_i}(2:0) &
+    \texttt{ir\_s}(14:12) / \texttt{if\_id\_instr\_r}(14:12) \\
+         & \texttt{instr\_func7b5\_i} &
+    \texttt{ir\_s}(30) / \texttt{if\_id\_instr\_r}(30) \\
+         & \texttt{take\_i} &
+    \textit{NoPipeline}: \texttt{take\_s} (branch-taken feedback from the
+    branch ALU). \textit{PipelineCacheFwd}: tied to \texttt{1'b0}
+    (unused -- kept only for interface compatibility, see the
+    \texttt{verilator lint\_off UNUSEDSIGNAL} note in
+    \texttt{as\_instr\_decode.sv}) \\
+         & \texttt{mux\_resultSrc\_o} (\texttt{result\_src\_t}, 2\;bit) &
+    \textit{NoPipeline}: \texttt{resultSrcx\_s}. \textit{PipelineCacheFwd}:
+    \texttt{id\_resultSrc\_s} \\
+         & \texttt{en\_dMemWr\_o} & \texttt{dMemWr\_s} / \texttt{id\_dMemWr\_s} \\
+         & \texttt{en\_dMemRd\_o} & \texttt{dMemRd\_s} / \texttt{id\_dMemRd\_s} \\
+         & \texttt{mux\_aluSrcB\_o} & \texttt{aluSrcB\_s} / \texttt{id\_aluSrcB\_s} \\
+         & \texttt{mux\_aluSrcA\_o} (\texttt{mux\_a\_t}, 2\;bit) &
+    \texttt{aluSrcA\_s} / \texttt{id\_aluSrcA\_s} \\
+         & \texttt{en\_regWr\_o} & \texttt{regWr\_s} / \texttt{id\_regWr\_s} \\
+         & \texttt{mux\_jump\_o} & \texttt{jump\_s} / \texttt{id\_jump\_s} \\
+         & \texttt{sel\_immSrc\_o} (\texttt{imm\_src\_t}, 3\;bit) &
+    \texttt{immSrcx\_s} / \texttt{id\_immSrc\_s} \\
+         & \texttt{alu\_op\_o} (\texttt{alu\_op\_t}, 6\;bit declared,
+           15 values used) & \texttt{aluSela\_s} / \texttt{id\_aluOp\_s} \\
+         & \texttt{br\_op\_o} (\texttt{br\_op\_t}, 3\;bit) &
+    \texttt{aluSelb\_s} / \texttt{id\_brOp\_s} \\
   \hline
 \end{tabularx}
 \end{table}
+\noindent\footnotesize Both chip variants instantiate the identical,
+shared \texttt{as\_instr\_decode} module (\texttt{RWU\_RV/RV\_NoPipeline/
+src/asInstrDecode.sv}); only the chip-level net names at the instantiation
+point differ, as listed above.\normalsize

@@ -4,6 +4,9 @@ The Instruction Decoder operates on 32\,bit instructions and generates all contr
 \begin{itemize}
   \item Decodes all instructions of the RV64I:
   \begin{itemize}
+    \item opcode=15 (\texttt{0x0F}): I-type, \texttt{fence}/\texttt{fence.i} --
+      decoded identically (opcode only, \texttt{func3} not distinguished) as
+      a legal no-op; every other control output stays at its default value.
     \item opcode=3: I-type, loads
     \item opcode=19: I-type, immediate arithmetics, logic and shift
     \item opcode=23: U-type, auipc
@@ -15,6 +18,17 @@ The Instruction Decoder operates on 32\,bit instructions and generates all contr
     \item opcode=99: B-type, all conditional branches
     \item opcode=103: I-type, jalr
     \item opcode=111: J-type, jal
+    \item opcode=115 (\texttt{0x73}): I-type, CSR instructions
+      (\texttt{csrrw}/\texttt{csrrs}/\texttt{csrrc}/\texttt{csrrwi}/
+      \texttt{csrrsi}/\texttt{csrrci}), \texttt{mret}, \texttt{ecall},
+      \texttt{ebreak} -- the decoder itself only distinguishes CSR
+      instructions (\texttt{func3}\,$\neq$\,000, register write enabled)
+      from \texttt{mret} (\texttt{func3}\,=\,000, no register write); the
+      finer distinction between \texttt{mret}, \texttt{ecall}, and
+      \texttt{ebreak} (all \texttt{func3}\,=\,000) is made outside this
+      module, directly on the instruction word, by the CPU top level
+      (\texttt{as\_cpux}/\texttt{cc\_cpupipefwd}) -- see
+      Section~\ref{subsec:irqconcept}.
   \end{itemize}
   \item generates the control signal for the ALU,
   \item ... for the D-Mem MUX,
@@ -24,7 +38,11 @@ The Instruction Decoder operates on 32\,bit instructions and generates all contr
   \item ... for the register file write enable,
   \item ... for the branch control,
   \item ... for the immediate generation selection,
-  \item ... for the jump and branch control in the pipelined version. 
+  \item ... for the jump and branch control in the pipelined version,
+  \item \textbf{raises \texttt{trap\_illegal\_instr\_o}} for any opcode/func3
+    combination not listed above -- the CPU's synchronous illegal-instruction
+    exception (\texttt{mcause}\,=\,2, Section~\ref{subsec:irqconcept}) is
+    sourced directly and exclusively from this signal.
 \end{itemize}
 
 \paragraph{Synchronous Mode: }

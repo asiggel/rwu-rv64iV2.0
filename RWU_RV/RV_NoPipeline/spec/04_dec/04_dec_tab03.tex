@@ -1,4 +1,9 @@
-Table \ref{tab:asDec01} shows the input and outputs of the ALU0. This are all primary inputs and outputs. There is no bi-directional, tristate or open drain pin. All pins are high-active except the pins with a \_n\_ in its name.
+Table \ref{tab:asDec01} shows the input and outputs of the Instruction
+Decoder (\texttt{as\_instr\_decode}), matching
+\texttt{RWU\_RV/RV\_NoPipeline/src/asInstrDecode.sv}. This is a purely
+combinational module: no \texttt{clk\_i}/\texttt{rst\_i}, no internal
+state, all outputs are a function of the current inputs only. There is no
+bi-directional, tristate or open drain pin.
 \begin{table}[H]
 \caption{InstrDec0 I/O}
 \label{tab:asDec01}
@@ -9,37 +14,44 @@ Table \ref{tab:asDec01} shows the input and outputs of the ALU0. This are all pr
   Pin & Dir. & Wd. & Explanation \\
   \hline
   \hline
-  opcode\_i & in & 7 & The opcode field of the instruction. This are the least significant 7 bits of the instruction. \\
+  instr\_opcode\_i & in & 7 & The opcode field (instruction bits [6:0]). \\
   \hline
-  func3\_i & in & 3 & The func3-field of the instruction. It specifies the opcode. \\
+  instr\_func3\_i & in & 3 & The func3 field (instruction bits [14:12]); further selects the operation within an opcode. \\
   \hline
-  func7b5\_i & in & 1 &  Bit 5 of func7 field. \\
+  instr\_func7b5\_i & in & 1 & Bit 5 of the func7 field (instruction bit [30]); distinguishes e.g.\ ADD/SUB and the logical/arithmetic shift variants. \\
   \hline
-  zero\_i & in & 1 &  Indicates a branch. Comes from the ALU. \\
+  take\_i & in & 1 & Branch-taken feedback. Not read by the decoder's combinational logic (kept only for interface compatibility with an earlier design iteration; marked \texttt{UNUSEDSIGNAL} for Verilator). \\
   \hline
-  resultSrc\_o & out & 2 & Controls the Mux behind the DMem. \\
+  mux\_resultSrc\_o & out & 2 & \texttt{result\_src\_t} enum (\texttt{RES\_ALU}=0, \texttt{RES\_MEM}=1, \texttt{RES\_PC4}=2, \texttt{RES\_CSR}=3). Selects the mux feeding the register-file write data: ALU result, D-Mem load data, PC+4, or CSR read value. \\
   \hline
-  dMemWr\_o & out & 1 &  D-Mem write enable. \\
+  en\_dMemWr\_o & out & 1 & D-Mem write enable. \\
   \hline
-  dMemRd\_o & out & 1 &  D-Mem read enable; almost not needed anymore. \\
+  en\_dMemRd\_o & out & 1 & D-Mem read enable. \\
   \hline
-  PCSrc\_o & out & 1 &  Control of the Mux for the PC; normal operation or jump/branch. \\
+  mux\_aluSrcB\_o & out & 1 & ALU source-B mux select: 0\,=\,register (rs2), 1\,=\,immediate. \\
   \hline
-  aluSrcB\_o & out & 1 &  Data Mux in front of ALU. \\
+  mux\_aluSrcA\_o & out & 2 & \texttt{mux\_a\_t} enum (\texttt{SRC\_REGA}=0, \texttt{SRC\_PC}=1, \texttt{SRC\_ZERO}=2). ALU source-A mux select. \\
   \hline
-  aluSrcA\_o & out & 1 &  Data Mux in front of ALU. \\
+  en\_regWr\_o & out & 1 & Register file write enable. \\
   \hline
-  regWr\_o & out & 1 &  Register file write enable. \\
+  mux\_jump\_o & out & 1 & Branch-target-adder source-A select: 0\,=\,PC (JAL/branches), 1\,=\,register rs1 (JALR). \\
   \hline
-  jump\_o & out & 1 &   Src for branch target mux: register or PC as input for branch target adder. \\
+  sel\_immSrc\_o & out & 3 & \texttt{imm\_src\_t} enum (\texttt{IMM\_NONE}=0, \texttt{IMM\_I}=1, \texttt{IMM\_S}=2, \texttt{IMM\_B}=3, \texttt{IMM\_U}=4, \texttt{IMM\_J}=5). Selects the immediate-generation format. \\
   \hline
-  immSrc\_o & out & 3 &   Selects, how the immediate value will be generated. \\
+  alu\_op\_o & out & 6 (declared); 15 values used & \texttt{alu\_op\_t} enum: \texttt{ALU\_ADD}=0, \texttt{ALU\_SUB}=1, \texttt{ALU\_AND}=2, \texttt{ALU\_OR}=3, \texttt{ALU\_XOR}=4, \texttt{ALU\_SLT}=5, \texttt{ALU\_SLTU}=6, \texttt{ALU\_SLL}=7, \texttt{ALU\_SRL}=8, \texttt{ALU\_SRA}=9, \texttt{ALU\_ADDW}=10, \texttt{ALU\_SUBW}=11, \texttt{ALU\_SLLW}=12, \texttt{ALU\_SRLW}=13, \texttt{ALU\_SRAW}=14. Selects the operation of the algorithmic ALU. \\
   \hline
-  aluSel\_o & out & 5 &  ALU control. \\
+  br\_op\_o & out & 3 & \texttt{br\_op\_t} enum: \texttt{BR\_NONE}=0, \texttt{BR\_EQ}=1, \texttt{BR\_NE}=2, \texttt{BR\_LT}=3, \texttt{BR\_GE}=4, \texttt{BR\_LTU}=5, \texttt{BR\_GEU}=6, \texttt{BR\_ALWAYS}=7 (unconditional: JAL/JALR). Selects the operation of the branch ALU. \\
   \hline
-  branch\_s\_o & out & 1 &  only for pipeline solution \\
-  \hline
-  jump\_s\_o & out & 1 &  only for pipeline solution \\
+  trap\_illegal\_instr\_o & out & 1 & Asserted (combinationally) for any \texttt{instr\_opcode\_i}/\texttt{instr\_func3\_i} combination that is not a valid RV64I encoding. The CPU's synchronous illegal-instruction exception (\texttt{mcause}\,=\,2) is sourced directly from this signal; see Section~\ref{subsec:irqconcept} and Table~\ref{tab:asDecPer02} (HW Interfaces). \\
   \hline
 \end{tabularx}
 \end{table}
+\noindent\footnotesize The following ports from an earlier design
+iteration no longer exist on \texttt{as\_instr\_decode}: \texttt{opcode\_i},
+\texttt{func3\_i}, \texttt{func7b5\_i} (renamed to the \texttt{instr\_*}
+forms above), \texttt{zero\_i} (branch-taken detection now lives entirely
+in the branch ALU / \texttt{br\_op\_o} path, not the decoder),
+\texttt{PCSrc\_o} (superseded by \texttt{br\_op\_o}\,=\,\texttt{BR\_ALWAYS}
+plus the branch ALU's own \texttt{take\_o}), \texttt{aluSel\_o} (renamed
+and widened to \texttt{alu\_op\_o}), \texttt{branch\_s\_o}/\texttt{jump\_s\_o}
+(folded into \texttt{br\_op\_o}).\normalsize

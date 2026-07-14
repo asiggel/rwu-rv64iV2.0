@@ -1,380 +1,284 @@
-The following list (Table) shows the internal signals of the Instruction Decoder. The table shows the signal name, the width, the driver, the target and a short explanation.
+The following list shows the internal signals and per-opcode decode
+behaviour of the Instruction Decoder, matching
+\texttt{RWU\_RV/RV\_NoPipeline/src/asInstrDecode.sv} exactly (a single
+combinational \texttt{case (instr\_opcode\_i)} statement; all outputs
+default to \texttt{ALU\_ADD}/\texttt{BR\_NONE}/0/\texttt{SRC\_REGA}/
+\texttt{IMM\_NONE}/\texttt{RES\_ALU} before the case, so every branch below
+only lists the outputs it changes from that default).
 \begin{itemize}
-  \item Signal: opcode\_i
+  \item Signal: \texttt{instr\_opcode\_i}
   \begin{itemize}
     \item Width: 7\,bit unsigned
-    \item Source: Instruction from I-Mem.
-    \item Destination: Case statement generating controls\_s and aluSel\_o
-    \item Explanation: 
+    \item Source: Instruction from I-Mem/I-Cache.
+    \item Destination: \texttt{case} statement generating all other outputs.
+    \item Explanation:
     \begin{itemize}
-      \item opcode=3: loads
+      \item opcode=15 (\texttt{0x0F}, \texttt{fence}/\texttt{fence.i}):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b000; Instruction format: I-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=1; Read from D-Mem: Yes
-        \item resultSrc\_o=2'b01; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: D-Mem-data to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item All outputs stay at their default value (no register write,
+          no D-Mem access, \texttt{ALU\_ADD}/\texttt{BR\_NONE},
+          \texttt{trap\_illegal\_instr\_o}=0). Decoded purely on opcode;
+          \texttt{instr\_func3\_i} is not inspected.
       \end{itemize}
-      \item opcode=19: arithmetic immediate
+      \item opcode=3 (loads):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b000; Instruction format: I-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=various
+        \item en\_regWr\_o=1; mux\_aluSrcB\_o=1 (immediate); sel\_immSrc\_o=IMM\_I;
+          mux\_resultSrc\_o=RES\_MEM; alu\_op\_o=ALU\_ADD (address = rs1+imm);
+          en\_dMemRd\_o=1
       \end{itemize}
-      \item opcode=23: auipc
+      \item opcode=19 (immediate arithmetic/logic/shift):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b100; Instruction format: U-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=1; Mux - First register or PC: PC
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item en\_regWr\_o=1; mux\_aluSrcB\_o=1; sel\_immSrc\_o=IMM\_I;
+          alu\_op\_o selected by \texttt{instr\_func3\_i}/\texttt{instr\_func7b5\_i}
+          (see below); \texttt{trap\_illegal\_instr\_o} cannot be set here
+          -- all 8 \texttt{func3} values are decoded.
       \end{itemize}
-      \item opcode=27: arithmetic immediate (64 bit)
+      \item opcode=23 (auipc):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b000; Instruction format: I-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=various
+        \item en\_regWr\_o=1; sel\_immSrc\_o=IMM\_U; mux\_aluSrcA\_o=SRC\_PC;
+          mux\_aluSrcB\_o=1; alu\_op\_o=ALU\_ADD
       \end{itemize}
-      \item opcode=35: stores
+      \item opcode=27 (immediate arithmetic/shift, word):
       \begin{itemize}
-        \item regWr\_o=0; Write to register file: No
-        \item immSrc\_o=3'b001; Instruction format: S-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=1; Write to D-Mem: Yes
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item en\_regWr\_o=1; mux\_aluSrcB\_o=1; sel\_immSrc\_o=IMM\_I;
+          alu\_op\_o $\in$ \{ALU\_ADDW, ALU\_SLLW, ALU\_SRLW, ALU\_SRAW\}
+          (see \texttt{instr\_func3\_i} below); only \texttt{func3}
+          $\in$ \{000,001,101\} are valid -- any other value sets
+          \texttt{trap\_illegal\_instr\_o}=1.
       \end{itemize}
-      \item opcode=51: arithmetic, logic and shifts
+      \item opcode=35 (stores):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'bxxx; Instruction format: R-type (don't care)
-        \item aluSrcB\_o=0; Mux - Second register or immediate: register
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=various
+        \item en\_dMemWr\_o=1; mux\_aluSrcB\_o=1; sel\_immSrc\_o=IMM\_S;
+          alu\_op\_o=ALU\_ADD
       \end{itemize}
-      \item opcode=55: lui
+      \item opcode=51 (R-type, RV32I arithmetic/logic/shift):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b100; Instruction format: U-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item en\_regWr\_o=1; mux\_aluSrcA\_o=SRC\_REGA; mux\_aluSrcB\_o=0
+          (register); alu\_op\_o selected by \texttt{instr\_func3\_i}/
+          \texttt{instr\_func7b5\_i} (see below); all 8 \texttt{func3}
+          values decoded, \texttt{trap\_illegal\_instr\_o} cannot be set here.
       \end{itemize}
-      \item opcode=59: arithmetic, logic and shifts (64 bit)
+      \item opcode=55 (lui):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'bxxx; Instruction format: R-type (don't care)
-        \item aluSrcB\_o=0; Mux - Second register or immediate: register
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=various
+        \item en\_regWr\_o=1; sel\_immSrc\_o=IMM\_U; mux\_aluSrcA\_o=SRC\_ZERO;
+          mux\_aluSrcB\_o=1; alu\_op\_o=ALU\_ADD (result = 0 + imm)
       \end{itemize}
-      \item opcode=99: branches
+      \item opcode=59 (R-type, RV64I word arithmetic/shift):
       \begin{itemize}
-        \item regWr\_o=0; Write to register file: No
-        \item immSrc\_o=3'bxxx; Instruction format: B-type
-        \item aluSrcB\_o=0; Mux - Second register or immediate: register
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b00; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: ALU-result to RegFile
-        \item branch\_s=1; Branch: Yes
-        \item jump\_s=0; Only for jalr, jal
-        \item aluSel\_o=various
+        \item en\_regWr\_o=1; alu\_op\_o $\in$ \{ALU\_ADDW/SUBW, ALU\_SLLW,
+          ALU\_SRLW/SRAW\}; only \texttt{func3} $\in$ \{000,001,101\} are
+          valid -- any other value sets \texttt{trap\_illegal\_instr\_o}=1.
       \end{itemize}
-      \item opcode=103: jalr
+      \item opcode=99 (conditional branches):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b000; Instruction format: I-type
-        \item aluSrcB\_o=1; Mux - Second register or immediate: immediate
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b10; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: PC+4 to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=1; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item sel\_immSrc\_o=IMM\_B; br\_op\_o selected by
+          \texttt{instr\_func3\_i} (see below); only \texttt{func3}
+          $\in$ \{000,001,100,101,110,111\} are valid -- 010 and 011 are
+          reserved and set \texttt{trap\_illegal\_instr\_o}=1.
       \end{itemize}
-      \item opcode=111: jal
+      \item opcode=103 (jalr):
       \begin{itemize}
-        \item regWr\_o=1; Write to register file: Yes
-        \item immSrc\_o=3'b011; Instruction format: J-type
-        \item aluSrcB\_o=0; Mux - Second register or immediate: register
-        \item aluSrcA\_o=0; Mux - First register or PC: register
-        \item dMemWr\_o=0; Write to D-Mem: No
-        \item dMemRd\_o=0; Read from D-Mem: No
-        \item resultSrc\_o=2'b10; Mux (behind D-Mem) - D-Mem-data or PC+4 or ALU-result: PC+4 to RegFile
-        \item branch\_s=0; Branch: No
-        \item jump\_s=1; Only for jalr, jal
-        \item aluSel\_o=5'b00000 (ADD)
+        \item en\_regWr\_o=1; sel\_immSrc\_o=IMM\_I; mux\_jump\_o=1;
+          mux\_resultSrc\_o=RES\_PC4; br\_op\_o=BR\_ALWAYS
+      \end{itemize}
+      \item opcode=111 (jal):
+      \begin{itemize}
+        \item en\_regWr\_o=1; sel\_immSrc\_o=IMM\_J; mux\_resultSrc\_o=RES\_PC4;
+          br\_op\_o=BR\_ALWAYS
+      \end{itemize}
+      \item opcode=115 (\texttt{0x73}, SYSTEM -- CSR/\texttt{mret}/
+        \texttt{ecall}/\texttt{ebreak}):
+      \begin{itemize}
+        \item mux\_resultSrc\_o=RES\_CSR always; en\_regWr\_o=1 unless
+          \texttt{instr\_func3\_i}=000 (\texttt{mret}/\texttt{ecall}/
+          \texttt{ebreak} do not write \texttt{rd}). The decoder does not
+          further distinguish \texttt{mret}, \texttt{ecall}, and
+          \texttt{ebreak} from one another (all three are legal,
+          \texttt{func3}=000, differing only in \texttt{instr[31:20]}) --
+          that distinction, and the CSR address decode for the six
+          \texttt{csrr*} variants, happens outside this module in the CPU
+          top level (\texttt{as\_cpux}/\texttt{cc\_cpupipefwd}); see
+          Section~\ref{subsec:irqconcept}.
+      \end{itemize}
+      \item default (any other opcode):
+      \begin{itemize}
+        \item trap\_illegal\_instr\_o=1; all other outputs stay at their
+          default (inert) value.
       \end{itemize}
     \end{itemize}
   \end{itemize}
-  \item Signal: func3\_i
+  \item Signal: \texttt{instr\_func3\_i}
   \begin{itemize}
     \item Width: 3\,bit, unsigned
-    \item Source: Instruction from I-Mem.
-    \item Destination: Case statement generating controls\_s and aluSel\_o
-    \item Explanation: 
+    \item Source: Instruction from I-Mem/I-Cache.
+    \item Destination: nested \texttt{case} statements selecting
+      \texttt{alu\_op\_o} (opcodes 19/27/51/59) or \texttt{br\_op\_o}
+      (opcode 99); also gates \texttt{en\_regWr\_o} for opcode 115.
+    \item Explanation (\texttt{alu\_op\_o} selection; \texttt{instr\_func7b5\_i}
+      distinguishes the two rows sharing the same \texttt{func3}):
     \begin{itemize}
-      \item opcode=19
-      \begin{itemize}
-        \item func3\_i=0: if(func7b5\_i \& opcode\_i[5]) aluSel\_o=5'b00001 (SUBI) else aluSel\_o=5'b00000 (ADDI)
-        \item func3\_i=1: aluSel\_o=5'b01111 (SLLI)
-        \item func3\_i=2: aluSel\_o=5'b00101 (SLTI)
-        \item func3\_i=3: aluSel\_o=5'b00110 (SLTIU)
-        \item func3\_i=5: if(func7b5\_i == 0) aluSel\_o=5'b01110 (SRLI) else aluSel\_o=5'b01101 (SRAI)
-        \item func3\_i=4: aluSel\_o=5'b00100 (XORI)
-        \item func3\_i=6: aluSel\_o=5'b00011 (ORI)
-        \item func3\_i=7: aluSel\_o=5'b00010 (ANDI)
-      \end{itemize}
-      \item opcode=27
-      \begin{itemize}
-        \item func3\_i=0: if(func7b5\_i \& opcode\_i[5]) aluSel\_o=5'b01011 (SUBIW) else aluSel\_o=5'b01100 (ADDIW)
-        \item func3\_i=1: aluSel\_o=5'b01010 (SLLIW)
-        \item func3\_i=5: if(func7b5\_i == 0) aluSel\_o=5'b01001 (SRLIW) else aluSel\_o=5'b01000 (SRAIW)
-      \end{itemize}
-      \item opcode=51
-      \begin{itemize}
-        \item func3\_i=0: if(func7b5\_i \& opcode\_i[5]) aluSel\_o=5'b00001 (SUB) else aluSel\_o=5'b00000 (ADD)
-        \item func3\_i=1: aluSel\_o=5'b01111 (SLL)
-        \item func3\_i=2: aluSel\_o=5'b00101 (SLT)
-        \item func3\_i=3: aluSel\_o=5'b00110 (SLTU)
-        \item func3\_i=5: if(func7b5\_i == 0) aluSel\_o=5'b01110 (SRL) else aluSel\_o=5'b01101 (SRA)
-        \item func3\_i=4: aluSel\_o=5'b00100 (XOR)
-        \item func3\_i=6: aluSel\_o=5'b00011 (OR)
-        \item func3\_i=7: aluSel\_o=5'b00010 (AND)
-      \end{itemize}
-      \item opcode=59
-      \begin{itemize}
-        \item func3\_i=0: if(func7b5\_i \& opcode\_i[5]) aluSel\_o=5'b01011 (SUBW) else aluSel\_o=5'b01100 (ADDW)
-        \item func3\_i=1: aluSel\_o=5'b01010 (SLLW)
-        \item func3\_i=5: if(func7b5\_i == 0) aluSel\_o=5'b01001 (SRLW) else aluSel\_o=5'b01000 (SRAW)
-      \end{itemize}
-      \item opcode=99
-      \begin{itemize}
-        \item func3\_i=0: aluSel\_o=5'b10001 (BEQ, SUB)
-        \item func3\_i=1: aluSel\_o=5'b10011 (BNE, SUB)
-        \item func3\_i=4: aluSel\_o=5'b10000 (BLT, <)
-        \item func3\_i=5: aluSel\_o=5'b10010 (BGE, >=)
-        \item func3\_i=6: aluSel\_o=5'b10100 (BLTU, <)
-        \item func3\_i=7: aluSel\_o=5'b10101 (BGEU, >=)
-      \end{itemize}
+      \item opcode=19 (immediate, 64-bit width): func3=000 $\to$
+        \texttt{ALU\_ADD}; 001 $\to$ \texttt{ALU\_SLL}; 010 $\to$
+        \texttt{ALU\_SLT}; 011 $\to$ \texttt{ALU\_SLTU}; 100 $\to$
+        \texttt{ALU\_XOR}; 101 $\to$ \texttt{ALU\_SRL}
+        (\texttt{func7b5\_i}=0) or \texttt{ALU\_SRA} (=1); 110 $\to$
+        \texttt{ALU\_OR}; 111 $\to$ \texttt{ALU\_AND}
+      \item opcode=27 (immediate, word width): func3=000 $\to$
+        \texttt{ALU\_ADDW}; 001 $\to$ \texttt{ALU\_SLLW}; 101 $\to$
+        \texttt{ALU\_SRLW} (\texttt{func7b5\_i}=0) or \texttt{ALU\_SRAW} (=1)
+      \item opcode=51 (register, 64-bit width): func3=000 $\to$
+        \texttt{ALU\_ADD} (\texttt{func7b5\_i}=0) or \texttt{ALU\_SUB} (=1);
+        001 $\to$ \texttt{ALU\_SLL}; 010 $\to$ \texttt{ALU\_SLT}; 011 $\to$
+        \texttt{ALU\_SLTU}; 100 $\to$ \texttt{ALU\_XOR}; 101 $\to$
+        \texttt{ALU\_SRL} (\texttt{func7b5\_i}=0) or \texttt{ALU\_SRA} (=1);
+        110 $\to$ \texttt{ALU\_OR}; 111 $\to$ \texttt{ALU\_AND}
+      \item opcode=59 (register, word width): func3=000 $\to$
+        \texttt{ALU\_ADDW} (\texttt{func7b5\_i}=0) or \texttt{ALU\_SUBW} (=1);
+        001 $\to$ \texttt{ALU\_SLLW}; 101 $\to$ \texttt{ALU\_SRLW}
+        (\texttt{func7b5\_i}=0) or \texttt{ALU\_SRAW} (=1)
     \end{itemize}
+    \item Explanation (\texttt{br\_op\_o} selection, opcode=99): func3=000
+      $\to$ \texttt{BR\_EQ} (\texttt{beq}); 001 $\to$ \texttt{BR\_NE}
+      (\texttt{bne}); 100 $\to$ \texttt{BR\_LT} (\texttt{blt}); 101 $\to$
+      \texttt{BR\_GE} (\texttt{bge}); 110 $\to$ \texttt{BR\_LTU}
+      (\texttt{bltu}); 111 $\to$ \texttt{BR\_GEU} (\texttt{bgeu}); 010/011
+      $\to$ \texttt{trap\_illegal\_instr\_o}=1 (reserved encodings).
   \end{itemize}
-  \item Signal: func7b5\_i
+  \item Signal: \texttt{instr\_func7b5\_i}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: Instruction from I-Mem.
-    \item Destination: Case statement generating controls\_s and aluSel\_o, rTypeSubtract\_s
-    \item Explanation: Differentiates between ADD and SUB, shift variants
+    \item Source: Instruction from I-Mem/I-Cache (instruction bit [30]).
+    \item Destination: the \texttt{alu\_op\_o} case branches listed above.
+    \item Explanation: distinguishes ADD/SUB and the logical/arithmetic
+      shift variants (SRL/SRA, SRLI/SRAI, SRLW/SRAW, SRLIW/SRAIW) that
+      share the same \texttt{func3} encoding.
   \end{itemize}
-  \item Signal: zero\_i
+  \item Signal: \texttt{mux\_resultSrc\_o}
+  \begin{itemize}
+    \item Width: 2\,bit, \texttt{result\_src\_t} enum
+    \item Source: generated from the opcode, see \texttt{instr\_opcode\_i} above.
+    \item Destination: WB-stage result mux (ALU result / D-Mem load data /
+      PC+4 / CSR read value $\to$ register file write data).
+    \item Explanation: \texttt{RES\_ALU}=0 (default, most instructions),
+      \texttt{RES\_MEM}=1 (loads), \texttt{RES\_PC4}=2 (\texttt{jal}/\texttt{jalr}),
+      \texttt{RES\_CSR}=3 (opcode 115, SYSTEM).
+  \end{itemize}
+  \item Signal: \texttt{en\_dMemWr\_o}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: ALU
-    \item Destination: zero\_s
-    \item Explanation: Indicates that a branch should be taken.
+    \item Source: generated from the opcode (stores only).
+    \item Destination: D-Mem/D-Cache write enable.
+    \item Explanation: Write-enable for the data memory.
   \end{itemize}
-  \item Signal: zero\_s
+  \item Signal: \texttt{en\_dMemRd\_o}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: zero\_i
-    \item Destination: PCSrc\_o
-    \item Explanation: Indicates that a branch should be taken. \[ PCSrc\_o=(branch\_s \& zero\_s) | jump\_s \]
+    \item Source: generated from the opcode (loads only).
+    \item Destination: D-Mem/D-Cache read enable; also gates the load-use
+      hazard stall in \texttt{RV\_PipelineCacheFwd} (Section~\ref{subsec:pipehazard}).
+    \item Explanation: Read-enable for the data memory.
   \end{itemize}
-  \item Signal: branch\_s
+  \item Signal: \texttt{mux\_aluSrcB\_o}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: PCSrc\_o
-    \item Explanation: Indicates that a branch should be taken. \[ PCSrc\_o=(branch\_s \& zero\_s) | jump\_s \]
-  \end{itemize}
-  \item Signal: jump\_s
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: PCSrc\_o
-    \item Explanation: Indicates that a branch should be taken. \[ PCSrc\_o=(branch\_s \& zero\_s) | jump\_s \]
-  \end{itemize}
-  \item Signal: rTypeSubtract\_s
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: \[ rTypeSubtract\_s = func7b5\_i \& opcode\_i[5] \]
-    \item Destination: Case statement generating controls\_s and aluSel\_o
-    \item Explanation: Short form for distinguishing between ADD AND SUB.
-  \end{itemize}
-  \item Signal: resultSrc\_o
-  \begin{itemize}
-    \item Width: 2\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: Mux behind D-Mem
-    \item Explanation: 
-                                        \[ \begin{array}{ll}
-                                               $00$ & \mbox{for ALU-result to RegFile} \\
-                                               $01$ & \mbox{for D-Mem-data to regFile} \\
-                                               $10$ & \mbox{for PC+4 to RegFile}
-                                            \end{array} \]
-  \end{itemize}
-  \item Signal: dMemWr\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: D-Mem
-    \item Explanation: Write-enable for D-Mem
-  \end{itemize}
-  \item Signal: dMemRd\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: D-Mem
-    \item Explanation: Read-enable for D-Mem; check if realy needed
-  \end{itemize}
-  \item Signal: PCSrc\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: \[ PCSrc\_o=(branch\_s \& zero\_s) | jump\_s \]
-    \item Destination: PC
-    \item Explanation: Select input for the PC MUX. \[ \begin{array}{ll} 
-                                                                                                        0 \Rightarrow & $PC+4$ \mbox{ (PCp4) to PC} \\ 
-                                                                                                        1 \Rightarrow & \mbox{branch target address (PCbr) to PC} 
-                                                                                                      \end{array} \]
-  \end{itemize}
-  \item Signal: aluSrcB\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: Select input for the MUX between RegFile and ALU
-    \item Explanation: \[ \begin{array}{ll} 
-                                              0 \Rightarrow & \mbox{2nd RegFile output to 2nd source input of ALU} \\ 
-                                              1 \Rightarrow & \mbox{immediate value to 2nd source input of ALU} 
+    \item Source: generated from the opcode.
+    \item Destination: ALU source-B input mux.
+    \item Explanation: \[ \begin{array}{ll}
+                                              0 \Rightarrow & \mbox{register (rs2) to ALU source B} \\
+                                              1 \Rightarrow & \mbox{immediate value to ALU source B}
                                               \end{array} \]
   \end{itemize}
-  \item Signal: aluSrcA\_o
+  \item Signal: \texttt{mux\_aluSrcA\_o}
+  \begin{itemize}
+    \item Width: 2\,bit, \texttt{mux\_a\_t} enum
+    \item Source: generated from the opcode.
+    \item Destination: ALU source-A input mux.
+    \item Explanation: \texttt{SRC\_REGA}=0 (register rs1, default),
+      \texttt{SRC\_PC}=1 (\texttt{auipc}), \texttt{SRC\_ZERO}=2 (\texttt{lui}).
+  \end{itemize}
+  \item Signal: \texttt{en\_regWr\_o}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: Select input for the MUX between RegFile and ALU
-    \item Explanation: \[ \begin{array}{ll} 
-                                              0 \Rightarrow & \mbox{1st RegFile output to 1st source input of ALU} \\ 
-                                              1 \Rightarrow & \mbox{PC to 1st source input of ALU} 
+    \item Source: generated from the opcode (and, for opcode 115, \texttt{instr\_func3\_i}).
+    \item Destination: Register-file write enable.
+    \item Explanation: Write enable for the register file.
+  \end{itemize}
+  \item Signal: \texttt{mux\_jump\_o}
+  \begin{itemize}
+    \item Width: 1\,bit, unsigned
+    \item Source: opcode=103 (\texttt{jalr}) only.
+    \item Destination: Branch-target-adder source-A select.
+    \item Explanation: \[ \begin{array}{ll}
+                                              0 \Rightarrow & \mbox{PC to branch-target-adder input A (default: branches, JAL)} \\
+                                              1 \Rightarrow & \mbox{register rs1 to branch-target-adder input A (JALR)}
                                               \end{array} \]
   \end{itemize}
-  \item Signal: regWr\_o
+  \item Signal: \texttt{sel\_immSrc\_o}
   \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: Write enable for the RegFile
-    \item Explanation: Write enable for the RegFile
-  \end{itemize}
-  \item Signal: jump\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: \[ jump\_o = jump\_s \& (\sim immSrc\_o[0]) \& (\sim immSrc\_o[1]) \& (\sim immSrc\_o[2]) \]
-    \item Destination: Select input for the MUX in front of the branch target adder
-    \item Explanation: \[ \begin{array}{ll} 
-                                              0 \Rightarrow & \mbox{PC to adder input A} \\ 
-                                              1 \Rightarrow & \mbox{regA to adder input A} 
+    \item Width: 3\,bit, \texttt{imm\_src\_t} enum
+    \item Source: generated from the opcode.
+    \item Destination: Immediate generator format select.
+    \item Explanation: \[ \begin{array}{ll}
+                                              \texttt{IMM\_NONE}=0 \Rightarrow & \mbox{no immediate (R-type, FENCE, default)} \\
+                                              \texttt{IMM\_I}=1 \Rightarrow & \mbox{I-type (loads, immediate arithmetic, jalr)} \\
+                                              \texttt{IMM\_S}=2 \Rightarrow & \mbox{S-type (stores)} \\
+                                              \texttt{IMM\_B}=3 \Rightarrow & \mbox{B-type (branches)} \\
+                                              \texttt{IMM\_U}=4 \Rightarrow & \mbox{U-type (lui, auipc)} \\
+                                              \texttt{IMM\_J}=5 \Rightarrow & \mbox{J-type (jal)}
                                               \end{array} \]
   \end{itemize}
-  \item Signal: immSrc\_o
+  \item Signal: \texttt{alu\_op\_o}
   \begin{itemize}
-    \item Width: 3\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: Immediate generator control
-    \item Explanation: \[ \begin{array}{ll} 
-                                              000 \Rightarrow & \mbox{I-type} \\ 
-                                              001 \Rightarrow & \mbox{S-type} \\ 
-                                              010 \Rightarrow & \mbox{B-type} \\ 
-                                              011 \Rightarrow & \mbox{J-type} \\ 
-                                              100 \Rightarrow & \mbox{U-type} 
+    \item Width: 6\,bit declared (\texttt{alu\_op\_t}), 15 values used
+    \item Source: generated from the opcode and, where applicable,
+      \texttt{instr\_func3\_i}/\texttt{instr\_func7b5\_i} (see above).
+    \item Destination: Algorithmic ALU operation select.
+    \item Explanation: \[ \begin{array}{ll}
+                                              0 \Rightarrow & \texttt{ALU\_ADD} \mbox{ (ADD, ADDI, loads, stores, jal/jalr target, auipc, lui, default)} \\
+                                              1 \Rightarrow & \texttt{ALU\_SUB} \\
+                                              2 \Rightarrow & \texttt{ALU\_AND} \\
+                                              3 \Rightarrow & \texttt{ALU\_OR} \\
+                                              4 \Rightarrow & \texttt{ALU\_XOR} \\
+                                              5 \Rightarrow & \texttt{ALU\_SLT} \\
+                                              6 \Rightarrow & \texttt{ALU\_SLTU} \\
+                                              7 \Rightarrow & \texttt{ALU\_SLL} \\
+                                              8 \Rightarrow & \texttt{ALU\_SRL} \\
+                                              9 \Rightarrow & \texttt{ALU\_SRA} \\
+                                              10 \Rightarrow & \texttt{ALU\_ADDW} \\
+                                              11 \Rightarrow & \texttt{ALU\_SUBW} \\
+                                              12 \Rightarrow & \texttt{ALU\_SLLW} \\
+                                              13 \Rightarrow & \texttt{ALU\_SRLW} \\
+                                              14 \Rightarrow & \texttt{ALU\_SRAW}
                                               \end{array} \]
   \end{itemize}
-  \item Signal: aluSel\_o
+  \item Signal: \texttt{br\_op\_o}
   \begin{itemize}
-    \item Width: 5\,bit, unsigned
-    \item Source: generated from different instructions, see opcode\_i
-    \item Destination: ALU control
-    \item Explanation: \[ \begin{array}{ll} 
-                                              00000 \Rightarrow & \mbox{ADD, ADDI, (JAL, JALR, AUIPC, LUI, stores, loads)} \\ 
-                                              00001 \Rightarrow & \mbox{SUB, SUBI} \\ 
-                                              00010 \Rightarrow & \mbox{AND, ANDI} \\ 
-                                              00011 \Rightarrow & \mbox{OR, ORI} \\ 
-                                              00100 \Rightarrow & \mbox{XOR, XORI} \\ 
-                                              00101 \Rightarrow & \mbox{SLT, SLTI} \\ 
-                                              00110 \Rightarrow & \mbox{SLTU, SLTIU} \\ 
-                                              00111 \Rightarrow & \mbox{tbd} \\ 
-                                              01000 \Rightarrow & \mbox{SRAW, SRAIW} \\ 
-                                              01001 \Rightarrow & \mbox{SRLW, SRLIW} \\ 
-                                              01010 \Rightarrow & \mbox{SLLW, SLLIW} \\ 
-                                              01011 \Rightarrow & \mbox{SUBW, SUBIW} \\ 
-                                              01100 \Rightarrow & \mbox{ADDW, ADDIW} \\ 
-                                              01101 \Rightarrow & \mbox{SRA, SRAI} \\ 
-                                              01110 \Rightarrow & \mbox{SRL, SRLI} \\ 
-                                              01111 \Rightarrow & \mbox{SLL, SLLI} \\ 
-                                              10000 \Rightarrow & \mbox{BLT} \\ 
-                                              10001 \Rightarrow & \mbox{BEQ} \\ 
-                                              10010 \Rightarrow & \mbox{BGE} \\ 
-                                              10011 \Rightarrow & \mbox{BNE} \\ 
-                                              10100 \Rightarrow & \mbox{BLTU} \\ 
-                                              10101 \Rightarrow & \mbox{BGEU}
+    \item Width: 3\,bit, \texttt{br\_op\_t} enum
+    \item Source: opcode 99 (branches, via \texttt{instr\_func3\_i}) and
+      opcodes 103/111 (\texttt{jalr}/\texttt{jal}, unconditional).
+    \item Destination: Branch ALU operation select (\texttt{take\_o}
+      generation, both chip variants -- see Section~\ref{sec:alufunc01}).
+    \item Explanation: \[ \begin{array}{ll}
+                                              0 \Rightarrow & \texttt{BR\_NONE} \mbox{ (default, no branch/jump)} \\
+                                              1 \Rightarrow & \texttt{BR\_EQ} \mbox{ (beq)} \\
+                                              2 \Rightarrow & \texttt{BR\_NE} \mbox{ (bne)} \\
+                                              3 \Rightarrow & \texttt{BR\_LT} \mbox{ (blt)} \\
+                                              4 \Rightarrow & \texttt{BR\_GE} \mbox{ (bge)} \\
+                                              5 \Rightarrow & \texttt{BR\_LTU} \mbox{ (bltu)} \\
+                                              6 \Rightarrow & \texttt{BR\_GEU} \mbox{ (bgeu)} \\
+                                              7 \Rightarrow & \texttt{BR\_ALWAYS} \mbox{ (jal, jalr -- unconditional)}
                                               \end{array} \]
   \end{itemize}
-  \item Signal: branch\_s\_o
+  \item Signal: \texttt{trap\_illegal\_instr\_o}
   \begin{itemize}
     \item Width: 1\,bit, unsigned
-    \item Source: branch\_s
-    \item Destination: Branch control for a pipelined solution
-    \item Explanation: pipeline solution only
+    \item Source: the case-statement default (unrecognized opcode) and the
+      \texttt{default} arms of the \texttt{instr\_func3\_i} sub-cases for
+      opcodes 27, 59, and 99 (the only opcodes whose 8 possible
+      \texttt{func3} values are not all valid RV64I encodings).
+    \item Destination: CPU top-level trap logic (\texttt{as\_cpux}/
+      \texttt{cc\_cpupipefwd}); sets \texttt{mcause}=2.
+    \item Explanation: see Section~\ref{subsec:irqconcept} for the full
+      trap-priority chain and CSR update sequence.
   \end{itemize}
-  \item Signal: jump\_s\_o
-  \begin{itemize}
-    \item Width: 1\,bit, unsigned
-    \item Source: jump\_s
-    \item Destination: Branch control for a pipelined solution
-    \item Explanation: pipeline solution only
-  \end{itemize}
-  
 \end{itemize}

@@ -1,137 +1,170 @@
 
-Table \ref{tab:asDec05} lists all base integer instructions of a RISC-V 32 bit architecture according the specification \cite{riscvisa03}. A 64 bit architecture has the same instructions with an adapted length of some numbers and registers.
+Table \ref{tab:asDec05} lists every RV64I base integer instruction this core decodes (RV32I base set \cite{riscvisa01}, \cite{riscvisa02}, \cite{riscvisa03} plus the RV64I word-width and Zicsr/privileged additions), with the exact control-signal values produced by \texttt{as\_instr\_decode.sv} for each. FENCE/FENCE.I and the nine SYSTEM-opcode instructions (missing from earlier revisions of this table) are now included.
 
-Legend: 
+Legend:
 \begin{itemize}
   \item Ins: Instruction short
-  \item op: opcode\_i
-  \item f3: func3\_i
-  \item 7: func7b5\_i
-  \item z: zero\_i
-  \item S: resultSrc\_o
-  \item W: dMemWr\_o
-  \item R: dMemRd\_o
-  \item P: PCSrc\_o
-  \item B: aluSrcB\_o
-  \item A: aluSrcA\_o
-  \item r: regWr\_o
-  \item j: jump\_o
-  \item im: immSrc\_o
-  \item aluSel: aluSel\_o
-  \item b: branch\_s\_o
-  \item js: jump\_s\_o
+  \item op: \texttt{instr\_opcode\_i}
+  \item f3: \texttt{instr\_func3\_i}
+  \item f7: \texttt{instr\_func7b5\_i}
+  \item S: \texttt{mux\_resultSrc\_o} (0=\texttt{RES\_ALU}, 1=\texttt{RES\_MEM}, 2=\texttt{RES\_PC4}, 3=\texttt{RES\_CSR})
+  \item W: \texttt{en\_dMemWr\_o}
+  \item R: \texttt{en\_dMemRd\_o}
+  \item B: \texttt{mux\_aluSrcB\_o}
+  \item A: \texttt{mux\_aluSrcA\_o} (0=\texttt{SRC\_REGA}, 1=\texttt{SRC\_PC}, 2=\texttt{SRC\_ZERO})
+  \item r: \texttt{en\_regWr\_o}
+  \item j: \texttt{mux\_jump\_o}
+  \item im: \texttt{sel\_immSrc\_o} (0=\texttt{IMM\_NONE}, 1=\texttt{IMM\_I}, 2=\texttt{IMM\_S}, 3=\texttt{IMM\_B}, 4=\texttt{IMM\_U}, 5=\texttt{IMM\_J})
+  \item alu: \texttt{alu\_op\_o} (0..14, see Table~\ref{tab:asDec01}/the Internals list for the name mapping; shown as ``-'' where the ALU result is not used, i.e.\ the field holds the don't-care default \texttt{ALU\_ADD}=0)
+  \item br: \texttt{br\_op\_o} (0=\texttt{BR\_NONE} .. 6=\texttt{BR\_GEU}, 7=\texttt{BR\_ALWAYS})
 \end{itemize}
-%\begin{longtable}{|  m{3.5cm}<{\raggedright}  |  m{3cm}<{\raggedright}  |  m{5.5cm}<{\raggedright}  |} %p, m, b
-\begin{longtable}{|c<{\raggedright}|c<{\raggedright}|c<{\raggedright}|c|c|c|c|c|c|c|c|c|c|c|c|p{0.3cm}|c|} %p, m, b
-\caption{RV32I/RV64I Base Integer Instruction Set \cite{riscvisa01}, \cite{riscvisa02}, \cite{riscvisa03}}\\
+\texttt{trap\_illegal\_instr\_o}=0 for every row in this table by construction (they are exactly the valid encodings); see Table~\ref{tab:asDec01} and the Internals list (Section~\ref{sec:decfunc01}) for which \texttt{func3} values are \emph{not} listed here and therefore trap.
+
+\begin{longtable}{|c<{\raggedright}|c<{\raggedright}|c<{\raggedright}|c|c|c|c|c|c|c|c|c|c|c|} %p, m, b
+\caption{RV32I/RV64I Base Integer Instruction Set, incl.\ FENCE/SYSTEM \cite{riscvisa01}, \cite{riscvisa02}, \cite{riscvisa03}}\\
 \hline
-Ins & op & f3 & 7 &  z & S & W & R& P & B & A & r & j & im & aluSel & b & js  \\
+Ins & op & f3 & f7 & S & W & R & B & A & r & j & im & alu & br \\
 \hline
 \endfirsthead
-Ins & op & f3 & 7 &   z & S & W & R & P & B & A & r & j & i m& aluSel & b & js  \\
+Ins & op & f3 & f7 & S & W & R & B & A & r & j & im & alu & br \\
 \hline
 \endhead
-\multicolumn{17}{r}{... next page}\\
+\multicolumn{14}{r}{... next page}\\
 \endfoot
 \hline
-\multicolumn{17}{r}{EoT} \\
+\multicolumn{14}{r}{EoT} \\
 \endlastfoot
-lb & 0000011 & 000 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+fence / fence.i & 0001111 & - & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & - & 0 \\
 \hline
-lh & 0000011 & 001 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lb & 0000011 & 000 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-lw & 0000011 & 010 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lh & 0000011 & 001 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-lbu & 0000011 & 100 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lw & 0000011 & 010 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-lhu & 0000011 & 101 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lbu & 0000011 & 100 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-ld & 0000011 & 011 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lhu & 0000011 & 101 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-lwu & 0000011 & 110 & - & - & 01 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+ld & 0000011 & 011 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-addi & 0010011 & 000 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 0 \\
+lwu & 0000011 & 110 & - & 1 & 0 & 1 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-slli & 0010011 & 001 & 0 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01111 & 0 & 0  \\
+addi & 0010011 & 000 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 0 & 0 \\
 \hline
-slti & 0010011 & 010 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00101 & 0 & 0  \\
+slli & 0010011 & 001 & 0 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 7 & 0 \\
 \hline
-sltiu & 0010011 & 011 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00110 & 0 & 0  \\
+slti & 0010011 & 010 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 5 & 0 \\
 \hline
-xori & 0010011 & 100 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00100 & 0 & 0  \\
+sltiu & 0010011 & 011 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 6 & 0 \\
 \hline
-srli & 0010011 & 101 & 0 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01110 & 0 & 0  \\
+xori & 0010011 & 100 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 4 & 0 \\
 \hline
-srai & 0010011 & 101 & 1 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01101 & 0 & 0  \\
+srli & 0010011 & 101 & 0 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 8 & 0 \\
 \hline
-ori & 0010011 & 110 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00011 & 0 & 0  \\
+srai & 0010011 & 101 & 1 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 9 & 0 \\
 \hline
-andi & 0010011 & 111 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 00010 & 0 & 0 \\
+ori & 0010011 & 110 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 3 & 0 \\
 \hline
-auipc & 0010111 & - & - & - & 00 & 0 & 0 & 0 & 1 & 1 & 1 & 0 & 100 & 00000 & 0 & 0 \\
+andi & 0010011 & 111 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 2 & 0 \\
 \hline
-addiw & 0011011 & 000 & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01100 & 0 & 0  \\
+auipc & 0010111 & - & - & 0 & 0 & 0 & 1 & 1 & 1 & 0 & 4 & 0 & 0 \\
 \hline
-slliw & 0011011 & 001 & 0 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01010 & 0 & 0  \\
+addiw & 0011011 & 000 & - & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 10 & 0 \\
 \hline
-srliw & 0011011 & 101 & 0 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01001 & 0 & 0  \\
+slliw & 0011011 & 001 & 0 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 12 & 0 \\
 \hline
-sraiw & 0011011 & 101 & 1 & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 000 & 01000 & 0 & 0  \\
+srliw & 0011011 & 101 & 0 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 13 & 0 \\
 \hline
-sb & 0100011 & 000 & - & - & 00 & 1 & 0 & 0 & 1 & 0 & 0 & 0 & 001 & 00000 & 0 & 0  \\
+sraiw & 0011011 & 101 & 1 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 1 & 14 & 0 \\
 \hline
-sh & 0100011 & 001 & - & - & 00 & 1 & 0 & 0 & 1 & 0 & 0 & 0 & 001 & 00000 & 0 & 0  \\
+sb & 0100011 & 000 & - & 0 & 1 & 0 & 1 & 0 & 0 & 0 & 2 & 0 & 0 \\
 \hline
-sw & 0100011 & 010 & - & - & 00 & 1 & 0 & 0 & 1 & 0 & 0 & 0 & 001 & 00000 & 0 & 0  \\
+sh & 0100011 & 001 & - & 0 & 1 & 0 & 1 & 0 & 0 & 0 & 2 & 0 & 0 \\
 \hline
-sd & 0100011 & 011 & - & - & 00 & 1 & 0 & 0 & 1 & 0 & 0 & 0 & 001 & 00000 & 0 & 0 \\
+sw & 0100011 & 010 & - & 0 & 1 & 0 & 1 & 0 & 0 & 0 & 2 & 0 & 0 \\
 \hline
-add & 0110011 & 000 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00000 & 0 & 0  \\
+sd & 0100011 & 011 & - & 0 & 1 & 0 & 1 & 0 & 0 & 0 & 2 & 0 & 0 \\
 \hline
-sub & 0110011 & 000 & 1 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00001 & 0 & 0  \\
+add & 0110011 & 000 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 \\
 \hline
-sll & 0110011 & 001 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01111 & 0 & 0  \\
+sub & 0110011 & 000 & 1 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 1 & 0 \\
 \hline
-slt & 0110011 & 010 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00101 & 0 & 0  \\
+sll & 0110011 & 001 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 7 & 0 \\
 \hline
-sltu & 0110011 & 011 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00110 & 0 & 0  \\
+slt & 0110011 & 010 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 5 & 0 \\
 \hline
-xor & 0110011 & 100 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00100 & 0 & 0  \\
+sltu & 0110011 & 011 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 6 & 0 \\
 \hline
-srl & 0110011 & 101 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01110& 0 & 0  \\
+xor & 0110011 & 100 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 4 & 0 \\
 \hline
-sra & 0110011 & 101 & 1 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01101 & 0 & 0  \\
+srl & 0110011 & 101 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 8 & 0 \\
 \hline
-or & 0110011 & 110 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00011 & 0 & 0  \\
+sra & 0110011 & 101 & 1 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 9 & 0 \\
 \hline
-and & 0110011 & 111 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 00010 & 0 & 0 \\
+or & 0110011 & 110 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 3 & 0 \\
 \hline
-lui & 0110111 & - & - & - & 00 & 0 & 0 & 0 & 1 & 0 & 1 & 0 & 100 & 00000 & 0 & 0 \\
+and & 0110011 & 111 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 2 & 0 \\
 \hline
-addw & 0111011 & 000 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01100 & 0 & 0 \\
+lui & 0110111 & - & - & 0 & 0 & 0 & 1 & 2 & 1 & 0 & 4 & 0 & 0 \\
 \hline
-subw & 0111011 & 000 & 1 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01011 & 0 & 0 \\
+addw & 0111011 & 000 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 10 & 0 \\
 \hline
-sllw & 0111011 & 001 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01010 & 0 & 0 \\
+subw & 0111011 & 000 & 1 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 11 & 0 \\
 \hline
-srlw & 0111011 & 101 & 0 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01001 & 0 & 0 \\
+sllw & 0111011 & 001 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 12 & 0 \\
 \hline
-sraw & 0111011 & 101 & 1 & - & 00 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 000 & 01000 & 0 & 0 \\
+srlw & 0111011 & 101 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 13 & 0 \\
 \hline
-beq & 1100011 & 000 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10001 & 1 & 0 \\
+sraw & 0111011 & 101 & 1 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 14 & 0 \\
 \hline
-bne & 1100011 & 001 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10011 & 1 & 0  \\
+beq & 1100011 & 000 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 1 \\
 \hline
-blt & 1100011 & 100 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10000 & 1 & 0  \\
+bne & 1100011 & 001 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 2 \\
 \hline
-bge & 1100011 & 101 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10010 & 1 & 0  \\
+blt & 1100011 & 100 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 3 \\
 \hline
-bltu & 1100011 & 110 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10100 & 1 & 0  \\
+bge & 1100011 & 101 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 4 \\
 \hline
-bgeu & 1100011 & 111 & - & 0/1 & 00 & 0 & 0 & 0/1 & 0 & 0 & 0 & 0 & 010 & 10101 & 1 & 0 \\
+bltu & 1100011 & 110 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 5 \\
 \hline
-jalr & 1100111 & 000 & - & - & 10 & 0 & 0 & 1 & 1 & 0 & 1 & 0 & 000 & 00000 & 0 & 1 \\
+bgeu & 1100011 & 111 & - & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 3 & - & 6 \\
 \hline
-jal & 1101111 & - & - & - & 10 & 0 & 0 & 1 & 0 & 0 & 1 & 0 & 011 & 00000 & 0 & 1 
+jalr & 1100111 & 000 & - & 2 & 0 & 0 & - & - & 1 & 1 & 1 & - & 7 \\
+\hline
+jal & 1101111 & - & - & 2 & 0 & 0 & - & - & 1 & 0 & 5 & - & 7 \\
+\hline
+csrrw & 1110011 & 001 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+csrrs & 1110011 & 010 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+csrrc & 1110011 & 011 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+csrrwi & 1110011 & 101 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+csrrsi & 1110011 & 110 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+csrrci & 1110011 & 111 & - & 3 & 0 & 0 & - & - & 1 & 0 & 0 & - & 0 \\
+\hline
+ecall\textsuperscript{(1)} & 1110011 & 000 & - & 3 & 0 & 0 & - & - & 0 & 0 & 0 & - & 0 \\
+\hline
+ebreak\textsuperscript{(1)} & 1110011 & 000 & - & 3 & 0 & 0 & - & - & 0 & 0 & 0 & - & 0 \\
+\hline
+mret\textsuperscript{(1)} & 1110011 & 000 & - & 3 & 0 & 0 & - & - & 0 & 0 & 0 & - & 0
 \label{tab:asDec05}
 \end{longtable}
+\noindent\footnotesize\textsuperscript{(1)}\,\texttt{ecall}, \texttt{ebreak},
+and \texttt{mret} are indistinguishable from one another at the
+\texttt{instr\_opcode\_i}/\texttt{instr\_func3\_i} granularity this table
+is keyed on (all three: op=1110011, f3=000); \texttt{as\_instr\_decode}
+does not need to tell them apart (all three get the same, shown, control
+signals). The CPU top level distinguishes them by inspecting
+\texttt{instr[31:20]} directly (\texttt{ecall}=\texttt{0x000},
+\texttt{ebreak}=\texttt{0x001}, \texttt{mret}=\texttt{0x302}); see
+Section~\ref{subsec:irqconcept}. Columns marked ``-'' hold their
+module-default value, which is never consumed for that instruction (e.g.\
+\texttt{mux\_aluSrcA\_o}/\texttt{mux\_aluSrcB\_o}/\texttt{alu\_op\_o} for
+\texttt{jal}/\texttt{jalr}/SYSTEM: the register write-back value comes
+from \texttt{RES\_PC4}/\texttt{RES\_CSR}, not the main ALU, and the
+branch-target address is computed by a separate adder gated by
+\texttt{mux\_jump\_o}, not by \texttt{alu\_op\_o}).\normalsize
