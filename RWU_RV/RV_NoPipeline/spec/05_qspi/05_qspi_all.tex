@@ -1304,13 +1304,9 @@ All configuration bits must be set before asserting START.
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
-                             {0&0&RF&TF&AL&CP&CH&DU&CS&XI&DD&QU&ST&0&0&0}
-                             {r&r&w&w&rw&rw&rw&rw&rw&rw&rw&rw&w&r&r&r}
-\asregdesc{- & 63:14 & r & Reserved \\
-           \hline
-           RF & 13 & w  & RX\_FLUSH. Write 1 to flush RX FIFO. Self-clearing. \\
-           \hline
-           TF & 12 & w  & TX\_FLUSH. Write 1 to flush TX FIFO. Self-clearing. \\
+                             {0&0&0&0&AL&CP&CH&DU&CS&XI&DD&QU&ST&RF&TF&0}
+                             {r&r&r&r&rw&rw&rw&rw&rw&rw&rw&rw&w&w&w&r}
+\asregdesc{- & 63:12 & r & Reserved \\
            \hline
            AL & 11 & rw & ADDR\_LEN. 0 = 3-byte address (24\,bit); 1 = 4-byte (32\,bit). \\
            \hline
@@ -1330,7 +1326,11 @@ All configuration bits must be set before asserting START.
            \hline
            ST &  3 & w  & START. Write 1 to initiate a transfer when BUSY=0. Self-clearing. \\
            \hline
-           -  & 2:0 & r & Reserved.}
+           RF &  2 & w  & RX\_FLUSH. Write 1 to flush RX FIFO. Self-clearing. \\
+           \hline
+           TF &  1 & w  & TX\_FLUSH. Write 1 to flush TX FIFO. Self-clearing. \\
+           \hline
+           -  & 0 & r & Reserved.}
 
 
 \paragraph{\asqspiCmdRegExt} -:

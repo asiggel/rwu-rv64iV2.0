@@ -112,6 +112,7 @@
 \input{\TEXTarch 03_arch_tab01}
 \input{\TEXTarch 03_arch_tab02}
 \input{\TEXTarch 03_arch_tab03}
+\input{\TEXTarch 03_arch_hazard}
 \section{Bus Concept}
 \input{\TEXTarch 03_arch_history_tab02}
 \input{\TEXTarch 03_arch_bus_concept}
@@ -428,6 +429,81 @@ The pop now fires at EXECLD$\to$FETCH0, leaving the FIFO head valid throughout
 EXECLD\_ST.
 The same pattern must be applied to any future read-once (clear-on-read) register
 on this Wishbone bus.
+
+\subsection{\texttt{RV\_PipelineCacheFwd} Simulation Tests}
+\label{subsec:pipecachefwdsimtest}
+
+In addition to the shared instruction-set regression (58 tests common with
+\texttt{RV\_NoPipeline}, plus \texttt{ecall}/\texttt{ebreak} and the hazard
+suite of Section~\ref{subsubsec:hazardTestSuite}, all run under xsim),
+\texttt{RV\_PipelineCacheFwd} has test infrastructure the flat-SRAM
+\texttt{RV\_NoPipeline} variant has no equivalent of, since it alone has a
+cache/AXI4/QSPI-Flash memory subsystem:
+
+\begin{itemize}
+  \item \textbf{Cache-specific xsim tests:} \texttt{scratchpad\_intensive}
+    (RMW byte/halfword/word isolation on the scratchpad SRAM),
+    \texttt{dcache\_test} (multi-way fill, eviction, warm-cache hits,
+    cold-miss-after-evict), \texttt{memory\_sections} (scratchpad heap
+    write/read-back across the full address range). Each is a dedicated
+    testbench (\texttt{tb/tb\_rv64i\_*.sv}) with its own multi-phase GPIO
+    checkpoints (\texttt{GPIO\,=\,0x0N} per phase, \texttt{0x55} on final
+    success), not the shared \texttt{tb\_rv64i\_instr.sv}.
+  \item \textbf{cocotb ISS-scoreboard suite} (\texttt{cocotb/}, ported from
+    \texttt{RV\_NoPipeline}'s): re-runs the same 59 programs
+    instruction-by-instruction against a Python instruction-set simulator
+    (\texttt{iss.py}), comparing architectural state every cycle rather
+    than only the final GPIO byte. Since this variant has no directly
+    pokeable instruction RAM, \texttt{tb\_flash\_wrap.sv} wraps
+    \texttt{as\_top\_mem} with a behavioural QSPI NOR-Flash model (copied
+    from \texttt{tb/tb\_rv64i\_instr.sv}) so a test program can be loaded
+    by poking \texttt{flash\_mem\_s} directly -- bypassing JTAG, but
+    exercising the real I-Cache/AXI4/QSPI path for every fetch.
+  \item \textbf{AXI4 cache-error trap test:}
+    \texttt{tb/tb\_cpupipefwd\_cachefault.sv} (xsim, standalone
+    \texttt{CMakeLists.txt} in the same directory) verifies the
+    \texttt{mcause}=1/5 trap path of Section~\ref{ss:axi4ErrCpuSeq}
+    directly against \texttt{cc\_cpupipefwd.sv}, with a scripted
+    \texttt{icpu\_if}/\texttt{dcpu\_if} response queue standing in for the
+    cache (whose own \texttt{ic\_err}/\texttt{dc\_err} generation is
+    separately unit-tested in \texttt{ip\_icache/tb/tb\_asICache.sv} and
+    \texttt{ip\_dcache/tb/tb\_asDCache.sv}) -- this isolates the CPU's own
+    fault-flag threading and \texttt{mcause}/\texttt{mepc}/\texttt{mtval}
+    logic from the cache/AXI4 timing it is triggered by.
+\end{itemize}
+
+\subsubsection{Flush/Stall Priority Race (Fixed 2026-07-13)}
+\label{subsubsec:flushStallRace}
+
+During verification of the \texttt{ecall}/\texttt{ebreak} traps (a new
+cycle-accurate cocotb ISS scoreboard, ported from \texttt{RV\_NoPipeline}
+for this purpose), a pre-existing, previously-hidden pipeline bug was
+found and confirmed by reproducing it against the unmodified RTL: the
+\texttt{id\_ex} and \texttt{ex\_mem} pipeline registers only processed
+\texttt{flush\_s}-driven squashing (branch/trap/\texttt{mret} redirect)
+inside an \texttt{else if (!global\_stall\_s)} branch. When a redirect
+landed on the exact same cycle as an ordinary one-cycle icache-hit lookup
+stall, the flush was silently skipped: stale, wrong-path instructions
+already latched in \texttt{id\_ex}/\texttt{ex\_mem} survived and were
+committed once the stall cleared.
+
+xsim's GPIO-only pass/fail check never caught this: the wrong path
+happened to reach the same final output byte by coincidence, on every one
+of the 68 tests then passing. It only surfaced once the ISS scoreboard
+started comparing architectural state cycle-by-cycle rather than only the
+final GPIO write.
+
+Fix: \texttt{flush\_s} (and, for \texttt{ex\_mem}, \texttt{wb\_trap\_taken\_s}/
+\texttt{wb\_mret\_s}) now takes priority over the stall gate in both
+registers' clocking, matching how \texttt{if\_id}/\texttt{ibuf} already
+handled the same situation. The general lesson -- \textbf{any squash
+condition driven by a WB-stage or EX-stage event must never be nested
+inside a stall-gated branch, since the two can coincide} -- was applied
+again, by construction, when the AXI4 cache-error fault flags were added
+later (Section~\ref{ss:axi4ErrCpuSeq}): \texttt{icache\_stall\_s}/
+\texttt{dcache\_stall\_s} release on \texttt{ic\_err}/\texttt{dc\_err}
+exactly like on \texttt{ic\_rvalid}/\texttt{dc\_rvalid}, so a fault is
+never left waiting behind a stall condition that will never clear.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % C: Electrical Characteristics

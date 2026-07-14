@@ -1761,10 +1761,15 @@ observed and requires no handling.
 
 AXI4 errors are surfaced to software as standard
 \textbf{RISC-V Machine-Mode Exceptions} following the Privileged
-Architecture specification.
-This is the correct approach: the CPU already has exception infrastructure
-(for illegal instructions, etc.) and the trap handler can log, retry, or
-halt in a well-defined way.
+Architecture specification, reusing the same trap-entry mechanism
+(\texttt{mepc}/\texttt{mcause}/\texttt{mstatus}, Section~\ref{subsec:irqconcept})
+already implemented for illegal-instruction and misaligned-address traps,
+so the trap handler can log, retry, or halt in a well-defined way.
+This is implemented end-to-end in \texttt{RV\_PipelineCacheFwd}
+(\texttt{cc\_cpupipefwd.sv}) for I-Cache fetch errors and D-Cache
+\textit{load} errors; see Section~\ref{ss:axi4ErrCpuSeq} for the exact
+scope and the one deliberate limitation (D-Cache store errors).
+\texttt{RV\_NoPipeline} has no cache/AXI4 subsystem and is unaffected.
 
 \subsubsection{AXI4 Response Codes}
 
@@ -1885,18 +1890,58 @@ One error output signal is added to each cache interface.
 \end{table}
 
 \subsubsection{CPU Exception Handling Sequence}
+\label{ss:axi4ErrCpuSeq}
 
-When the CPU samples \texttt{ic\_err\_o} or \texttt{dc\_err\_o}:
+Implemented in \texttt{cc\_cpupipefwd.sv} (\texttt{RV\_PipelineCacheFwd}
+only -- \texttt{RV\_NoPipeline} has no cache/AXI4 subsystem). Because
+\texttt{ic\_err}/\texttt{dc\_err} arrive mid-pipeline (an I-Cache error
+replaces what would otherwise have been a fetched instruction; a D-Cache
+error replaces what would otherwise have been a completed load), a
+same-cycle-detected AXI4 error cannot simply set a flag and jump --
+\texttt{icache\_stall\_s}/\texttt{dcache\_stall\_s} must first release on
+\texttt{ic\_err}/\texttt{dc\_err} exactly as they already do on
+\texttt{ic\_rvalid}/\texttt{dc\_rvalid} (otherwise the pipeline would hang
+forever waiting for a completion that will never arrive), and a fault flag
+is threaded through the same per-instruction pipeline registers
+(\texttt{if\_id}/\texttt{id\_ex}/\texttt{ex\_mem}/\texttt{mem\_wb}) that
+already carry the illegal-instruction trap flag, so the fault is attributed
+to the correct instruction slot and reaches the existing commit-stage
+(\texttt{wb\_trap\_taken\_s}) trap logic without any early-redirect
+special-casing:
 
 \begin{enumerate}
-  \item Save the current PC to \texttt{mepc}.
-  \item Write the exception cause to \texttt{mcause}
-    (1 for I-Cache, 5 for D-Cache).
-  \item Write the faulting address to \texttt{mtval}
-    (last value driven on \texttt{ic\_addr\_i} or \texttt{dc\_addr\_i}).
-  \item Clear \texttt{mstatus.MIE} (disable interrupts).
-  \item Jump to \texttt{mtvec} (trap vector).
+  \item \texttt{mepc} $\leftarrow$ the faulting instruction's own PC:
+    the address that could not be fetched (I-Cache case) or the PC of the
+    load instruction whose data access errored (D-Cache case) -- same
+    PC-threading mechanism already used for illegal/misaligned traps, not
+    a separately latched address.
+  \item \texttt{mcause} $\leftarrow$ 1 (I-Cache, \textit{Instruction
+    access fault}) or 5 (D-Cache, \textit{Load access fault}).
+  \item \texttt{mtval} $\leftarrow$ the faulting address: the fetch
+    address (I-Cache) or the load's data address (D-Cache, already
+    available as \texttt{ex\_mem\_aluRes\_r}/\texttt{mem\_wb\_aluRes\_r}
+    -- no separate address latch needed either). \texttt{mtval} is a new
+    CSR (address \texttt{0x343}), hardware-write-only: readable via
+    \texttt{CSRRS}/etc.\ like \texttt{mcause}, but -- like \texttt{mcause}
+    -- has no software write path. All other trap types (illegal,
+    misaligned, \texttt{ecall}/\texttt{ebreak}, external IRQ) leave
+    \texttt{mtval} at 0; the RISC-V privileged spec permits this
+    simplification for causes where the value is not otherwise specified.
+  \item \texttt{mstatus.MPIE} $\leftarrow$ \texttt{mstatus.MIE};
+    \texttt{mstatus.MIE} $\leftarrow$ 0 (same trap-entry sequence as every
+    other trap, Section~\ref{subsec:irqconcept}).
+  \item PC $\leftarrow$ \texttt{mtvec} (Direct mode, as for every other trap).
 \end{enumerate}
+
+\textbf{Scope limitation -- D-Cache store errors are not covered.} Store
+requests are posted: unlike loads, \texttt{dcache\_stall\_s} does not wait
+for a store's completion (the CPU can move on before the D-Cache's
+internal write/eviction sequence finishes), so a store's AXI4 error can
+arrive several cycles after the triggering store instruction has already
+left the pipeline -- there is no precise instruction to attribute it to
+without a store-completion tracker this design does not have. This matches
+the original scope of this table (D-Cache~$\rightarrow$
+\textit{Load} Access Fault only); it was never claimed for stores.
 
 The trap handler at \texttt{mtvec} may:
 
@@ -2287,9 +2332,17 @@ see CPU chapter
   \hline
   MEM-06 & \textbf{[RESOLVED]} RRESP $\neq$ OKAY mapped to RISC-V exceptions:
            I-Cache~$\rightarrow$ Instruction Access Fault (\texttt{mcause}=1),
-           D-Cache~$\rightarrow$ Load Access Fault (\texttt{mcause}=5).
+           D-Cache load~$\rightarrow$ Load Access Fault (\texttt{mcause}=5).
            ERR state added to both FSMs; \texttt{ic\_err\_o}/\texttt{dc\_err\_o}
-           signals added to cache interfaces. BRESP not used (no AXI4 writes).
+           signals added to cache interfaces \textbf{and now actually
+           consumed by the CPU} (\texttt{cc\_cpupipefwd.sv}: fault-flag
+           threaded through the pipeline, new \texttt{mtval} CSR) -- this
+           end-to-end CPU wiring, and the top-level \texttt{dc\_err} routing
+           in \texttt{asTopMem.sv} that had been silently tied to 0, were
+           only completed 2026-07-14; the cache-level half of this entry
+           predates that fix. D-Cache \textit{store} errors remain
+           imprecise/unattributed (posted writes, no completion tracker) --
+           out of scope, see Section~\ref{ss:axi4ErrCpuSeq}.
            See Section~\ref{subsec:axi4Error}. & -- \\
   \hline
   MEM-07 & \textbf{[RESOLVED]} Cache-miss-driven burst (indirect XIP) chosen.

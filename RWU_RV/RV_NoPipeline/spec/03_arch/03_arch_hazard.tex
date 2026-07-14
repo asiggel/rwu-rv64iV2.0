@@ -1,0 +1,115 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Pipeline Hazard Handling (\texttt{RV\_PipelineCacheFwd} only)}
+\label{subsec:pipehazard}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\texttt{RV\_NoPipeline} has no hazards to resolve (every instruction
+completes in a single cycle before the next one starts); this section
+applies only to \texttt{RV\_PipelineCacheFwd}'s 5-stage pipeline
+(\texttt{cc\_cpupipefwd.sv}, IF/ID/EX/MEM/WB).
+
+\subsubsection{Forwarding Paths}
+
+Two forwarding paths resolve read-after-write (RAW) hazards without
+stalling, feeding the EX-stage ALU operand muxes directly from later
+pipeline stages instead of the (stale) value latched in the ID/EX
+register:
+
+\begin{itemize}
+  \item \textbf{EX/MEM $\rightarrow$ EX} (1 instruction back): the
+    ALU result (or PC+4 / CSR read value) held in \texttt{ex\_mem\_aluRes\_r}
+    / \texttt{ex\_mem\_csr\_rdata\_r} / \texttt{ex\_mem\_pc\_r} is forwarded
+    when the MEM-stage instruction writes a register the EX-stage
+    instruction reads. Excluded for loads: load data is not yet available
+    at this point (see load-use stall below).
+  \item \textbf{MEM/WB $\rightarrow$ EX} (2 instructions back): the final
+    write-back value \texttt{wb\_result\_s} (already muxed between ALU
+    result, load data, PC+4, and CSR read value) is forwarded when the
+    WB-stage instruction writes a register the EX-stage instruction reads.
+    This path also carries load data, so a load-to-use hazard 2 instructions
+    apart is resolved without a stall.
+\end{itemize}
+
+A third RAW distance -- \textbf{k=3} (producer in WB, consumer in ID, same
+clock edge) -- needs no explicit forwarding mux: \texttt{as\_regfile} is
+instantiated with \texttt{WBR=1}, which bypasses the write data
+combinatorially to the read ports within the same cycle, so \texttt{id\_regA\_s}/
+\texttt{id\_regB\_s} already see the new value when both events coincide.
+
+\subsubsection{Remaining Stall Sources}
+
+Two hazard classes cannot be resolved by forwarding and still stall the
+pipeline (freeze all stages via \texttt{global\_stall\_s}, or insert a
+bubble via \texttt{data\_stall\_s}):
+
+\begin{itemize}
+  \item \textbf{Load-use (1 cycle):} a \texttt{LOAD} is in EX
+    (\texttt{id\_ex\_dMemRd\_r}=1) and the very next instruction (in ID)
+    reads the register it will load into. The load's result is only ready
+    at the \emph{end} of the following MEM stage, too late to forward to a
+    consumer already in EX at the same time. The pipeline inserts one
+    bubble (NOP into EX, consumer held in ID); the next cycle the load
+    reaches WB and the consumer reaches EX, where MEM/WB $\rightarrow$ EX
+    forwarding resolves it.
+  \item \textbf{CSR hazard (conservative):} CSR writes commit at WB and
+    there is no forwarding path for CSR register values. Any CSR
+    instruction in ID is held (\texttt{data\_stall\_s}) until no earlier
+    CSR instruction remains anywhere in the pipeline.
+\end{itemize}
+
+\subsubsection{Control Hazards}
+
+A taken branch or an unconditional jump (JAL/JALR) is only resolved in EX,
+after the two following instructions have already been speculatively
+fetched into IF and ID. \texttt{ex\_branch\_taken\_s} (branch) and
+\texttt{wb\_trap\_taken\_s}/\texttt{wb\_mret\_s} (trap/\texttt{mret})
+each assert \texttt{flush\_s}, which squashes the IF/ID and ID/EX pipeline
+registers (2-cycle bubble) regardless of \texttt{global\_stall\_s} -- see
+Section~\ref{subsubsec:flushStallRace} for why that last part specifically
+had to be fixed.
+
+\subsubsection{Hazard Test Suite}
+\label{subsubsec:hazardTestSuite}
+
+Five directed ASM tests (\texttt{rv64Sim/hazard\_*.asm}, run under
+\texttt{tb\_rv64i\_instr.sv} like the base ISA tests) exercise every
+hazard class above:
+
+\begin{table}[H]
+\caption{Pipeline Hazard Test Suite}
+\label{tab:hazardTests}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  Test & Coverage \\
+  \hline
+  \hline
+  \texttt{hazard\_raw\_alu} & ALU$\to$ALU RAW at distance k=1
+    (EX/MEM$\to$EX), k=2 (MEM/WB$\to$EX), k=3 (regfile WBR bypass);
+    no stall expected for any of the three. \\
+  \hline
+  \texttt{hazard\_raw\_load} & Three load-use RAW hazards; each forces
+    exactly one 1-cycle stall. \\
+  \hline
+  \texttt{hazard\_waw\_war} & Write-after-write (second write wins) and
+    write-after-read (read observes the old value); both are naturally
+    transparent in this in-order, single-issue pipeline. \\
+  \hline
+  \texttt{hazard\_ctrl\_branch} & Two taken branches (2-cycle flush each)
+    plus one not-taken branch (no flush). \\
+  \hline
+  \texttt{hazard\_ctrl\_jump} & Forward \texttt{JAL} flush, backward
+    \texttt{JAL} loop, and a \texttt{JAL}+\texttt{JALR} subroutine
+    call/return pair. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+A separate statistics testbench, \texttt{tb\_rv64i\_hazard\_stat.sv},
+re-runs each of the five programs and counts \texttt{clk\_div\_s} cycles
+from reset de-assertion to the program's final (successful) GPIO write,
+reporting \texttt{cycles}, \texttt{instr}, and \texttt{CPI} (see the
+regression log excerpt in Section~\ref{sec:simtest01}); this is a
+performance/regression indicator, not a pass/fail correctness check --
+correctness is still the GPIO\,=\,0x55 comparison every test in this suite
+uses.
