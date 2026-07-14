@@ -1,1 +1,101 @@
-Must be implemented.
+The \aschip{} implements a minimal \textbf{single external interrupt source,
+machine-mode-only} interrupt concept, identical in both chip variants
+(\texttt{as\_cpux} in \texttt{RV\_NoPipeline} and \texttt{cc\_cpupipefwd} in
+\texttt{RV\_PipelineCacheFwd} implement the same CSR/trap logic).
+There is no timer interrupt (no \texttt{mtime}/\texttt{mtimecmp}) and no
+software interrupt (\texttt{MSIP}); only the RISC-V \textbf{Machine External
+Interrupt} (MEI, \texttt{mcause}\,=\,\texttt{0x800...B}, cause code 11) is
+implemented.
+
+\paragraph{Peripheral-to-CPU path.}
+The top level (\texttt{as\_top\_mem}) presents an 8-bit vector,
+\texttt{irq\_ext\_i} (\texttt{irq\_total\_num\_ext\_c}\,=\,8), to the CPU.
+Of these 8 bits, \textbf{only bit~7 is actually wired into the CPU's
+interrupt logic}: the core synchronises \texttt{irq\_ext\_i[7]} through a
+2-flip-flop synchroniser and feeds it directly into \texttt{mip.MEIP}.
+Bits~\texttt{[6:0]} are declared but not consumed by either CPU
+implementation (marked \texttt{UNUSEDSIGNAL} in \texttt{asCPUx.sv}) --
+they are reserved for a future multi-source interrupt controller.
+In \texttt{RV\_NoPipeline}, \texttt{irq\_ext\_i[7]} is driven by the GPIO0
+peripheral (\texttt{irq\_gpiox\_s}); UART0's interrupt output
+(\texttt{irq\_uart\_s}) is wired to \texttt{irq\_ext\_i[6]} at the top level
+but, since the CPU ignores bits~\texttt{[6:0]}, a UART interrupt currently
+has \textbf{no effect} on program flow -- firmware must poll UART0's status
+registers instead.
+GPIO0's own interrupt chain (per-pin change detection
+$\rightarrow$ \texttt{IRQSS}/\texttt{IRQSM} $\rightarrow$ single-bit
+\texttt{RIS[0]} $\rightarrow$ \texttt{IMSC[0]} $\rightarrow$
+\texttt{MIS[0]} $=$ \texttt{gpio\_irq\_o}) collapses all GPIO pins onto the
+one external interrupt line; see Section~\ref{sec:gpiofunc01} for the full
+GPIO0 register description.
+
+\paragraph{CPU-side CSR mechanism.}
+\begin{itemize}
+  \item \texttt{mip[11]} (MEIP) is \textbf{read-only}: it directly mirrors
+    the synchronised external GPIO interrupt line and cannot be set or
+    cleared by software: it stays 1 for as long as GPIO0 asserts its IRQ,
+    and clears only when GPIO0 does (via its own \texttt{IRQSC}/\texttt{ICR}
+    registers).
+  \item \texttt{mie[11]} (MEIE) is a normal read/write CSR bit, enabled
+    (\texttt{=1}) by default out of reset.
+  \item An interrupt is taken when
+    \texttt{mip[11]\,\&\,mie[11]\,\&\,mstatus.MIE} all hold.
+  \item \texttt{mtvec} supports \textbf{Direct mode only}
+    (\texttt{mtvec[1:0]}\,=\,\texttt{00}); every trap -- exception or
+    interrupt alike -- jumps to the same handler address, reset default
+    \texttt{0x0000\_0000\_0000\_7F00}.
+    There is no vectored mode and no per-cause offset.
+  \item On trap entry: \texttt{mepc} $\leftarrow$ PC (faulting instruction,
+    for illegal-instruction/misaligned-address/\texttt{ecall}/\texttt{ebreak}
+    exceptions) or PC$+4$ (return address, for the external interrupt);
+    \texttt{mstatus.MPIE}
+    $\leftarrow$ \texttt{mstatus.MIE}; \texttt{mstatus.MIE} $\leftarrow$ 0;
+    PC $\leftarrow$ \texttt{mtvec}.
+  \item \texttt{mret} restores \texttt{mstatus.MIE} $\leftarrow$
+    \texttt{mstatus.MPIE} and sets \texttt{mstatus.MPIE} $\leftarrow$ 1.
+  \item \textbf{Trap priority} (highest first): illegal instruction
+    $>$ misaligned load/store address $>$ \texttt{ecall}/\texttt{ebreak}
+    $>$ external interrupt.
+    Only one trap is taken per cycle; a pending external interrupt is
+    deferred behind any pending exception.
+    In practice this ordering is never contended: \texttt{ecall}/\texttt{ebreak}
+    are a single, unambiguous instruction encoding that cannot simultaneously
+    be illegal or trigger a misaligned load/store.
+\end{itemize}
+
+\paragraph{Synchronous exceptions: \texttt{ecall} and \texttt{ebreak}.}
+Besides the illegal-instruction and misaligned-address traps, both CPU
+variants decode the two mandatory RV64I \texttt{SYSTEM} exceptions directly:
+\begin{itemize}
+  \item \texttt{ecall} (\texttt{funct3}\,=\,\texttt{000},
+    \texttt{imm[11:0]}\,=\,\texttt{0x000}) sets
+    \texttt{mcause}\,=\,11 (\textit{Environment call from M-mode}).
+  \item \texttt{ebreak} (\texttt{funct3}\,=\,\texttt{000},
+    \texttt{imm[11:0]}\,=\,\texttt{0x001}) sets
+    \texttt{mcause}\,=\,3 (\textit{Breakpoint}).
+\end{itemize}
+Both traps behave like the illegal-instruction/misaligned-address case:
+\texttt{mepc} points at the \texttt{ecall}/\texttt{ebreak} instruction itself
+(not PC$+4$), \texttt{mstatus.MPIE}/\texttt{MIE} update the same way, and
+\texttt{mret} returns control to the trap handler's chosen resume address.
+Neither instruction has any side effect beyond the trap -- there is no
+environment-call ABI and no hardware breakpoint comparator; both exist purely
+to enter the trap handler, which is what \texttt{riscv-arch-test} compliance
+and a future GDB-stub breakpoint mechanism require. In
+\texttt{RV\_NoPipeline} (\texttt{as\_cpux}), the redirect to \texttt{mtvec}
+is triggered one cycle early via \texttt{ecbrk\_pending\_s} against the
+live I-Mem prefetch, mirroring how \texttt{mret\_pending\_s} already handles
+\texttt{mret} -- otherwise the design's always-ack instruction prefetch would
+transiently execute one stale, wrong-path instruction before the redirect
+lands. \texttt{RV\_PipelineCacheFwd} (\texttt{cc\_cpupipefwd}) needs no such
+trick: its I-Cache uses an explicit req/rvalid handshake, so the ordinary
+commit-stage flush already used for illegal-instruction/misaligned traps is
+sufficient.
+
+\paragraph{Open items.}
+Extending beyond the single GPIO source -- e.g.\ routing UART0 (and, in
+\texttt{RV\_PipelineCacheFwd}, QSPI0) interrupts into the CPU, and adding a
+real interrupt controller with per-source masking/priority in place of the
+current \texttt{irq\_ext\_i[7]}-only wiring -- is not yet implemented.
+See the "Dummy ICU" placeholder in \texttt{as\_top\_mem} (student task) for
+\texttt{RV\_PipelineCacheFwd}.
