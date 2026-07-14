@@ -141,7 +141,12 @@ module as_top_mem (
   assign dcpu_if_s.dc_rvalid     = is_periph_s ? periph_rvalid_r    : dcpu_mem_if_s.dc_rvalid;
   assign dcpu_if_s.dc_rdata      = is_periph_s ? periph_rdata_s     : dcpu_mem_if_s.dc_rdata;
   assign dcpu_if_s.dc_stall      = is_periph_s ? 1'b0               : dcpu_mem_if_s.dc_stall;
-  assign dcpu_if_s.dc_err        = 1'b0;
+  // Peripheral bus has no error signalling of its own (fixed 1-cycle
+  // dc_rvalid, see the bridge above); the real D-Cache/AXI4 error from
+  // asMemTop is forwarded here so the CPU can raise a Load Access Fault
+  // (mcause=5) -- previously hardwired to 0, silently dropping any real
+  // AXI4 SLVERR/DECERR on a D-Cache read.
+  assign dcpu_if_s.dc_err        = is_periph_s ? 1'b0               : dcpu_mem_if_s.dc_err;
   assign dcpu_if_s.dc_flush_done = 1'b0;
 
   // ── CGU ─────────────────────────────────────────────────────────
