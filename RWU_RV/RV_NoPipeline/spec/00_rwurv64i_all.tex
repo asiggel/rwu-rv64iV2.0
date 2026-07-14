@@ -367,6 +367,10 @@
 \section{UART}
 \input{\TEXTuart 05_uart_all}
 
+% ICU
+\section{ICU}
+\input{\TEXTicu 05_icu_all}
+
 
 
 %\input{\TEXTqspi 05_qspi_chatgpt}
@@ -476,7 +480,7 @@ address; the base address is always aligned to $2^{AW}$ bytes so the lower
   \hline
   \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. Both variants. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Both variants; aggregates GPIO0/QSPI0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See \texttt{ip\_icu/README\_IMPL.txt} for the register map. \\
+  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Both variants; aggregates GPIO0/QSPI0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See Section~\ref{sec:icufunc01} for the register map. \\
   \hline
 \end{tabularx}}
 \end{table}
@@ -662,30 +666,31 @@ flow, regardless of what is wired to them at the top level.
   Bit & \textit{RV\_NoPipeline} & \textit{RV\_PipelineCacheFwd} & Consumed by CPU? \\
   \hline
   \hline
-  7 & GPIO0 (\asgpioIRQ) &
-    GPIO0 $\vert$ QSPI0 $\vert$ UART0, OR-combined into one line
-    (\texttt{irq\_combined\_s}, the "Dummy ICU" placeholder --
-    Section~\ref{subsec:irqconcept}) &
+  7 & \texttt{icu\_irq\_s}: GPIO0 $\vert$ UART0, arbitrated by ICU0
+    (\texttt{icu\_irq\_o}, Section~\ref{sec:icufunc01}); QSPI0 source tied
+    to 0 (no QSPI0 in this variant) &
+    \texttt{icu\_irq\_s}: GPIO0 $\vert$ QSPI0 $\vert$ UART0, arbitrated by
+    ICU0 (\texttt{icu\_irq\_o}, Section~\ref{sec:icufunc01}) &
     \textbf{Yes} -- drives \texttt{mip.MEIP} \\
   \hline
-  6 & UART0 (\asuartIRQ), wired at the top level but not read by the CPU &
-    tied to 0 &
-    \textbf{No} -- firmware must poll UART0's status registers instead \\
-  \hline
-  5\,--\,0 & tied to 0 & tied to 0 &
-    \textbf{No} -- reserved for a future multi-source interrupt controller \\
+  6\,--\,0 & tied to 0 & tied to 0 &
+    \textbf{No} -- reserved (5 of ICU0's 8 source slots remain
+    unwired, Table~\ref{tab:asIcuSrcAssign}) \\
   \hline
 \end{tabularx}}
 \end{table}
 
-\textbf{Consequence for \texttt{RV\_PipelineCacheFwd}:} since GPIO0, QSPI0,
-and UART0 are OR-combined onto the single bit~7 before reaching the CPU,
-software cannot determine which peripheral interrupted from \texttt{mcause}
-alone -- the ISR must poll each peripheral's \texttt{MIS} register
-(\asgpioMISRegExt, \asqspiMISRegExt, \asuartMISRegExt) to identify the
-source.
-\textbf{Consequence for \texttt{RV\_NoPipeline}:} there is no QSPI0
-peripheral in this variant, and UART0 has no working interrupt path to the
-CPU at all -- UART0 status must always be polled.
+Both GPIO0 and UART0 (and, on \texttt{RV\_PipelineCacheFwd}, QSPI0) feed
+ICU0 directly, not \texttt{irq\_ext\_i}; ICU0's own arbitrated output
+\texttt{icu\_irq\_o} is the only signal driving bit~7. Firmware
+determines the interrupt cause by reading \textbf{ICU0\_IRQID}
+(Section~\ref{sec:icufunc01}) instead of polling each peripheral's own
+\texttt{MIS} register -- this was an open item prior to ICU0's
+introduction and is now resolved on both chip variants.
+On \texttt{RV\_NoPipeline}, UART0's interrupt reaches the CPU for the
+first time as a consequence of routing through ICU0 (see
+Table~\ref{tab:asIcuSrcAssign}, ``Behavioural change on
+\texttt{RV\_NoPipeline}''); previously it was wired to a bit the CPU never
+read.
 
 

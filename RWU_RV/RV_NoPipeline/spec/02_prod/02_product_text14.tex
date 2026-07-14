@@ -14,28 +14,31 @@ Of these 8 bits, \textbf{only bit~7 is actually wired into the CPU's
 interrupt logic}: the core synchronises \texttt{irq\_ext\_i[7]} through a
 2-flip-flop synchroniser and feeds it directly into \texttt{mip.MEIP}.
 Bits~\texttt{[6:0]} are declared but not consumed by either CPU
-implementation (marked \texttt{UNUSEDSIGNAL} in \texttt{asCPUx.sv}) --
-they are reserved for a future multi-source interrupt controller.
-In \texttt{RV\_NoPipeline}, \texttt{irq\_ext\_i[7]} is driven by the GPIO0
-peripheral (\texttt{irq\_gpiox\_s}); UART0's interrupt output
-(\texttt{irq\_uart\_s}) is wired to \texttt{irq\_ext\_i[6]} at the top level
-but, since the CPU ignores bits~\texttt{[6:0]}, a UART interrupt currently
-has \textbf{no effect} on program flow -- firmware must poll UART0's status
-registers instead.
-GPIO0's own interrupt chain (per-pin change detection
-$\rightarrow$ \texttt{IRQSS}/\texttt{IRQSM} $\rightarrow$ single-bit
-\texttt{RIS[0]} $\rightarrow$ \texttt{IMSC[0]} $\rightarrow$
-\texttt{MIS[0]} $=$ \texttt{gpio\_irq\_o}) collapses all GPIO pins onto the
-one external interrupt line; see Section~\ref{sec:gpiofunc01} for the full
-GPIO0 register description.
+implementation (marked \texttt{UNUSEDSIGNAL} in \texttt{asCPUx.sv}).
+Bit~7 is driven by \textbf{ICU0} (Section~\ref{sec:icufunc01}), a
+Wishbone-addressable interrupt controller that aggregates GPIO0, UART0,
+and (on \texttt{RV\_PipelineCacheFwd}) QSPI0 with software-configurable
+priority and per-source masking, plus 5 further source slots reserved for
+future peripherals (Table~\ref{tab:asIcuSrcAssign}). GPIO0's own interrupt
+chain (per-pin change detection $\rightarrow$ \texttt{IRQSS}/\texttt{IRQSM}
+$\rightarrow$ single-bit \texttt{RIS[0]} $\rightarrow$ \texttt{IMSC[0]}
+$\rightarrow$ \texttt{MIS[0]} $=$ \texttt{gpio\_irq\_o}) collapses all GPIO
+pins onto one line before it ever reaches ICU0; see
+Section~\ref{sec:gpiofunc01} for the full GPIO0 register description.
+On \texttt{RV\_NoPipeline}, UART0's interrupt now reaches the CPU for the
+first time via ICU0 -- previously it was wired directly to
+\texttt{irq\_ext\_i[6]}, a bit the CPU never reads, so it had no effect on
+program flow.
 
 \paragraph{CPU-side CSR mechanism.}
 \begin{itemize}
   \item \texttt{mip[11]} (MEIP) is \textbf{read-only}: it directly mirrors
-    the synchronised external GPIO interrupt line and cannot be set or
-    cleared by software: it stays 1 for as long as GPIO0 asserts its IRQ,
-    and clears only when GPIO0 does (via its own \texttt{IRQSC}/\texttt{ICR}
-    registers).
+    the synchronised \texttt{icu\_irq\_o} line and cannot be set or
+    cleared by software: it stays 1 for as long as ICU0 has at least one
+    pending, unmasked, globally-enabled source, and clears only when
+    firmware clears the responsible source(s) via ICU0's own
+    \textbf{ICU0\_ICR} (and, typically, the underlying peripheral's own
+    clear register too).
   \item \texttt{mie[11]} (MEIE) is a normal read/write CSR bit, enabled
     (\texttt{=1}) by default out of reset.
   \item An interrupt is taken when
@@ -93,9 +96,16 @@ commit-stage flush already used for illegal-instruction/misaligned traps is
 sufficient.
 
 \paragraph{Open items.}
-Extending beyond the single GPIO source -- e.g.\ routing UART0 (and, in
-\texttt{RV\_PipelineCacheFwd}, QSPI0) interrupts into the CPU, and adding a
-real interrupt controller with per-source masking/priority in place of the
-current \texttt{irq\_ext\_i[7]}-only wiring -- is not yet implemented.
-See the "Dummy ICU" placeholder in \texttt{as\_top\_mem} (student task) for
-\texttt{RV\_PipelineCacheFwd}.
+ICU0 provisions 8 source slots but only 3 are wired to real hardware on
+either chip (GPIO0, UART0, and -- \texttt{RV\_PipelineCacheFwd} only --
+QSPI0); connecting a future interrupt-capable peripheral only requires
+wiring it into one of the 5 remaining slots
+(Table~\ref{tab:asIcuSrcAssign}), not a redesign of the register map.
+Both CPUs still support \texttt{mtvec} Direct mode only -- ICU0's
+\textbf{ICU0\_IRQID} register lets firmware branch on cause in software
+from the one shared handler, but hardware-vectored dispatch (a per-cause
+jump table) would require CPU changes outside ICU0's scope and remains
+unimplemented. Nested/preemptive interrupt handling (a higher-priority
+interrupt preempting an in-progress lower-priority ISR) is likewise not
+implemented; RISC-V M-mode already precludes it at the CPU level
+(\texttt{mstatus.MIE} is cleared on trap entry) independent of ICU0.

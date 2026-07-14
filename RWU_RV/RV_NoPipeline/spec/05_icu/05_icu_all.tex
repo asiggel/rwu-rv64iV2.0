@@ -1,0 +1,1031 @@
+
+% ICU Spec  (cc_icu / cc_icu_top, ip_icu)
+\label{sec:icufunc01}
+
+%=============================================================
+% Requirements
+%=============================================================
+\subsection{Requirements}
+\label{subsec:icureq01}
+
+This section defines the functional requirements for the \textbf{ICU0}
+peripheral (module \texttt{cc\_icu\_top}, kernel \texttt{cc\_icu}) in the
+\aschip{} system. Requirements follow IEEE\;29148 terminology:
+\textit{shall} = mandatory, \textit{should} = recommended.
+ICU0 is identical on both chip variants (Section~\ref{sec:archcpu},
+Table~\ref{tab:asChipVariants}); differences are called out explicitly
+where they exist.
+
+Each requirement identifier has the form \textbf{ICU-\textit{CAT}-\textit{NNN}},
+where \textit{CAT} is the category code (Table~\ref{tab:asIcuReqCat}) and
+\textit{NNN} is a three-digit sequence number. The full requirement
+derivation (including the requester's original wording and every gap
+identified during implementation) is kept as the authoritative source in
+\texttt{ip\_icu/README\_REQ.txt}; this section is the spec-formatted
+summary of the same content.
+
+\begin{table}[H]
+\caption{ICU Requirements -- Category Codes}
+\label{tab:asIcuReqCat}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  Category Code & Scope \\
+  \hline
+  \hline
+  SR & Source Management (count, assignment, spares) \\
+  \hline
+  PR & Priority Resolution \\
+  \hline
+  MA & Masking \\
+  \hline
+  PE & Pending/Clear Semantics \\
+  \hline
+  ID & Cause Identification \\
+  \hline
+  SW & Software Interface (Register Map) \\
+  \hline
+  HW & Hardware Interface (Pins, Integration) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Source Management Requirements (SR)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Source Management}
+\label{tab:asIcuReqSR}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-SR-001 &
+    The ICU \textit{shall} reserve input slots for peripherals that do not
+    exist yet: at least 2 spare sources. &
+    Explicitly requested; allows new interrupt-capable peripherals to be
+    connected without widening the register map again. \\
+  \hline
+  ICU-SR-002 &
+    The ICU \textit{shall} accept one interrupt input per existing
+    interrupt-capable peripheral, plus the spare sources from ICU-SR-001. &
+    GPIO0 and UART0 on both variants; QSPI0 additionally on
+    \textit{RV\_PipelineCacheFwd}. \\
+  \hline
+  ICU-SR-003 &
+    The register file \textit{shall} provision exactly 8 source slots
+    (a full byte per bitmap register), of which 3 are wired to real
+    peripherals, 2 are the requested spares, and 3 remain reserved. &
+    Both chips get an identical register map with unused slots tied to
+    \texttt{1'b0}; a single firmware driver works unmodified on either
+    chip (ICU-HW-003). \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Priority Resolution Requirements (PR)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Priority Resolution}
+\label{tab:asIcuReqPR}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-PR-001 &
+    The ICU \textit{shall} resolve priority in hardware across all
+    simultaneously pending, unmasked sources, via a software-writable
+    4-bit priority value per source (\textbf{ICU0\_PRIO}). &
+    Explicitly requested (``Priorit\"at ist wichtig''); unlike a fixed
+    source-index priority, this is reconfigurable at runtime. \\
+  \hline
+  ICU-PR-002 &
+    On equal priority between two or more pending, unmasked sources, the
+    \textit{lowest} source index \textit{shall} win. &
+    Not specified by the requester; left undefined this would be
+    simulator/synthesis-dependent -- a real correctness bug class. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Masking Requirements (MA)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Masking}
+\label{tab:asIcuReqMA}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-MA-001 &
+    The ICU \textit{shall} provide an individually maskable enable bit per
+    source (\textbf{ICU0\_IMSC}). &
+    Explicitly requested (``Masking ist wichtig''). \\
+  \hline
+  ICU-MA-002 &
+    The ICU \textit{shall} additionally provide one global interrupt
+    enable bit (\textbf{ICU0\_CTRL}.GIE) that gates the aggregated output
+    line independent of per-source masking. &
+    Cheap ``disable everything'' critical-section primitive; per-source
+    IMSC alone cannot do this atomically for an arbitrary/changing set of
+    enabled sources. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Pending/Clear Semantics Requirements (PE)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Pending/Clear Semantics}
+\label{tab:asIcuReqPE}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-PE-001 &
+    A source's pending bit (\textbf{ICU0\_RIS}) \textit{shall} be
+    edge-triggered and sticky: it latches the source line's 0$\to$1
+    transition and remains set until explicitly cleared by software,
+    independent of the source line's subsequent level. &
+    Matches GPIO0's IRQSS / UART0's RIS convention. \\
+  \hline
+  ICU-PE-002 &
+    A source's pending bit \textit{shall not} be silently cleared by a
+    software CLEAR (\textbf{ICU0\_ICR}) that coincides, in the same clock
+    cycle, with a new hardware edge (or software-forced SET via
+    \textbf{ICU0\_ISR}) on that same bit: SET \textit{shall} take priority
+    over CLEAR. &
+    Root-caused against a documented defect in the graded reference
+    submission this peripheral replaces
+    (\texttt{ip\_icu/DUMMY\_ICU/asInterruptController.sv}): a same-cycle
+    set+clear on the same bit was resolved implicitly, in the clear's
+    favour, silently dropping a real interrupt occurrence. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Cause Identification Requirements (ID)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Cause Identification}
+\label{tab:asIcuReqID}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-ID-001 &
+    The ICU \textit{shall} expose a register (\textbf{ICU0\_IRQID})
+    identifying the current highest-priority pending, unmasked source, so
+    that firmware does not have to poll every peripheral's own MIS
+    register to determine the interrupt cause. &
+    Not named explicitly by the requester, but the single biggest
+    practical benefit of a real ICU over the OR-combine placeholder it
+    replaces; see the ``Open items'' consequence already recorded in
+    Section~\ref{subsec:irqconcept} prior to this peripheral's
+    introduction. \\
+  \hline
+  ICU-ID-002 &
+    \textbf{ICU0\_IRQID} \textit{shall} carry an explicit VALID bit,
+    separate from the source-id field. &
+    Source index 0 (GPIO0) is a real, valid id; collapsing ``no interrupt
+    pending'' onto id\,=\,0 would make the register ambiguous -- the same
+    class of 0-as-sentinel bug as ICU-PE-002. \\
+  \hline
+  ICU-ID-003 &
+    \textbf{ICU0\_IRQID} \textit{shall} reflect pending/priority state
+    independent of \textbf{ICU0\_CTRL}.GIE. &
+    Keeps IRQID a useful diagnostic register even while interrupts are
+    globally disabled (see ICU-MA-002); only the CPU-facing output line
+    is gated by GIE. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Software Interface Requirements (SW)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Software Interface}
+\label{tab:asIcuReqSW}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-SW-001 &
+    The ICU \textit{shall} be controllable exclusively through
+    memory-mapped, 64-bit registers on a Wishbone B4 Classic slave
+    interface implemented by \texttt{as\_slave\_bpi}. &
+    Consistent with GPIO0, QSPI0, UART0, CGU. \\
+  \hline
+  ICU-SW-002 &
+    Registers \textit{shall} be 8-byte aligned. &
+    Project-wide convention (Section~\ref{sec:sysmap}). \\
+  \hline
+  ICU-SW-003 &
+    The base address of ICU0 \textit{shall} be
+    \texttt{0x0000\_0001\_0000\_0800} (cs[5]), the first free 512\;B slot
+    after UART0. &
+    As defined in \texttt{as\_pack.sv} (\texttt{icu0\_start\_address\_c},
+    \texttt{chipsel}) and \texttt{as\_decode.sv}. \\
+  \hline
+  ICU-SW-004 &
+    The ICU \textit{shall} expose a read-only peripheral ID register at
+    offset 0x00. &
+    Consistent with every other peripheral in this SoC. \\
+  \hline
+  ICU-SW-005 &
+    Reset values \textit{shall} keep the system interrupt-functional
+    without any firmware setup: \textbf{ICU0\_IMSC} resets to all-enabled,
+    \textbf{ICU0\_CTRL}.GIE resets to 1. &
+    Matches the fact that interrupts already worked (via the OR-combine
+    placeholder / direct wiring this peripheral replaces) before firmware
+    had any chance to configure a real ICU. \\
+  \hline
+  ICU-SW-006 &
+    The Wishbone interface \textit{shall} respond with zero wait states
+    (combinational ACK). &
+    Consistent with all other Wishbone slaves in the system. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%--------------------------------------------------------------
+\subsubsection{Hardware Interface Requirements (HW)}
+%--------------------------------------------------------------
+
+\begin{table}[H]
+\caption{ICU Requirements -- Hardware Interface}
+\label{tab:asIcuReqHW}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  ID & Requirement & Notes / Rationale \\
+  \hline
+  \hline
+  ICU-HW-001 &
+    The ICU \textit{shall} expose exactly one aggregated interrupt output
+    line (\texttt{icu\_irq\_o}) to the CPU boundary. &
+    Explicitly requested. Both \texttt{as\_cpux} and \texttt{cc\_cpupipefwd}
+    consume only \texttt{irq\_ext\_i[7]}
+    (Section~\ref{subsec:irqconcept}); \texttt{icu\_irq\_o} drives exactly
+    that bit on both chips. \\
+  \hline
+  ICU-HW-002 &
+    \texttt{icu\_irq\_o} \textit{shall} be a level output, asserted for as
+    long as at least one unmasked, pending, globally-enabled source
+    exists. &
+    Matches \texttt{mip[11]}'s existing read-only, level-mirroring
+    semantics (Section~\ref{subsec:irqconcept}); no CPU changes are
+    required to consume it. \\
+  \hline
+  ICU-HW-003 &
+    ICU0 \textit{shall} be a single, shared design instantiated
+    identically on both chip variants, with a fixed, chip-independent
+    source-index assignment (Table~\ref{tab:asIcuSrcAssign}). &
+    A single firmware ICU driver must work unmodified on either chip. \\
+  \hline
+  ICU-HW-004 &
+    The ICU performs no cross-clock-domain synchronization; all sources
+    connected to \texttt{irq\_src\_i} \textit{shall} already be synchronous
+    to \texttt{clk\_i}. &
+    True for all current sources (GPIO0, QSPI0, UART0 and the CPU all run
+    on \texttt{clk\_div\_s} on both chips). A future source on a different
+    clock domain must be synchronized into \texttt{clk\_div\_s} before
+    reaching \texttt{irq\_src\_i}; the ICU itself provides no
+    synchronizer. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% System Integration of ICU0
+%=============================================================
+\subsection{System Integration of ICU0}
+
+%------------------------
+\subsubsection{History}
+
+\begin{table}[H]
+\caption{ICU0 Authors}
+\label{tab:icuauth01}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  Author & Department & From \\
+  \hline
+  \hline
+  Claude Sonnet 5 (AI-generated, \texttt{cc\_} prefix) & -- & July 2026 \\
+  \hline
+  & & \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{ICU0 Section History}
+\label{tab:icuhistory01}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  Date & Name & Content Changes \\
+  \hline
+  \multicolumn{3}{|l|}{Version of this document: V0.1} \\
+  \hline
+  2026-07-14 & Claude, A. Siggelkow & First draft: full ICU0 spec section,
+    written from \texttt{ip\_icu/README\_REQ.txt} and
+    \texttt{ip\_icu/README\_IMPL.txt} after standalone verification and
+    integration into both chip variants \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{Functional Configuration of ICU0}
+
+The standard features of the ICU peripheral are described in its
+functional description in Section~\ref{subsec:icufunc01}.
+Generic features for ICU0 are listed in Table~\ref{tab:asIcuPer01a}.
+
+\begin{table}[H]
+\caption{ICU0 Feature Set}
+\label{tab:asIcuPer01a}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Generic ICU Feature Set & Details \\
+  \hline
+  \hline
+  yes & Separate Kernel Clock    & \texttt{clk\_div\_s}, shared with all
+    other peripherals and the CPU on both variants \\
+  \hline
+  yes & Configurable Source Count & 8 slots, 3 wired + 2 spare + 3 reserved
+    (Table~\ref{tab:asIcuSrcAssign}) \\
+  \hline
+  yes & Software-Configurable Priority & 4-bit/source, \textbf{ICU0\_PRIO} \\
+  \hline
+  yes & Per-Source Masking        & \textbf{ICU0\_IMSC} \\
+  \hline
+  yes & Global Interrupt Enable   & \textbf{ICU0\_CTRL}.GIE \\
+  \hline
+  yes & Cause Identification      & \textbf{ICU0\_IRQID} (valid + id) \\
+  \hline
+  yes & Software Test/Force       & \textbf{ICU0\_ISR} \\
+  \hline
+  no  & Vectored Dispatch         & Not implemented; both CPUs support
+    \texttt{mtvec} Direct mode only (Section~\ref{subsec:irqconcept}) \\
+  \hline
+  no  & Nested/Preemptive Interrupts & Not implemented; precluded at the
+    CPU level (\texttt{mstatus.MIE} cleared on trap entry) independent of
+    the ICU \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{ICU0 Source Index Assignment (fixed, identical register map on both chips)}
+\label{tab:asIcuSrcAssign}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X |X|}
+  \hline
+  Index & Name & \textit{RV\_NoPipeline} & \textit{RV\_PipelineCacheFwd} \\
+  \hline
+  \hline
+  0 & GPIO0 & wired (\texttt{irq\_gpiox\_s}) & wired (\texttt{irq\_gpiox\_s}) \\
+  \hline
+  1 & UART0 & wired (\texttt{irq\_uart\_s}) & wired (\texttt{irq\_uart\_s}) \\
+  \hline
+  2 & QSPI0 & tied to \texttt{1'b0} (no QSPI0 in this variant) & wired
+    (\texttt{qspi\_irq\_s}) \\
+  \hline
+  3 & SPARE0 & tied to \texttt{1'b0} & tied to \texttt{1'b0} \\
+  \hline
+  4 & SPARE1 & tied to \texttt{1'b0} & tied to \texttt{1'b0} \\
+  \hline
+  5--7 & reserved & tied to \texttt{1'b0} & tied to \texttt{1'b0} \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Behavioural change on \textit{RV\_NoPipeline}:} before ICU0
+existed, this variant wired UART0's interrupt output directly to
+\texttt{irq\_external\_s[6]}, a bit \texttt{as\_cpux} never reads (only
+bit~7 is synchronized and consumed, Section~\ref{subsec:irqconcept}) -- a
+UART0 interrupt had no effect on program flow, by design gap rather than
+intent. Routed through ICU0, UART0 now reaches the CPU for the first time
+once unmasked in \textbf{ICU0\_IMSC}[1]. Tied-off sources' RIS bits can
+still be forced via \textbf{ICU0\_ISR} for software testing but will never
+set from real hardware.
+
+%------------------------
+\subsubsection{HW Interfaces}
+The following table lists all hardware interfaces relevant for normal operation.
+
+\begin{table}[H]
+\caption{HW Interfaces of Module ICU0}
+\label{tab:asIcuPer02}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Module internal name & Chip level name \\
+  \hline
+  \hline
+  Supply &  &  \\
+  \hline
+  Clock & clk\_i & clk\_div\_s \\
+  \hline
+  Bus & Wishbone slave & Wishbone B4 Classic \\
+  \hline
+  Interrupt out & icu\_irq\_o & icu\_irq\_s $\to$ \texttt{irq\_ext\_i[7]} \\
+  \hline
+  Interrupt in & irq\_src\_i(7:0) & \{5'b0, qspi\_irq\_s\textsuperscript{(1)},
+    irq\_uart\_s, irq\_gpiox\_s\} \\
+  \hline
+  DMA & None & - \\
+  \hline
+  External Signals & None & -- (register-mapped peripheral only) \\
+  \hline
+\end{tabularx}
+\end{table}
+\noindent\footnotesize\textsuperscript{(1)}\,tied to \texttt{1'b0} on
+\textit{RV\_NoPipeline} (no QSPI0 instance in that variant).\normalsize
+
+%------------------------
+\subsubsection{Bus Interface}
+ICU0 exposes one bus interface:
+
+\begin{description}
+  \item[Wishbone Slave (configuration port)] Provides software access to
+    all ICU0 registers. Implemented by \texttt{as\_slave\_bpi}.
+    Protocol: Wishbone B4 Classic, zero-wait-state, 64-bit data width.
+    See Section~\ref{subsec:asSlaveBpi} (Architecture Concepts: Bus Concept).
+\end{description}
+
+%------------------------
+\subsubsection{Registers}
+
+\begin{table}[H]
+\caption{Register List of Module ICU0}
+\label{tab:asIcuPer03}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Offset & External Name & Internal Name & Mode & Description \\
+  \hline
+  \hline
+  0x00 & \textbf{ICU0\_ID}    & id\_reg\_s     & ro & Peripheral identification (constant 0x40) \\
+  \hline
+  0x08 & \textbf{ICU0\_RIS}   & ris\_reg\_s    & ro & Raw Interrupt Status: sticky, edge-triggered, 1 bit/source \\
+  \hline
+  0x10 & \textbf{ICU0\_IMSC}  & imsc\_reg\_s   & rw & Interrupt Mask Control: 1 bit/source, 1\,=\,enabled \\
+  \hline
+  0x18 & \textbf{ICU0\_MIS}   & mis\_reg\_s    & ro & Masked Interrupt Status = RIS\,\&\,IMSC (registered) \\
+  \hline
+  0x20 & \textbf{ICU0\_ICR}   & (n/a, wo strobe) & wo & Interrupt Clear: write-1-to-clear RIS bits \\
+  \hline
+  0x28 & \textbf{ICU0\_ISR}   & (n/a, wo strobe) & wo & Interrupt Set (SW test/force): write-1-to-set RIS bits \\
+  \hline
+  0x30 & \textbf{ICU0\_PRIO}  & prio\_reg\_s   & rw & 8\,$\times$\,4-bit priority nibbles, packed in bits[31:0] \\
+  \hline
+  0x38 & \textbf{ICU0\_IRQID} & irqid\_s       & ro & bit[3]\,=\,VALID, bits[2:0]\,=\,id of highest-priority pending source \\
+  \hline
+  0x40 & \textbf{ICU0\_CTRL}  & ctrl\_gie\_r   & rw & bit[0]\,=\,GIE, global interrupt enable \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%------------------------
+\subsubsection{Related Sections of this Spec}
+\begin{itemize}
+  \item ICU functional description starting with Section~\ref{subsec:icufunc01}.
+  \item Interrupt Concept, Section~\ref{subsec:irqconcept} (Product Overview)
+    and Section~\ref{sec:archcpu} area (Architecture Concepts): the CPU-side
+    CSR/trap mechanism ICU0's output feeds into.
+  \item External Interrupt Map, Table~\ref{tab:irqmap} (Memory Map and
+    Registers chapter).
+  \item Peripheral Architecture Concept in Chapter ``Architecture Concepts'':
+  \begin{itemize}
+    \item Slave WB (Wishbone) BPI.
+    \item Peripheral ID Registers.
+  \end{itemize}
+  \item Requirements: Section~\ref{subsec:icureq01}.
+  \item Implementation source material: \texttt{ip\_icu/README\_REQ.txt},
+    \texttt{ip\_icu/README\_IMPL.txt}.
+\end{itemize}
+
+%=============================================================
+% History of ICU
+%=============================================================
+\subsection{History of ICU}
+
+\begin{table}[H]
+\caption{History of ICU Section}
+\label{tab:icuhistory02}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  \multicolumn{3}{|l|}{History} \\
+  \hline
+  \multicolumn{1}{|l}{Target Spec.} &
+  \multicolumn{1}{l}{Current version: 0.1, 2026-07-14} &
+  \multicolumn{1}{l|}{Author: Claude, A. Siggelkow} \\
+  \multicolumn{1}{|l}{ } &
+  \multicolumn{1}{l}{Previous version: --- } &
+  \multicolumn{1}{l|}{ } \\
+  \hline
+  \hline
+  Paragraph (prev.) & Paragraph (current) / date & Changes \\
+  \hline
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.1; Date: 2026-07-14} \\
+  \hline
+  --- & \ref{sec:icufunc01} / 2026-07-14 & First draft: requirements,
+    system integration, functional/structural overview, service requests,
+    kernel description, full register map (AS, Claude) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% Functional Overview
+%=============================================================
+\subsection{Functional Overview}
+\label{subsec:icufunc01}
+
+ICU0 aggregates up to 8 peripheral interrupt lines into the single
+external interrupt bit both CPU implementations consume
+(\texttt{irq\_ext\_i[7]}, Section~\ref{subsec:irqconcept}), with
+hardware priority resolution, per-source and global masking, and a cause
+register so firmware does not have to poll every peripheral's own MIS
+register to determine which one interrupted.
+
+It replaces two previous, more limited mechanisms:
+\begin{itemize}
+  \item On \textit{RV\_PipelineCacheFwd}, a placeholder that simply
+    OR-combined GPIO0, QSPI0, and UART0 with no priority, masking, or
+    cause identification.
+  \item On \textit{RV\_NoPipeline}, direct wiring of GPIO0 to
+    \texttt{irq\_external\_s[7]} and UART0 to
+    \texttt{irq\_external\_s[6]} -- a bit the CPU never reads, so UART0
+    interrupts had no effect on program flow.
+\end{itemize}
+
+\paragraph{General Features:}
+\begin{itemize}
+  \item 8 interrupt source slots, register-identical on both chip variants
+  \item Software-configurable priority per source (4 bits, 16 levels)
+  \item Per-source masking and one global enable bit
+  \item Edge-triggered, sticky pending bits with race-free set/clear
+    semantics (Section~\ref{subsec:icufunc02})
+  \item Cause identification register (valid + highest-priority id),
+    independent of the global enable
+  \item Software test/force register for verification without real
+    peripheral stimulus
+\end{itemize}
+
+%=============================================================
+% Structural Overview
+%=============================================================
+\subsection{Structural Overview}
+
+ICU0 follows the same kernel/BPI split as GPIO0
+(\texttt{as\_gpio}/\texttt{as\_gpio\_top}): a stateless kernel performs
+per-source edge detection and priority arbitration, while the top-level
+wrapper owns all Wishbone-addressable register state and instantiates the
+shared \texttt{as\_slave\_bpi} Wishbone-to-kernel translator.
+
+\begin{table}[H]
+\caption{ICU Kernel (\texttt{cc\_icu}) I/O}
+\label{tab:asIcuPer04a}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Pin & Direction & Width & Explanation \\
+  \hline
+  \hline
+  clk\_i & in & 1 & System clock (\texttt{clk\_div\_s}) \\
+  \hline
+  rst\_i & in & 1 & System reset. Active high. \\
+  \hline
+  irq\_src\_i(7:0) & in & 8 & Raw peripheral IRQ lines, same clock domain. \\
+  \hline
+  irq\_pulse\_o(7:0) & out & 8 & 1-cycle pulse on each rising edge of
+    \texttt{irq\_src\_i}; feeds the RIS set logic in \texttt{cc\_icu\_top}. \\
+  \hline
+  mis\_i(7:0) & in & 8 & Masked Interrupt Status (RIS\,\&\,IMSC), from top. \\
+  \hline
+  prio\_i(31:0) & in & 32 & Packed 4-bit priority per source, from top. \\
+  \hline
+  gie\_i & in & 1 & Global interrupt enable, from top. \\
+  \hline
+  irq\_valid\_o & out & 1 & \texttt{|mis\_i}, independent of \texttt{gie\_i}. \\
+  \hline
+  irq\_id\_o(2:0) & out & 3 & Highest-priority index among \texttt{mis\_i};
+    ties: lowest index wins. \\
+  \hline
+  irq\_o & out & 1 & \texttt{gie\_i \& irq\_valid\_o} -- to \texttt{cc\_icu\_top}. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{ICU Top (\texttt{cc\_icu\_top}) I/O}
+\label{tab:asIcuPer06}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Pin & Direction & Width & Explanation \\
+  \hline
+  \hline
+  clk\_i & in & 1 & System clock \\
+  \hline
+  rst\_i & in & 1 & System reset. Active high. \\
+  \hline
+  wbdAddr\_i(7:0) & in & 8 & From WB-Bus. \\
+  \hline
+  wbdDat\_i(63:0) & in & 64 & From WB-Bus. \\
+  \hline
+  wbdDat\_o(63:0) & out & 64 & To WB-Bus. \\
+  \hline
+  wbdWe\_i & in & 1 & From WB-Bus. \\
+  \hline
+  wbdSel\_i(7:0) & in & 8 & From WB-Bus. \\
+  \hline
+  wbdStb\_i & in & 1 & From WB-Bus. \\
+  \hline
+  wbdAck\_o & out & 1 & To WB-Bus. \\
+  \hline
+  wbdCyc\_i & in & 1 & From WB-Bus. \\
+  \hline
+  irq\_src\_i(7:0) & in & 8 & Raw peripheral IRQ lines (see Table~\ref{tab:asIcuSrcAssign}). \\
+  \hline
+  icu\_irq\_o & out & 1 & Aggregated interrupt, to \texttt{irq\_ext\_i[7]}. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%=============================================================
+% Service Requests
+%=============================================================
+\subsection{Service Requests of the ICU}
+
+ICU0 itself does not generate service requests toward the CPU beyond the
+single aggregated \texttt{icu\_irq\_o} line; Table~\ref{tab:asIcuSrcAssign}
+already lists the sources it aggregates. Table~\ref{tab:asIcuPer06b}
+restates them from the interrupt-cause perspective, i.e.\ what
+\textbf{ICU0\_IRQID} reports once that source becomes the
+highest-priority pending, unmasked one.
+
+\begin{table}[H]
+\caption{ICU0 Service Requests}
+\label{tab:asIcuPer06b}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Source (RIS/IRQID id) & Reset Priority & Explanation \\
+  \hline
+  \hline
+  0 -- GPIO0  & 7 (highest of the 3 wired sources) & Any GPIO0 pin-change
+    interrupt (\texttt{gpio\_irq\_o}, itself already the OR of GPIO0's own
+    IRQSS/IMSC path). \\
+  \hline
+  1 -- UART0  & 6 & Any UART0 interrupt source (\texttt{uart\_irq\_o},
+    itself already the OR of UART0's RIS\,\&\,IMSC). \\
+  \hline
+  2 -- QSPI0  & 5 & \textit{RV\_PipelineCacheFwd} only. Any QSPI0
+    interrupt source (\texttt{qspi\_irq\_o}). \\
+  \hline
+  3--7 -- spares/reserved & 0 & Not wired to hardware; reachable only via
+    \textbf{ICU0\_ISR} for software test. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+All priorities are software-reconfigurable at runtime via
+\textbf{ICU0\_PRIO}; the values above are only the hardware reset
+defaults (ICU-SW-005), chosen so the system is fully interrupt-functional
+immediately out of reset without firmware setup.
+
+%=============================================================
+% Peripheral Kernel
+%=============================================================
+\subsection{The ICU Peripheral Kernel}
+\label{subsec:icufunc02}
+
+\paragraph{Edge detection.} Each of the 8 \texttt{irq\_src\_i} lines is
+fed through a 2-stage shift register (identical structure to GPIO0's own
+pin-change detector); \texttt{irq\_pulse\_o[i]} pulses for exactly one
+clock cycle on the source's 0$\to$1 transition. A source line is treated
+as a level -- it stays high until the peripheral's own cause is cleared
+(e.g.\ GPIO0's IRQSC or UART0's ICR) -- while ICU0 only reacts to the
+transition, not the level, when setting its own sticky pending bit.
+
+\paragraph{Pending storage (RIS).} \textbf{ICU0\_RIS}[i] is set by either
+a hardware edge (\texttt{irq\_pulse\_o[i]}) or a software-forced write to
+\textbf{ICU0\_ISR}[i], and cleared by a software write to
+\textbf{ICU0\_ICR}[i]. If a SET and a CLEAR of the same bit coincide in
+the same clock cycle, SET wins (ICU-PE-002): this is the design choice
+that avoids the race present in the graded reference submission this
+peripheral replaces, where a same-cycle set+clear silently favoured the
+clear and could drop a freshly arriving interrupt. Once
+\textbf{ICU0\_RIS}[i] is set, it stays set regardless of further source
+activity until firmware explicitly clears it via \textbf{ICU0\_ICR} --
+the two-level scheme (peripheral-level cause, then ICU-level pending) is
+deliberately decoupled: firmware normally clears the underlying
+peripheral's own cause first, then ICU0's copy, in either order.
+
+\paragraph{Masking and MIS.} \textbf{ICU0\_MIS} is the bitwise AND of
+\textbf{ICU0\_RIS} and \textbf{ICU0\_IMSC}. The value used by the
+priority arbiter (\texttt{mis\_comb\_s} inside \texttt{cc\_icu\_top}) is
+purely combinational and always current; the register readback at offset
+0x18 is a registered copy and therefore lags the arbiter's view by one
+clock cycle -- the same split GPIO0 uses between its combinational
+\texttt{irq\_mis\_s} (drives the IRQ pin) and its registered
+\texttt{mis\_reg\_s} (drives the readable MIS register), so the
+CPU-facing interrupt path is never delayed by a register-readback
+latency.
+
+\paragraph{Priority arbitration.} Among all sources with
+\textbf{ICU0\_MIS}[i]\,=\,1, the kernel selects the one with the
+numerically highest \textbf{ICU0\_PRIO} nibble. The comparison is strict
+(\texttt{>}, not \texttt{>=}), so an already-selected candidate is only
+displaced by a strictly higher priority -- this is how the ``lowest index
+wins on equal priority'' rule (ICU-PR-002) is implemented without a
+separate tie-break step.
+
+\paragraph{Cause output.} \textbf{ICU0\_IRQID} reports the arbiter's
+result (bit[3]\,=\,VALID, bits[2:0]\,=\,winning source id) independent of
+\textbf{ICU0\_CTRL}.GIE (ICU-ID-003); \texttt{icu\_irq\_o} itself is
+\texttt{GIE \& VALID}, so GIE gates only the pin that reaches the CPU, not
+the diagnostic register.
+
+\paragraph{Timing summary.}
+\begin{itemize}
+  \item Wishbone access: zero-wait-state, combinational ACK (via the
+    shared \texttt{as\_slave\_bpi}), identical to every other peripheral
+    in this SoC.
+  \item Edge-to-RIS latency: 2 clock edges from a source's 0$\to$1
+    transition to the corresponding RIS bit being software-readable.
+  \item No cross-clock-domain synchronization inside ICU0 (ICU-HW-004):
+    all sources, ICU0, and the CPU share \texttt{clk\_div\_s} on both
+    chips.
+\end{itemize}
+
+%=============================================================
+% Registers
+%=============================================================
+\subsection{Registers}
+
+\subsubsection{ICU Register Overview}
+
+\begin{table}[H]
+\caption{ICU Register List}
+\label{tab:asIcuRegList}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |l |l|}
+  \hline
+  Register Group & Register Name & Symbol & Offset \\
+  \hline
+  \hline
+  System Registers  & Identification Register       & \textbf{ICU0\_ID}    & 0x00 \\
+  \hline
+  Interrupt         & Raw Interrupt Status          & \textbf{ICU0\_RIS}   & 0x08 \\
+  Registers         & Interrupt Mask Control        & \textbf{ICU0\_IMSC}  & 0x10 \\
+                    & Masked Interrupt Status       & \textbf{ICU0\_MIS}   & 0x18 \\
+                    & Interrupt Clear Register      & \textbf{ICU0\_ICR}   & 0x20 \\
+                    & Interrupt Set Register        & \textbf{ICU0\_ISR}   & 0x28 \\
+  \hline
+  Arbitration       & Priority Register             & \textbf{ICU0\_PRIO}  & 0x30 \\
+  Registers         & Cause / IRQ-ID Register       & \textbf{ICU0\_IRQID} & 0x38 \\
+                    & Control Register (GIE)        & \textbf{ICU0\_CTRL}  & 0x40 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Read-Write Features}
+\begin{itemize}
+  \item \textbf{w}: writable by SW
+  \item \textbf{r}: readable by SW
+  \item \textbf{h}: set by HW only
+  \item \textbf{w1c}: write-1-to-clear
+  \item \textbf{w1s}: write-1-to-set
+\end{itemize}
+
+\subsubsection{ID -- Identification Register (offset 0x00, ro)}
+
+\begin{table}[H]
+\caption{ICU0\_ID Bit Fields}
+\label{tab:asIcuID}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [63:0] & ID & r & Fixed peripheral identification, \texttt{0x40}.
+    True read-only (no write branch) -- unlike GPIO0's ID register, which
+    is nominally rw in RTL despite being documented ro; not replicated
+    here. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{RIS -- Raw Interrupt Status (offset 0x08, ro/rh)}
+
+\begin{table}[H]
+\caption{ICU0\_RIS Bit Fields}
+\label{tab:asIcuRIS}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0] & GPIO0\_PEND  & rh & Sticky pending, source 0 (see Section~\ref{subsec:icufunc02}). \\
+  \hline
+  [1] & UART0\_PEND  & rh & Sticky pending, source 1. \\
+  \hline
+  [2] & QSPI0\_PEND  & rh & Sticky pending, source 2 (\textit{RV\_PipelineCacheFwd} only). \\
+  \hline
+  [3] & SPARE0\_PEND & rh & Sticky pending, source 3 (unwired, SW-test only). \\
+  \hline
+  [4] & SPARE1\_PEND & rh & Sticky pending, source 4 (unwired, SW-test only). \\
+  \hline
+  [7:5] & RES\_PEND  & rh & Sticky pending, sources 5--7 (unwired, SW-test only). \\
+  \hline
+  [63:8] & -- & r & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{IMSC -- Interrupt Mask Control (offset 0x10, rw)}
+
+\begin{table}[H]
+\caption{ICU0\_IMSC Bit Fields}
+\label{tab:asIcuIMSC}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [7:0] & MASK & rw & Per-source enable, bit[i]\,=\,1 enables source \emph{i}
+    into MIS. Reset: \texttt{0xFF} (all enabled, ICU-SW-005). \\
+  \hline
+  [63:8] & -- & r & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{MIS -- Masked Interrupt Status (offset 0x18, ro/rh)}
+
+\begin{table}[H]
+\caption{ICU0\_MIS Bit Fields}
+\label{tab:asIcuMIS}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [7:0] & MIS & rh & \texttt{RIS\,\&\,IMSC}, per source. Registered
+    readback, 1 cycle behind the combinational value the arbiter uses
+    (Section~\ref{subsec:icufunc02}). \\
+  \hline
+  [63:8] & -- & r & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{ICR -- Interrupt Clear Register (offset 0x20, wo/w1c)}
+
+\begin{table}[H]
+\caption{ICU0\_ICR Bit Fields}
+\label{tab:asIcuICR}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [7:0] & CLR & w1c & Write\;1 to bit\emph{i} clears \textbf{ICU0\_RIS}[i],
+    unless a hardware/ISR SET on the same bit lands in the same cycle
+    (SET wins, ICU-PE-002). Reads as 0. \\
+  \hline
+  [63:8] & -- & -- & Reserved; writes ignored. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{ISR -- Interrupt Set Register (offset 0x28, wo/w1s)}
+
+\begin{table}[H]
+\caption{ICU0\_ISR Bit Fields}
+\label{tab:asIcuISR}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [7:0] & SET & w1s & Write\;1 to bit\emph{i} sets \textbf{ICU0\_RIS}[i]
+    without a real source edge (software test/force). Reads as 0. \\
+  \hline
+  [63:8] & -- & -- & Reserved; writes ignored. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{PRIO -- Priority Register (offset 0x30, rw)}
+
+\begin{table}[H]
+\caption{ICU0\_PRIO Bit Fields}
+\label{tab:asIcuPRIO}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [3:0]   & PRIO0 & rw & Priority of source 0 (GPIO0). Reset: 7. \\
+  \hline
+  [7:4]   & PRIO1 & rw & Priority of source 1 (UART0). Reset: 6. \\
+  \hline
+  [11:8]  & PRIO2 & rw & Priority of source 2 (QSPI0). Reset: 5. \\
+  \hline
+  [15:12] & PRIO3 & rw & Priority of source 3 (spare). Reset: 0. \\
+  \hline
+  [19:16] & PRIO4 & rw & Priority of source 4 (spare). Reset: 0. \\
+  \hline
+  [31:20] & PRIO5--7 & rw & Priority of sources 5--7 (reserved). Reset: 0. \\
+  \hline
+  [63:32] & -- & r & Reserved; reads as 0, ignored on write. \\
+  \hline
+\end{tabularx}
+\end{table}
+\noindent 0\,=\,lowest, 15\,=\,highest priority. On equal priority, the
+lowest source index wins (ICU-PR-002).
+
+\subsubsection{IRQID -- Cause Register (offset 0x38, ro)}
+
+\begin{table}[H]
+\caption{ICU0\_IRQID Bit Fields}
+\label{tab:asIcuIRQID}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [2:0]  & ID    & r & Index of the highest-priority pending, unmasked
+    source. Meaningful only when VALID\,=\,1. \\
+  \hline
+  [3]    & VALID & r & 1 if at least one source is pending and unmasked
+    (\texttt{|MIS}); 0 if no interrupt is pending. Independent of
+    \textbf{ICU0\_CTRL}.GIE (ICU-ID-003). \\
+  \hline
+  [63:4] & --    & r & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{CTRL -- Control Register (offset 0x40, rw)}
+
+\begin{table}[H]
+\caption{ICU0\_CTRL Bit Fields}
+\label{tab:asIcuCTRL}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [0]    & GIE & rw & Global interrupt enable. 0\,=\,\texttt{icu\_irq\_o}
+    forced low regardless of pending/masked state; 1\,=\,normal operation
+    (reset, ICU-SW-005). \\
+  \hline
+  [63:1] & --  & r  & Reserved; reads as 0. \\
+  \hline
+\end{tabularx}
+\end{table}
