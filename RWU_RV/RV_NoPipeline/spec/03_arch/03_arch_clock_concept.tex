@@ -1,0 +1,169 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 03_arch_clock_concept.tex
+%% Section: Clock Concept
+%% Chapter: Architecture Concepts
+%%
+%% Describes the Clock Generation Unit (CGU) shared by both chip variants
+%% and the concrete clock-frequency requirements for Variant~A
+%% (RTL top RV_NoPipeline).
+%%
+%% Integration in 00_rwurv64i_all.tex:
+%%   \section{Clock Concept}
+%%   \input{\TEXTarch 03_arch_history_tab04}
+%%   \input{\TEXTarch 03_arch_clock_concept}
+%%
+%% Requires packages: tabularx, booktabs, float
+%%
+%% v0.1  2026-07-12  Claude-AI  Initial version -- RV_NoPipeline clock requirements
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Clock Generation Unit (CGU) Overview}
+\label{subsec:cguOverview}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Both chip variants (Table~\ref{tab:asChipVariants}) share the same Clock
+Generation Unit IP (\texttt{as\_cgu\_top} / \texttt{as\_cgucore}).
+The chip has a single external clock input, \texttt{clk\_i}, from which the
+CGU derives all internal clock domains using free-running counter-based
+dividers.
+There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
+
+\begin{table}[H]
+\caption{CGU Clock Domains}
+\label{tab:asCguDomains}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X |X|}
+  \hline
+  Output & Divider (fixed) & Consumers & Notes \\
+  \hline
+  \hline
+  \texttt{clk\_core\_o} & \texttt{clk\_core\_div} = 80 &
+    CPU core, GPIO, UART0, D-Mem/Scratchpad, D-/I-Cache (Variant~B) &
+    Functional clock for the CPU and almost all peripherals \\
+  \hline
+  \texttt{clk\_bus1\_o} & \texttt{clk\_bus1\_div} = 80 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
+  \hline
+  \texttt{clk\_bus2\_o} & \texttt{clk\_bus2\_div} = 100 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
+  \hline
+  \texttt{clk\_qspi\_o} & \texttt{clk\_qspi\_div} = 4 & QSPI controller (Variant~B only) &
+    Not present in Variant~A (no QSPI controller) \\
+  \hline
+  \texttt{tck\_i} & --- (external JTAG clock) & JTAG TAP, I-Mem scan chain, boundary scan &
+    Fully asynchronous to \texttt{clk\_i}; no timing relationship is analysed
+    between the two domains \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\textbf{The divider ratios are fixed at RTL compile time, not run-time
+configurable.}
+Unlike the QSPI and UART peripherals (which expose a genuine \texttt{CLKDIV}
+Wishbone register), the CGU implements only a read/write peripheral
+\textbf{ID register}; the four divider ratios above are SystemVerilog
+\texttt{localparam}s in \texttt{as\_pack.sv} and take effect unconditionally.
+Changing a divider therefore requires an RTL/constant change and a full
+re-synthesis -- it cannot be adjusted by software or by writing a register.
+
+\subsubsection{Scan-Test Clock Bypass}
+
+During normal operation the CPU and Wishbone peripherals are clocked by
+\texttt{clk\_div\_s}, which is generated in \texttt{as\_top\_mem} as:
+\begin{verbatim}
+assign clk_div_s = dr_cap_s ? clk_i : clk_core_s;
+\end{verbatim}
+\texttt{dr\_cap\_s} is driven by the JTAG TAP.
+In normal function mode (\texttt{dr\_cap\_s}\,=\,0) the CPU runs on the
+divided \texttt{clk\_core\_s}.
+In scan-test mode (\texttt{dr\_cap\_s}\,=\,1) the divider is bypassed and the
+CPU is clocked directly by the raw external \texttt{clk\_i}, so that an ATE
+tester can single-step or free-run the scan chain independently of the CGU
+divide ratio.
+The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
+\texttt{clk\_i}; only its divided outputs are subject to the bypass mux.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Clock Requirements -- Variant A (RV\_NoPipeline)}
+\label{subsec:clockReqNoPipeline}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Status}
+
+No X-FAB XH035 gate-level static timing analysis (STA) has been run yet for
+\texttt{RV\_NoPipeline}.
+The Genus synthesis script (\texttt{scripts/01b\_rv64\_syn.tcl}) still carries
+a placeholder constraint (\texttt{create\_clock -period 20.000}, i.e.\ 50\,MHz
+on \texttt{clk\_i}) and is explicitly marked in its own comments as
+provisional, pending SRAM-macro integration for I-Mem/D-Mem.
+The recommendation below is therefore a conservative pre-STA target, not a
+timing-signed-off number.
+
+\subsubsection{Recommended Frequencies}
+
+\begin{table}[H]
+\caption{RV\_NoPipeline -- Recommended Clock Frequencies}
+\label{tab:asNoPipelineClk}
+\centering
+\begin{tabularx}{\textwidth}{|X |X |X|}
+  \hline
+  Signal & Recommended value & Rationale \\
+  \hline
+  \hline
+  \texttt{clk\_i} (external) & 100\,MHz (10\,ns period) &
+    Matches the operating point already exercised by every existing xsim
+    and cocotb testbench (\texttt{clk\_2\_t}\,=\,5\,ns half-period) \\
+  \hline
+  \texttt{clk\_core\_s} (CPU core, \texttt{clk\_i}/80) & 1.25\,MHz (800\,ns period) &
+    Matches \texttt{clk\_80\_t}\,=\,400\,ns in the testbenches and the
+    1.25\,MHz core clock already assumed in the UART timing calculation
+    (Section~\ref{subsec:uartsimtest}) \\
+  \hline
+  \texttt{tck\_i} (JTAG) & $\leq$ \texttt{clk\_i}/4 (typ.\ 25\,MHz or less) &
+    Conservative default; JTAG is asynchronous to \texttt{clk\_i}
+    (Table~\ref{tab:asCguDomains}) and not on the CPU's timing-critical path \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Rationale}
+
+\begin{itemize}
+  \item \textbf{Why 1.25\,MHz and not higher:} \texttt{RV\_NoPipeline} is a
+    multi-cycle, non-pipelined core (Section~\ref{sec:archcpu}): each
+    instruction's critical path runs through instruction decode, register
+    file, the ALU, and (for loads/stores) the Wishbone master/slave BPI
+    handshake, all within states of a single clock.
+    X-FAB XH035 is a 350\,nm process; without a completed STA on the actual
+    gate-level netlist (SRAM macros not yet integrated, see Status above),
+    committing to a high frequency is premature.
+    1.25\,MHz leaves a very large safety margin against any plausible
+    critical-path length on a 350\,nm standard-cell library.
+  \item \textbf{Why keep the already-validated operating point:} every xsim
+    and cocotb regression test (58 xsim / 57 cocotb tests, see
+    Section~\ref{sec:simtest01}) already runs at \texttt{clk\_i}\,=\,100\,MHz
+    / \texttt{clk\_core\_s}\,=\,1.25\,MHz, and the UART bit-timing
+    calculation in Section~\ref{subsec:uartsimtest} is derived from exactly
+    this core clock.
+    Choosing the same frequency for the first tapeout avoids re-deriving or
+    re-validating any functional timing (UART baud rate, GPIO polling loops,
+    etc.).
+  \item \textbf{Fixed divider consequence:} because \texttt{clk\_core\_div}\,=\,80
+    is fixed at compile time (Section~\ref{subsec:cguOverview}), the external
+    \texttt{clk\_i} frequency is always exactly $80\times$ the desired core
+    frequency.
+    There is no register to trade off external frequency against core
+    frequency at run time.
+\end{itemize}
+
+\subsubsection{Open Items}
+
+\textbf{Action (CLK-01):} Once I-Mem/D-Mem SRAM macros are integrated into
+the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} with a
+proper \texttt{create\_generated\_clock -divide\_by 80} constraint on
+\texttt{clk\_core\_o} (in addition to the existing constraint on
+\texttt{clk\_i}, which today only reflects the scan-test bypass path) and
+confirm that 1.25\,MHz core / 100\,MHz external clears timing with adequate
+margin at the worst-case corner.
+If margin is large, a higher core frequency may be considered for a later
+revision -- this requires changing the \texttt{clk\_core\_div} localparam in
+\texttt{as\_pack.sv} and re-synthesising, not a register write.

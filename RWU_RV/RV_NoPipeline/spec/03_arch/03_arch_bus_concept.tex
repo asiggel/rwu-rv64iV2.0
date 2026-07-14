@@ -366,9 +366,13 @@ The slave BPI checks that all \texttt{SEL} bits are set before asserting
 Sub-word accesses are therefore not supported.
 
 \subsubsection{Reset Behaviour}
+\label{subsubsec:wbResetBehaviour}
 
-All Wishbone outputs are driven to their inactive state while the synchronous
-active-high reset \texttt{rst\_i} is asserted.
+All Wishbone outputs are driven to their inactive state while the
+\textbf{asynchronous}, active-high reset \texttt{rst\_i} is asserted (every
+clocked block in this design uses
+\texttt{always\_ff\ @(posedge\ clk\_i,\ posedge\ rst\_i)}; there is no
+synchronous-reset flip-flop anywhere in the RTL).
 For the master BPI this means \texttt{STB\_O} and \texttt{CYC\_O} are held
 low; for the slave BPI \texttt{ACK\_O} is held low.
 Note that in the current purely combinatorial implementation the reset
@@ -540,7 +544,7 @@ Table~\ref{tab:asSlaveBpiIO} lists all input and output ports of the
   Port & Direction & Width & Description \\
   \hline
   \hline
-  \texttt{rst\_i}            & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}            & in  & 1  & Unused internally (purely combinatorial BPI); kept for Wishbone port symmetry -- see Section~\ref{subsubsec:wbResetBehaviour} \\
   \hline
   \texttt{clk\_i}            & in  & 1  & Bus clock \\
   \hline
@@ -813,7 +817,7 @@ Table~\ref{tab:asMasterBpiIO} lists all input and output ports of the
   Port & Direction & Width & Description \\
   \hline
   \hline
-  \texttt{rst\_i}             & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}             & in  & 1  & Unused internally (purely combinatorial BPI); kept for Wishbone port symmetry -- see Section~\ref{subsubsec:wbResetBehaviour} \\
   \hline
   \texttt{clk\_i}             & in  & 1  & Bus clock \\
   \hline

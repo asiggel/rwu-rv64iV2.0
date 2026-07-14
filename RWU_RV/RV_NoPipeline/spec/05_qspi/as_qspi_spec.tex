@@ -114,7 +114,7 @@ completes before IDLE.
   \hline\hline
   \texttt{clk\_i}           & in  & 1  & Kernel clock, active rising edge \\
   \hline
-  \texttt{rst\_i}           & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}           & in  & 1  & Asynchronous reset, active high \\
   \hline
   \texttt{start\_i}         & in  & 1  & Start pulse (one cycle wide). Initiates FSM if not busy. \\
   \hline
@@ -406,7 +406,7 @@ correct operation with the asynchronous-read \texttt{as\_fifo}.
   \hline
   Port & Dir. & Width & Description \\
   \hline\hline
-  \texttt{rst\_i}       & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}       & in  & 1  & Asynchronous reset, active high \\
   \hline
   \texttt{clk\_i}       & in  & 1  & System and kernel clock \\
   \hline

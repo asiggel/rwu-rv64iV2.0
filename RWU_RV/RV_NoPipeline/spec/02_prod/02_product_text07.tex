@@ -1,11 +1,13 @@
-Europractice 90\,nm technology.
+X-FAB \textbf{XH035} 350\,nm (0.35\,\textmu m) technology.
 
-Infineon’s 90\,nm (70\,nm physical gate length) CMOS technology is designed for digital
-and analog circuit design. It offers advanced possibilities for low power design (triple
-well, low leakage transistor types). The technology has 4-9 layers of copper metallization.
-It offers an increase in peak performance of more than 50\% and a reduction of active
-power consumption of more than a factor of 2. Compared to the predecessor technology
-twice the cell density for standard cells can be achieved in L90.
+X-FAB's XH035 is a 0.35\,\textmu m Modular Mixed-Signal / High-Voltage CMOS technology,
+designed for combined analog, digital, and mixed-signal circuit design.
+The digital standard-cell library used for this design is the \texttt{D\_CELLS} library
+(\texttt{xh035-D\_CELLS-liberty\_MOS}), which supplies the Liberty (\texttt{.lib}) timing
+and power views for synthesis.
+On-chip SRAM (I-Cache, D-Cache, and Scratchpad; see Section~\ref{sec:memfunc01}) is generated
+with the X-FAB XH035 SPRAM (Single-Port RAM) compiler, available directly from the
+X-FAB design-kit portal.
 
-The nominal core voltage is 1.2\,V, IO devices have a nominal supply voltage of 2.5\,V or
-1.8\,V.
+The nominal core voltage is 3.3\,V (a 2.2\,V low-voltage core option exists but is not used
+in this design).

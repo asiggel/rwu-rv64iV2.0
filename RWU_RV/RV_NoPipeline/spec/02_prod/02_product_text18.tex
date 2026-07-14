@@ -1,1 +1,5 @@
-The core is a standard compliant RISC-V with 64\,bit and integer implementation only. It is single cycle, without cache and memory hierarchy.
+The core is a standard compliant RISC-V with 64\,bit and integer implementation only.
+Two core implementations exist (see Section~\ref{sec:archcpu} and
+Table~\ref{tab:asChipVariants}): \texttt{as\_cpux} (Variant~A, single cycle,
+no cache or memory hierarchy) and \texttt{cc\_cpupipefwd} (Variant~B, 5-stage
+pipeline with forwarding, backed by the I-Cache/D-Cache memory hierarchy).

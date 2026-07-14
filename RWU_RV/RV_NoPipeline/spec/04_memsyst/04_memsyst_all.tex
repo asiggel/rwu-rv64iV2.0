@@ -40,7 +40,7 @@ QSPI controller are outside this boundary.
 \end{table}
 
 The three SRAM wrapper modules (\texttt{asICacheBlock}, \texttt{asDCacheBlock},
-\texttt{asSpBlock}) each instantiate one or two X-Fab XO035 SPRAM macros.
+\texttt{asSpBlock}) each instantiate one or two X-Fab XH035 SPRAM macros.
 In simulation the macros are replaced by \texttt{asSpramModel} via a
 synthesis guard (\texttt{`ifdef SIMULATION}).
 
@@ -113,7 +113,10 @@ The standard features of a MemSys peripheral are described in its functional des
    & Generic MemSys Feature Set & Details \\
   \hline
   \hline
-  yes & Separate Kernel Clock      & 125\;MHz (TBD) \\
+  yes & Separate Kernel Clock      & \texttt{clk\_core\_s} (CGU $\div$ 80 from external \texttt{clk\_i});
+    target frequency TBD for \texttt{RV\_PipelineCacheFwd} -- see the
+    analogous \texttt{RV\_NoPipeline} target in Clock Concept
+    Section~\ref{subsec:clockReqNoPipeline} \\
   \hline
 \end{tabularx}
 \end{table}
@@ -261,7 +264,7 @@ The MemSys  see Chapter "Architectural Concepts - Memory System"
   \hline
   \texttt{clk\_i}  & in & 1 & All sub-modules & System clock (synchronous rising edge) \\
   \hline
-  \texttt{rst\_i}  & in & 1 & All sub-modules & Synchronous active-high reset \\
+  \texttt{rst\_i}  & in & 1 & All sub-modules & Asynchronous active-high reset \\
   \hline
   \multicolumn{5}{|l|}{\textit{CPU Instruction Bus (via \texttt{as\_icache\_if})}} \\
   \hline
@@ -332,7 +335,7 @@ The MemSys  see Chapter "Architectural Concepts - Memory System"
 \label{subsubsec:asICacheBlock}
 
 \paragraph{Purpose.}
-Wraps two X-Fab XO035 SPRAM macros: the I-Tag SRAM (96\,bit\,$\times$\,32)
+Wraps two X-Fab XH035 SPRAM macros: the I-Tag SRAM (96\,bit\,$\times$\,32)
 and the I-Data SRAM (256\,bit\,$\times$\,128).
 Translates the logical controller signals into the physical SPRAM port
 signals (\texttt{CLK}, \texttt{CEN}, \texttt{WEN}, \texttt{BWEN},
@@ -466,7 +469,7 @@ way1\{\ldots\}, way0\{valid[0],tag[21:0]\}\}, identical to I-Cache.
 \label{subsubsec:asSpBlock}
 
 \paragraph{Purpose.}
-Wraps a single X-Fab XO035 SPRAM macro configured as
+Wraps a single X-Fab XH035 SPRAM macro configured as
 64\,bit\,$\times$\,1024 (8\,KiB default; parameterisable via
 \texttt{SP\_DEPTH}).
 Provides byte-level write access required for sub-word stores (byte,
@@ -540,7 +543,7 @@ AXI4 AR/R burst transactions to \texttt{asMemArb} on a cache miss.
   \hline
   \texttt{clk\_i}  & in & 1 & \texttt{asMemTop} & System clock \\
   \hline
-  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Synchronous reset; clears FSM state and all tag valid bits \\
+  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Asynchronous reset; clears FSM state and all tag valid bits \\
   \hline
   \multicolumn{5}{|l|}{\textit{CPU Instruction Bus (\texttt{as\_icache\_if.cache} modport)}} \\
   \hline
@@ -711,7 +714,7 @@ No write path to Flash exists.
   \hline
   \texttt{clk\_i}  & in & 1 & \texttt{asMemTop} & System clock \\
   \hline
-  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Synchronous reset \\
+  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Asynchronous reset \\
   \hline
   \multicolumn{5}{|l|}{\textit{CPU Data Bus (\texttt{as\_dcache\_if.cache} modport)}} \\
   \hline
@@ -899,7 +902,7 @@ D-Cache has priority over I-Cache (Table~\ref{tab:asArbPriority}).
   \hline
   \texttt{clk\_i}  & in & 1 & \texttt{asMemTop} & System clock (used only for grant register) \\
   \hline
-  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Synchronous reset; clears grant register \\
+  \texttt{rst\_i}  & in & 1 & \texttt{asMemTop} & Asynchronous reset; clears grant register \\
   \hline
   \multicolumn{5}{|l|}{\textit{I-Cache AXI4 Slave Port (AR + R channels)}} \\
   \hline
@@ -1016,7 +1019,7 @@ The arbiter is purely combinatorial on the data path; only
 \label{subsubsec:asSpramModel}
 
 \paragraph{Purpose.}
-Provides a synthesisable-free behavioural model of the X-Fab XO035
+Provides a synthesisable-free behavioural model of the X-Fab XH035
 SPRAM macro for use in RTL simulation (Vivado \texttt{xsim}, ModelSim,
 VCS).
 It is \textbf{not} used in synthesis; the three SRAM wrapper modules
@@ -1027,14 +1030,14 @@ conditional compile guard:
 `ifdef SIMULATION
   asSpramModel #(.WIDTH(W), .DEPTH(D)) u_sram (...);
 `else
-  SPRAM_XO035   #(.WIDTH(W), .DEPTH(D)) u_sram (...);
+  SPRAM_XH035   #(.WIDTH(W), .DEPTH(D)) u_sram (...);
 `endif
 \end{verbatim}
 
 \paragraph{Port list.}
 
 \begin{table}[H]
-\caption{\texttt{asSpramModel} Port List (matches XO035 SPRAM interface)}
+\caption{\texttt{asSpramModel} Port List (matches XH035 SPRAM interface)}
 \label{tab:asSpramModelPorts}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
@@ -1076,7 +1079,7 @@ end
 \end{verbatim}
 
 The model uses \emph{write-first} semantics: on a write cycle
-\texttt{Q} returns the newly written data, matching the XO035 SPRAM
+\texttt{Q} returns the newly written data, matching the XH035 SPRAM
 read-during-write behaviour.
 The \texttt{initial} block zero-initialises \texttt{mem} to
 model power-on state.

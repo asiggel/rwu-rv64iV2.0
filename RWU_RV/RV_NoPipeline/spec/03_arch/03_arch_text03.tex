@@ -1,1 +1,15 @@
-The \aschip \; is a single cycle implementation without pipeline, memory hierarchy, MMU, etc. It is a students test chip.
+The \aschip \; project is a students test chip and comprises two distinct CPU/memory variants
+(RTL tops \texttt{RV\_NoPipeline} and \texttt{RV\_PipelineCacheFwd}; see
+Table~\ref{tab:asChipVariants}), neither of which implements an MMU:
+
+\begin{itemize}
+  \item \textbf{RTL: \texttt{RV\_NoPipeline}} -- a single-cycle implementation without
+    pipeline or cache; every instruction completes in one clock cycle; on-chip
+    SRAM only (no memory hierarchy).
+  \item \textbf{RTL: \texttt{RV\_PipelineCacheFwd}} -- a 5-stage pipelined
+    implementation (IF/ID/EX/MEM/WB) with EX/MEM$\to$EX and MEM/WB$\to$EX
+    forwarding, backed by the I-Cache/D-Cache memory hierarchy described in
+    Section~\ref{subsec:memCacheOverview}. Forwarding eliminates all
+    non-load RAW stalls; only the load-use hazard (1 cycle) and CSR hazards
+    still stall the pipeline.
+\end{itemize}

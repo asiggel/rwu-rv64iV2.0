@@ -60,7 +60,7 @@ module as_uart_top #(
 
   localparam logic [63:0] RST_ID      = 64'h00000000_00000020;
   localparam logic [63:0] RST_LCR     = 64'h00000000_00000003; // 8N1, no break
-  localparam logic [63:0] RST_CLKDIV  = 64'h00000000_00000044; // 68 → 115200 baud @125 MHz
+  localparam logic [63:0] RST_CLKDIV  = 64'h00000000_00000008; // 8 -> ~9765.6 baud (target 9600, +1.72%) @ 1.25 MHz clk_core_s
   localparam logic [63:0] RST_CTRL    = 64'h00000000_00000000;
   localparam logic [63:0] RST_RXTHRES = 64'(FIFO_DEPTH / 2);
   localparam logic [63:0] RST_IMSC    = 64'h00000000_00000000;

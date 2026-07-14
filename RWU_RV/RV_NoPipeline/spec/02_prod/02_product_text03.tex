@@ -5,20 +5,23 @@ Two chip variants are defined (see also Section~\ref{subsec:chipVariants}):
   \item RISC-V RV64I core, non-pipelined single-cycle execution
   \item On-chip Instruction Memory: 32\,kB (8\,192 instructions, JTAG-loadable)
   \item On-chip Data Memory: 8\,kB (Wishbone slave, byte-enable, R/W)
-  \item GPIO peripheral (Wishbone)
+  \item GPIO and UART0 peripherals (Wishbone)
   \item Clock Generation Unit (CGU, Wishbone)
   \item JTAG TAP for I-Mem loading and boundary-scan
-  \item No cache, no external Flash interface
+  \item No cache, no external Flash interface, no QSPI controller
 \end{itemize}
 
-\paragraph{Variant~B -- Cache (RTL: \texttt{RV\_NoPipelineCache}):}
+\paragraph{Variant~B -- Pipeline-Cache (RTL: \texttt{RV\_PipelineCacheFwd}):}
 \begin{itemize}
-  \item RISC-V RV64I core, non-pipelined single-cycle execution
+  \item RISC-V RV64I core, 5-stage pipeline (IF/ID/EX/MEM/WB) with
+        EX/MEM$\to$EX and MEM/WB$\to$EX forwarding; only load-use (1 cycle)
+        and CSR hazards still stall
   \item Instruction Cache: 4\,kB, 4-way set-associative, 32\,B line
   \item Data Cache: 4\,kB, 4-way set-associative, 32\,B line,
         read-allocate, no-write (Flash is read-only; stores bypass to Scratchpad)
   \item On-chip Scratchpad SRAM: 8\,kB (direct access, R/W, replaces Variant~A D-Mem)
   \item Off-chip NOR Flash via QSPI: code and read-only data
-  \item GPIO peripheral, CGU, QSPI controller (all Wishbone)
+  \item GPIO, CGU and UART0 peripherals (Wishbone); QSPI controller
+        (Wishbone config registers, AXI4 cache-fill path)
   \item JTAG TAP (boundary-scan; I-Mem scan chain removed)
 \end{itemize}

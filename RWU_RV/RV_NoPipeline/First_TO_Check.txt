@@ -1,0 +1,131 @@
+================================================================================
+ First_TO_Check.txt -- Offene Punkte vor einem Tape-Out-Versuch (RV_NoPipeline)
+================================================================================
+
+Stand:   2026-07-12
+Quelle:  RTL-Review von RWU_RV/RV_NoPipeline/src + verwendete ip_*-IPs
+Hinweis: Fehlende ICU (Interrupt Control Unit) ist bereits bekannt und daher
+         hier NICHT nochmal aufgefuehrt.
+
+Die Punkte sind grob nach Schwere geordnet (1 = groesster Blocker).
+
+
+--------------------------------------------------------------------------------
+1. I-Mem und D-Mem sind keine echten ASIC-SRAM-Makros
+--------------------------------------------------------------------------------
+Dateien: src/asIMem.sv:18, ip_dmem/src/asDMemCore.sv:19
+
+  (* ram_style = "block" *) logic [...] iram_s[mdepth-1:0];
+
+"ram_style" ist eine Vivado-Synthese-Direktive, Genus/X-FAB kennt sie nicht.
+Ohne echtes SPRAM-Makro (X-FAB-Speicher-Compiler) synthetisiert Genus das
+entweder gar nicht sinnvoll oder flacht es zu diskreten Flip-Flops ab
+(bei 32 kB I-Mem / 8 kB D-Mem waeren das mehrere hunderttausend FFs --
+flaechen- und leistungstechnisch nicht machbar).
+Deckt sich mit dem TODO in scripts/01b_rv64_syn.tcl:56-59 ("SRAMs must be
+integrated as black-box macros BEFORE this step ... currently plain RTL
+memories, no SRAM macro yet").
+
+Zwei weitere Probleme, die direkt daranhaengen:
+
+  a) src/asIMem.sv:48-49
+       initial $readmemh("riscvtest.mem", iram_s);
+     Ein initial-Block in synthetisierbarem RTL -- verstoesst gegen die
+     projekteigene CLAUDE.md Regel 7 ("No initial blocks in synthesisable
+     RTL"). Funktioniert nur in Simulation; im echten Chip laedt die
+     JTAG-Scan-Chain den Speicher (das ist bereits korrekt vorgesehen).
+
+  b) src/asIMem.sv:54 (posedge tck_i, Schreiben) vs. :63 (posedge clk_i,
+     Lesen): unsynchronisiertes Clock-Domain-Crossing zwischen JTAG- und
+     Kern-Takt, ohne jeglichen Synchronizer.
+     scripts/01b_rv64_syn.tcl:37 setzt sogar
+       set_clock_groups -asynchronous -group {clk_i} -group {tck_i}
+     -- dieser Pfad wird in der STA also ueberhaupt nicht analysiert.
+
+
+--------------------------------------------------------------------------------
+2. Clock-Gating/-Mux als reines assign, keine Standardzelle
+--------------------------------------------------------------------------------
+Datei: src/asCPUx.sv:723-724
+
+  assign clk_mux_s   = (sc01_shift_i == 1) ? tck_i : gated_clk_s; // Must be a real clock mux!
+  assign gated_clk_s = clk_i && dr_cap_i;                          // Must be a real clock gate!
+
+Vom Autor selbst als offenes Problem markiert ("Must be a real..."), nie
+behoben. Ein AND-Gatter als Clock-Gate ist glitch-anfaellig; dafuer gibt es
+ICG-Zellen (Integrated Clock Gating) in der xh035-Bibliothek.
+Zusaetzlich fehlt der von CLAUDE.md Guideline 8 geforderte
+"// CLOCK GATE:"-Marker-Kommentar komplett.
+
+
+--------------------------------------------------------------------------------
+3. DFT-Scan-Chain ist nur eine 4-Zellen-Demo, keine echte Coverage
+--------------------------------------------------------------------------------
+Datei: src/asCPUx.sv:728-734
+
+Die Scan-Chain (sc01..sc04) verschaltet nur ein triviales 2-Input-AND-Gatter
+(and_out_s = and_in01_s & and_in02_s) -- eine Konzept-Demo, keine Coverage
+der eigentlichen Flip-Flops des Designs.
+Fuer ein reales Tape-Out braucht es einen ATPG/Scan-Insertion-Lauf
+(z. B. Tessent/Modus), der bisher nirgends im Flow auftaucht.
+
+
+--------------------------------------------------------------------------------
+4. Boundary-Scan fehlt (selbst als TODO markiert)
+--------------------------------------------------------------------------------
+Datei: src/asTopMem.sv:8-9
+
+  // 2Do:
+  // - Insert a dummy BS chain. It should consist of one I, one O and one I/O
+
+Die Pins sind ueber JTAG derzeit nicht testbar (nur die I-Mem-Ladekette
+existiert).
+
+
+--------------------------------------------------------------------------------
+5. ECALL/EBREAK werden nicht implementiert
+--------------------------------------------------------------------------------
+Dateien: src/asInstrDecode.sv:180-183, src/asCPUx.sv:412
+
+OP_SYSTEM wird generisch behandelt; in asCPUx.sv wird darin nur MRET
+(imm=0x302, Zeile 412) sowie CSR-Zugriffe (func3 != 0) speziell erkannt.
+Fuer ecall (imm=0x000) und ebreak (imm=0x001) gibt es keine
+Sonderbehandlung -- sie fallen als stiller No-Op durch, statt die
+vorgeschriebene Exception (mcause=11/8/3) auszuloesen.
+ECALL/EBREAK sind Pflichtbestandteil der RV64I-Basis-ISA (nicht optional)
+-- relevant z. B. fuer Syscalls, riscv-arch-test-Compliance oder
+Debugger-Breakpoints.
+
+
+--------------------------------------------------------------------------------
+6. Noch nie gegen die echte X-FAB-Bibliothek synthetisiert
+--------------------------------------------------------------------------------
+Datei: scripts/00_rv64_elab.tcl:19-20
+
+  set PDK_PATH <path-to-pdk>
+
+Ein woertlicher Platzhalter, ebenso der geratene Liberty-Dateiname
+xh035_dcells_typ_3p3v_25c.lib. Es existieren also keinerlei reale
+Area-/Timing-/Power-Zahlen fuer dieses Design -- die gesamte Genus-Kette
+ist bisher unausgefuehrtes Geruest.
+
+
+--------------------------------------------------------------------------------
+7. I-Mem hat keine echte Wishbone-Slave-BPI (geringere Prioritaet)
+--------------------------------------------------------------------------------
+Datei: src/asTopMem.sv:282
+
+  // 2Do: I-Mem needs a slave BPI.
+
+I-Mem haengt nur an der Master-BPI mit fest verdrahtetem wb_m_ack_i(1'b1),
+ist also kein regulaerer Wishbone-Slave wie GPIO/CGU/UART/D-Mem.
+Funktioniert heute, ist aber architektonisch inkonsistent.
+
+
+--------------------------------------------------------------------------------
+Nicht tiefgehend geprueft (Hinweis, kein Befund)
+--------------------------------------------------------------------------------
+- I/O-Pad-Ring / ESD-Zellen (ueblicherweise erst im Backend-Flow mit der
+  X-FAB-IO-Bibliothek ergaenzt, kein RTL-Thema)
+- Power-On-Reset-Erzeugung (scheint bewusst extern vorausgesetzt)
+- Vollstaendige FENCE/FENCE.I-Semantik

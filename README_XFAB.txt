@@ -248,6 +248,104 @@ Phase 2 - Chip:
     - Tape-out
 
 
+--------------------------------------------------------------------------------
+9. zu Memory Compiler
+--------------------------------------------------------------------------------
+
+Was macht ein Memory Compiler eigentlich?
+
+  Ein Memory Compiler ist kein Tool, das dir "eine SRAM-Zelle" gibt, sondern
+  ein Generator: du gibst eine Konfiguration ein (Wortbreite, Anzahl Worte,
+  Single-/Dual-Port, evtl. Anzahl Baenke), und er generiert daraus ein
+  fertiges, layoutetes Hard-Macro -- exakt zugeschnitten auf deine Groesse.
+  Bei X-FAB laeuft das ueber das "my X-FAB"-Portal (Design -> Compilers &
+  Webtools), du waehlst die Konfiguration, klickst Play, und bekommst ein
+  Paket zurueck (typischerweise ein ZIP mit mehreren "Views").
+
+Was kommt heraus -- die Views
+
+  Ein SRAM-Makro ist wie ein IP-Block: dieselbe physische Zelle wird in
+  mehreren Repraesentationen ausgeliefert, weil jedes Tool in der Kette
+  eine andere Sicht braucht:
+
+    View                   Format              Wofuer / in welchem Schritt
+    ----------------------------------------------------------------------
+    Layout                 GDSII               Physical Design, Tape-out
+                                                (finaler GDS-Merge)
+    Abstract/Physical      LEF                 Floorplanning & Place&Route
+                                                (Innovus) -- Pins, Blockage,
+                                                Groesse, aber kein Innenleben
+    Timing/Power           Liberty (.lib),     Synthese (Genus) und STA --
+                           meist mehrere        genau das, was in den
+                           Corner (tt/ss/ff,    "library"-Zeilen in
+                           versch. VDD/Temp)    01b_rv64_syn.tcl landet
+    Funktionsmodell        Verilog (manchmal   Das ist das "Simulations-
+                           VHDL)               Makro": RTL- und
+                                                Gate-Level-Simulation
+    Schaltplan/Netzliste   CDL/SPICE           LVS (Layout vs. Schematic)
+    Test/BIST-Info         meist separates     Grundlage fuer die spaetere
+                           Datenblatt +        SRAM-BIST-Insertion
+                           Testmodus-          (DFT-Tool, nicht der
+                           Beschreibung        Compiler selbst)
+    Datenblatt             PDF                 Pinbelegung, Timing-
+                                                Diagramme, Area-/Power-
+                                                Zahlen, Wahrheitstabelle
+
+  Zur Timing-Sim: viele Memory Compiler liefern KEIN SDF fuer die Zelle
+  selbst -- das Timing steckt in der .lib, das Funktionsmodell ist meist
+  rein funktional (kombiniert mit $setup/$hold-Checks ueber specify-
+  Bloecke, nicht mit voller Verzoegerung). Fuer Gate-Level-Sim reicht das
+  i. d. R.
+
+Die Form konkret
+
+  Es ist ein Hard-Macro -- kein synthetisierbares RTL, sondern eine
+  fertige, feste Zelle mit definiertem Footprint. Fuer Genus ist es exakt
+  das, was in Abschnitt 6 (Bemerkungen) steht: "SRAMs sind Black
+  Boxes/Makros" -- die Synthese sieht nur Pins + Timing (.lib), nicht das
+  Innenleben.
+
+Wie das ins RTL kommt
+
+  Das Funktionsmodell hat einen konkreten Modulnamen und Pinout (z. B.
+  sowas wie XH035_SRAM_1024X32 -- Name haengt vom generierten Makro ab).
+  Konkret heisst das:
+
+  1. as_dmem_core.sv / as_imem.sv (aktuell reines Verhaltens-RTL mit
+     Register-Array) werden umgebaut: statt "logic [..] mem [..]"
+     instanziiert man das SRAM-Makro direkt, mit passendem
+     Adress-/Daten-/CS-/WE-/Takt-Mapping.
+  2. Da X-FAB-SRAMs synchron lesen UND schreiben (Adresse Takt N -> Daten
+     Takt N+1), muss das an der Schnittstelle zur CPU abgefangen werden --
+     deckt sich mit dem, was schon im Read.me steht ("jeder Cache-Hit
+     kostet effektiv 1 Takt").
+  3. Fuer 01a_rv64_sim.tcl: das Verilog-Funktionsmodell kommt zusaetzlich
+     in die RTL_FILES-Liste (als Ersatz fuer die bisherige
+     Verhaltensbeschreibung).
+  4. Fuer 01b_rv64_syn.tcl: die .lib kommt in die library-Liste dazu, das
+     Makro wird beim Lesen als Black Box behandelt (Genus erkennt das
+     automatisch, wenn kein RTL fuer das Modul gelesen wird, sondern nur
+     die Liberty).
+  5. Fuer Physical Design (spaeter): das LEF muss zusaetzlich eingebunden
+     werden -- VOR dem Floorplanning, sonst kennt Innovus die Flaeche
+     nicht.
+
+Sonst noch wichtig
+
+  - Eine Konfiguration = ein Makro. Braucht man unterschiedliche Groessen
+    fuer I-Mem und D-Mem, generiert man zwei separate SRAM-Instanzen im
+    Portal, nicht eine parametrisierbare IP.
+  - SRAM-BIST ist NICHT Teil des Compiler-Outputs. Das Datenblatt/
+    Testmodus-Info ist die Grundlage, aber die eigentliche
+    BIST-Collar-Logik wird spaeter vom DFT-Tool eingefuegt (eigener
+    Flow-Schritt, siehe Abschnitt 5, Punkt 6).
+  - Da Front-End-Compiler nur ueber das Portal laufen (nicht downloadbar,
+    siehe 4.3), kommt das Paket vermutlich per Download-Link nach dem
+    "Play"-Klick -- am besten gleich mit Versionsnummer/Konfigurations-
+    namen ablegen, da jede Groessenaenderung ein neues Makro mit neuem
+    Namen erzeugt.
+
+
 ================================================================================
  Kontakt
 ================================================================================

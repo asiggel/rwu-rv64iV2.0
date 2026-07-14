@@ -26,8 +26,8 @@
 \label{subsec:chipVariants}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The \aschip project comprises two distinct chip variants that share the same
-CPU core but differ in their memory subsystem:
+The \aschip project comprises two distinct chip variants that implement the
+same RV64I ISA but differ in both CPU core and memory subsystem:
 
 \begin{table}[H]
 \caption{Chip Variant Comparison}
@@ -35,10 +35,14 @@ CPU core but differ in their memory subsystem:
 \centering
 \begin{tabularx}{\textwidth}{|l |X |X|}
   \hline
-   & \textbf{Variant~A -- No-Cache} & \textbf{Variant~B -- Cache} \\
+   & \textbf{Variant~A -- No-Cache} & \textbf{Variant~B -- Pipeline-Cache} \\
   \hline
   \hline
-  RTL top & \texttt{RV\_NoPipeline} & \texttt{RV\_NoPipelineCache} \\
+  RTL top & \texttt{RV\_NoPipeline} & \texttt{RV\_PipelineCacheFwd} \\
+  \hline
+  CPU core
+    & \texttt{as\_cpux}: single-cycle, no pipeline
+    & \texttt{cc\_cpupipefwd}: 5-stage pipeline (IF/ID/EX/MEM/WB) with EX/MEM$\to$EX and MEM/WB$\to$EX forwarding \\
   \hline
   Instruction memory
     & On-chip I-Mem (32\,KB), loaded via JTAG scan chain; no external Flash
@@ -57,19 +61,19 @@ CPU core but differ in their memory subsystem:
     & I-Cache + D-Cache + Memory Arbiter + Scratchpad \\
   \hline
   Peripheral bus
-    & Wishbone (I-Mem, D-Mem, GPIO, CGU)
-    & Wishbone (GPIO, CGU, QSPI ctrl); cache uses AXI4 \\
+    & Wishbone (I-Mem, D-Mem, GPIO, CGU, UART0)
+    & Wishbone (GPIO, CGU, UART0, QSPI ctrl); cache uses AXI4 \\
   \hline
   Design goal
     & Minimal area; standalone execution from on-chip memory
-    & Higher performance via cache; runs from off-chip Flash, writable Scratchpad \\
+    & Higher performance via pipelining and cache; runs from off-chip Flash, writable Scratchpad \\
   \hline
 \end{tabularx}
 \end{table}
 
 \noindent
 The remainder of this section (Sections~\ref{subsec:memCacheOverview}
-through the end) describes Variant~B.
+through the end) describes Variant~B (RTL: \texttt{RV\_PipelineCacheFwd}).
 Variant~A does not use any cache and is described in
 Section~\ref{subsec:noCacheVariant}.
 
@@ -110,11 +114,13 @@ The trade-off is that all code and data must fit in the two 32\,KB + 8\,KB
 on-chip memories.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Variant B -- Cache Memory Subsystem: Overview}
+\subsection{Variant B -- Pipeline-Cache Memory Subsystem: Overview}
 \label{subsec:memCacheOverview}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The RWU-RV64I chip uses a Harvard-style split-cache architecture.
+Variant~B (RTL top \texttt{RV\_PipelineCacheFwd}) pairs the 5-stage
+pipelined CPU core (\texttt{cc\_cpupipefwd}, see
+Section~\ref{sec:archcpu}) with a Harvard-style split-cache architecture.
 A dedicated \textbf{Instruction Cache (I-Cache)} serves the CPU fetch path,
 and a dedicated \textbf{Data Cache (D-Cache)} serves the load/store path.
 Both caches are 4-way set-associative with a fixed cache-line size of
@@ -182,7 +188,7 @@ memory subsystem.
   % CPU box
   \filldraw[fill=blue!10, draw=black] (3.5,10.5) rectangle (8.5,12);
   \node[align=center] at (6,11.25) {\textbf{CPU Core}};
-  \node[align=center,font=\small] at (6,10.85) {non-pipelined / 5-stage pipeline};
+  \node[align=center,font=\small] at (6,10.85) {\texttt{cc\_cpupipefwd}: 5-stage pipeline, fwd.};
 
   % Instruction Bus label
   \node[font=\small] at (4.0,10.1) {I-Bus};
@@ -508,7 +514,7 @@ It is reset to all-zero on power-on reset.
 \subsection{SRAM Macro Organisation}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The memory subsystem uses five X-Fab XO035 SPRAM macros in total
+The memory subsystem uses five X-Fab XH035 SPRAM macros in total
 (see Section~\ref{subsec:sramSelection} for the selected instances).
 All macros operate as single-port synchronous SRAMs at 3.3\,V.
 
@@ -551,13 +557,13 @@ Its address is derived directly from \texttt{dc\_addr\_i[12:3]} (for the
 default 8\,KB instance).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{SRAM Macro Selection -- XO035 SPRAM}
+\subsection{SRAM Macro Selection -- XH035 SPRAM}
 \label{subsec:sramSelection}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \subsubsection{Library and Process}
 
-All SRAM macros are generated with the X-Fab \textbf{XO035}
+All SRAM macros are generated with the X-Fab \textbf{XH035}
 (350\,nm Modular Sensor Technology Platform)
 \textbf{SPRAM} (Single-Port RAM) compiler at the nominal supply of
 3.3\,V (2.2\,V low-voltage option not used).
@@ -579,12 +585,12 @@ Key library properties relevant to this design:
 \subsubsection{Selected Instances}
 
 Table~\ref{tab:asSramInstances} lists the five SPRAM instances to be
-generated from the XO035 compiler.
+generated from the XH035 compiler.
 Macro names follow the compiler naming convention and are to be confirmed
 against the current catalogue release.
 
 \begin{table}[H]
-\caption{XO035 SPRAM Instances}
+\caption{XH035 SPRAM Instances}
 \label{tab:asSramInstances}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |l |l |X|}
@@ -608,7 +614,7 @@ against the current catalogue release.
 \textbf{Notes on macro names:}
 The names \texttt{SPRAM\_\{W\}x\{D\}} are placeholders using the pattern
 $\langle$width$\rangle$x$\langle$depth$\rangle$.
-The actual names generated by the XO035 SPRAM compiler must be verified
+The actual names generated by the XH035 SPRAM compiler must be verified
 against the compiler catalogue and substituted in the netlist and
 floorplan before tapeout.
 I-Tag and D-Tag use the \emph{same} compiled macro; two instances are
@@ -618,10 +624,10 @@ I-Data and D-Data likewise share one compiled macro with two instances.
 \subsubsection{SRAM Port Mapping}
 
 Table~\ref{tab:asSramPorts} maps the logical cache-controller signals
-to the standard XO035 SPRAM port names.
+to the standard XH035 SPRAM port names.
 
 \begin{table}[H]
-\caption{XO035 SPRAM Port Mapping}
+\caption{XH035 SPRAM Port Mapping}
 \label{tab:asSramPorts}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |X|}
@@ -652,12 +658,12 @@ to the standard XO035 SPRAM port names.
 \subsubsection{Timing Parameters}
 
 Table~\ref{tab:asSramTiming} lists the timing parameters to be extracted
-from the XO035 SPRAM compiler output for the worst-case process corner
+from the XH035 SPRAM compiler output for the worst-case process corner
 (SS -- slow NMOS, slow PMOS), maximum temperature (125\,\textdegree C),
 and minimum supply voltage (3.0\,V for 3.3\,V nominal).
 
 \begin{table}[H]
-\caption{XO035 SPRAM Timing Parameters (worst-case SS/125\,\textdegree C/3.0\,V)}
+\caption{XH035 SPRAM Timing Parameters (worst-case SS/125\,\textdegree C/3.0\,V)}
 \label{tab:asSramTiming}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |X|}
@@ -689,7 +695,7 @@ within a single clock cycle at the selected frequency.
 Static Timing Analysis (STA) with the compiler-supplied Liberty
 (\texttt{.lib}) file is required before tapeout.
 
-\textbf{Action (MEM-02):} Run the XO035 SPRAM compiler for all five
+\textbf{Action (MEM-02):} Run the XH035 SPRAM compiler for all five
 instances listed in Table~\ref{tab:asSramInstances} and fill in the
 timing values in Table~\ref{tab:asSramTiming}.
 Verify that the maximum target frequency is achievable at the SS/125\,\textdegree C/3.0\,V corner.
@@ -1537,8 +1543,12 @@ When the instruction decoder recognises FENCE.I it:
 Both caches execute their \texttt{FLUSH} state machines in parallel;
 the total stall duration is therefore \textbf{32 clock cycles}
 (one write per set, 32 sets).
-In a non-pipelined CPU both caches are idle when FENCE.I is decoded,
-so no in-flight transaction needs to be drained.
+Step~1 above (pipeline stall) is what makes this safe on the pipelined
+\texttt{cc\_cpupipefwd} core: FENCE.I stalls IF/ID/EX/MEM before the flush
+pulse is issued, so any older fetch or load already in flight has drained
+through the pipeline (or is held stalled) by the time \texttt{ic\_flush\_i}
+/ \texttt{dc\_flush\_i} are asserted; no in-flight cache transaction races
+the flush.
 
 \textbf{No CSR is provided} for cache control; FENCE.I is the sole
 software-visible mechanism.
@@ -1700,8 +1710,10 @@ sufficient because:
   \item The DMA engine writes directly to memory (not through any cache).
   \item FENCE.I invalidates the cache \emph{after} the DMA write is
     visible in memory.
-  \item The non-pipelined CPU executes FENCE.I atomically with respect
-    to subsequent loads.
+  \item FENCE.I stalls the \texttt{cc\_cpupipefwd} pipeline before
+    triggering the flush (Section~\ref{subsec:cacheFlush}), so it is
+    atomic with respect to subsequent loads even though the CPU is
+    pipelined.
 \end{itemize}
 
 \subsubsection{Future DMA Engine Interface Requirements}
@@ -2082,7 +2094,7 @@ The selected NOR Flash must support:
   \item \textbf{AXI4 burst compatibility:} the device must sustain
     continuous 4-bit output for 64 QSPI clocks without inserting wait
     states.
-  \item \textbf{3.3\,V supply} (matching XO035 I/O voltage).
+  \item \textbf{3.3\,V supply} (matching XH035 I/O voltage).
 \end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2201,7 +2213,7 @@ beneficial as the system clock is raised.
 The current architecture intentionally omits an L2 cache layer:
 
 \begin{itemize}
-  \item \textbf{Chip area:} At X-Fab XO035 (350\,nm) a true L2 cache
+  \item \textbf{Chip area:} At X-Fab XH035 (350\,nm) a true L2 cache
     (tag array, replacement logic, coherency protocol) consumes
     significant die area.
   \item \textbf{Complexity:} An L2 controller adds coherency and
@@ -2250,7 +2262,7 @@ see CPU chapter
            scratchpad is uncacheable (bypass path in D-Cache controller).
            Dirty bit and \texttt{WRITEBACK} state eliminated. & -- \\
   \hline
-  MEM-02 & \textbf{[IN PROGRESS]} XO035 SPRAM library selected; five instances
+  MEM-02 & \textbf{[IN PROGRESS]} XH035 SPRAM library selected; five instances
            defined (I-Tag 96$\times$32, D-Tag 96$\times$32, I-Data 256$\times$128,
            D-Data 256$\times$128, Scratchpad 64$\times$1024).
            Macro names and timing parameters (Table~\ref{tab:asSramTiming})

@@ -111,11 +111,12 @@ three-digit sequence number.
     $f_{clk}$ using a 16-bit integer divisor stored in
     \textbf{UART0\_CLKDIV}[15:0]:
     \[ f_{baud} = \frac{f_{clk}}{16 \times \text{CLKDIV}} \]
-    CLKDIV\,=\,0 is illegal; the reset value \textit{shall} correspond to
-    115\,200\;Baud at 125\;MHz (CLKDIV\,=\,68). &
+    CLKDIV\,=\,0 is illegal; the hardware reset value is
+    \texttt{CLKDIV}\,=\,8 (\texttt{RST\_CLKDIV} in \texttt{as\_uart\_top.sv}). &
     16$\times$ oversampling is the industry standard (16550 compatible).
-    At 125\;MHz and CLKDIV\,=\,68 the actual baud rate is
-    $\approx$115\,042\;Baud ($-0.14\,\%$ error). \\
+    CLKDIV\,=\,8 targets 9600\;Baud at the actual $f_{clk}=1.25$\;MHz
+    \texttt{clk\_core\_s} (Section~\ref{subsec:clockReqNoPipeline}); actual
+    rate $\approx$9765.6\;Baud ($+1.72\,\%$ error) -- see the note below. \\
   \hline
   UART-BR-002 &
     The valid range of CLKDIV \textit{shall} be 1\ldots65535.
@@ -131,6 +132,27 @@ three-digit sequence number.
   \hline
 \end{tabularx}
 \end{table}
+
+\textbf{Note on the actual $f_{clk}$ in \texttt{RV\_NoPipeline}
+(fixed 2026-07-12):} earlier revisions of this document assumed a
+125\;MHz kernel clock (a legacy Zybo-FPGA-prototype figure predating the
+CGU-based clock architecture, Section~\ref{subsec:cguOverview}) and set
+\texttt{RST\_CLKDIV}\,=\,68 accordingly (115\,200\;Baud \emph{at 125\;MHz}).
+UART0's \texttt{clk\_i} is actually \texttt{clk\_core\_s}, recommended at
+1.25\;MHz for \texttt{RV\_NoPipeline}
+(Section~\ref{subsec:clockReqNoPipeline}) -- 100$\times$ slower than
+125\;MHz, and too slow to reach 115\,200\;Baud at all
+($f_{clk}/16 = 78.125$\;kBaud is the fastest this clock can drive, even at
+\texttt{CLKDIV}\,=\,1).
+\texttt{RST\_CLKDIV} has therefore been changed to \textbf{8}, targeting
+the traditional safe-default 9600\;Baud (actual rate $\approx$9765.6\;Baud,
+$+1.72\,\%$ error, well within standard UART tolerance) at the real
+1.25\;MHz \texttt{clk\_core\_s}.
+This does not affect any existing firmware or testbench: every UART0 user
+in this repo reprograms \textbf{UART0\_CLKDIV} explicitly before use (the
+verified UART0 simulation tests in Section~\ref{subsec:uartsimtest} use
+\texttt{CLKDIV}\,=\,4, chosen for simulation speed, not for a standard baud
+rate) and never relies on the reset default.
 
 %--------------------------------------------------------------
 \subsubsection{Transmitter Requirements (TX)}
@@ -467,9 +489,17 @@ three-digit sequence number.
     of the input register chain and to suppress metastability. \\
   \hline
   UART-HW-003 &
-    The peripheral clock (\texttt{clk\_i}) \textit{shall} be 125\;MHz
-    (Zybo board system clock). &
-    Determines the achievable baud rate resolution (UART-BR-001). \\
+    The peripheral clock (\texttt{clk\_i}) is \texttt{clk\_core\_s}, the
+    CGU-derived core clock (fixed \texttt{clk\_i\_ext}/80 divider; see the
+    Clock Concept, Section~\ref{subsec:cguOverview}) -- \textbf{not} a
+    direct 125\;MHz board clock as in earlier (Zybo FPGA prototype)
+    revisions of this document.
+    For \texttt{RV\_NoPipeline}, the recommended operating point is
+    100\;MHz external / 1.25\;MHz core (Section~\ref{subsec:clockReqNoPipeline}). &
+    Determines the achievable baud rate resolution (UART-BR-001).
+    The 125\;MHz assumption previously in this requirement was stale and
+    has been corrected; \texttt{RST\_CLKDIV} was updated to match -- see
+    the note after Table~\ref{tab:asUartReqBR}. \\
   \hline
 \end{tabularx}
 \end{table}
@@ -535,7 +565,8 @@ Table~\ref{tab:asUartPer01a}.
    & Generic UART Feature Set & Details \\
   \hline
   \hline
-  yes & Separate Kernel Clock         & 125\;MHz \\
+  yes & Separate Kernel Clock         & \texttt{clk\_core\_s} (CGU $\div$ 80); 1.25\;MHz recommended for
+    \texttt{RV\_NoPipeline} (Section~\ref{subsec:clockReqNoPipeline}) \\
   \hline
   yes & Configurable Data Bits        & 5, 6, 7, 8 bits via LCR \\
   \hline
@@ -543,7 +574,8 @@ Table~\ref{tab:asUartPer01a}.
   \hline
   yes & Configurable Stop Bits        & 1 (reset) or 2 via LCR \\
   \hline
-  yes & Programmable Baud Rate        & $f_{baud} = 125\,\text{MHz} / (16 \times \text{CLKDIV})$; reset: 115\,200\;Baud \\
+  yes & Programmable Baud Rate        & $f_{baud} = f_{clk} / (16 \times \text{CLKDIV})$; see the note after
+    Table~\ref{tab:asUartReqBR} regarding the reset value \\
   \hline
   yes & TX FIFO                       & 16 entries $\times$ 8\;bit \\
   \hline

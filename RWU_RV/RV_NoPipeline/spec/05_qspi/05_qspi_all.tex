@@ -75,7 +75,10 @@ The standard features of a QSPI peripheral are described in its functional descr
    & Generic QSPI Feature Set & Details \\
   \hline
   \hline
-  yes & Separate Kernel Clock      & 125\;MHz (TBD) \\
+  yes & Separate Kernel Clock      & \texttt{clk\_core\_s} (CGU $\div$ 80 from external \texttt{clk\_i});
+    target frequency TBD for \texttt{RV\_PipelineCacheFwd} (QSPI0 exists in
+    this variant only) -- see the analogous \texttt{RV\_NoPipeline} target
+    in Clock Concept Section~\ref{subsec:clockReqNoPipeline} \\
   \hline
   yes & FIFO Data Buffering        & RX and TX, each 16 entries $\times$ 64\;bit = 128\;bytes \\
   \hline
@@ -837,7 +840,7 @@ Table \ref{tab:asQspiPer04a}, \ref{tab:asQspiPer04ab}  shows the input and outpu
   \hline\hline
   \texttt{clk\_i}           & in  & 1  & Kernel clock, active rising edge \\
   \hline
-  \texttt{rst\_i}           & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}           & in  & 1  & Asynchronous reset, active high \\
   \hline
   \texttt{start\_i}         & in  & 1  & Start pulse (one cycle wide). Initiates FSM if not busy. \\
   \hline
@@ -1072,7 +1075,7 @@ Table \ref{tab:asQspiPer06} shows the input and outputs of the QSPI Top.
   \hline
   Port & Dir. & Width & Description \\
   \hline\hline
-  \texttt{rst\_i}       & in  & 1  & Synchronous reset, active high \\
+  \texttt{rst\_i}       & in  & 1  & Asynchronous reset, active high \\
   \hline
   \texttt{clk\_i}       & in  & 1  & System and kernel clock \\
   \hline
