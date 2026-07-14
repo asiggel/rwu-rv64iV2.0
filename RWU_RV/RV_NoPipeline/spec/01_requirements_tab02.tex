@@ -1,0 +1,185 @@
+Table~\ref{tab:req02icu} lists the functional requirements for the
+\textbf{ICU0} peripheral (Section~\ref{sec:icufunc01}), derived from
+\texttt{ip\_icu/README\_REQ.txt}. Each requirement is atomic (one single,
+independently verifiable statement) and carries its own ID, Importance,
+and Verification Method, per IEEE\;29148. The full traceability record
+(original requester wording, clarifying-question decisions, and every
+gap identified during implementation) is kept in
+\texttt{ip\_icu/README\_REQ.txt} and \texttt{ip\_icu/README\_IMPL.txt};
+this table is the IEEE-formatted summary of the same content, and the ID
+column cross-references the identically-numbered requirement in
+Section~\ref{subsec:icureq01}.
+
+\begin{longtable}{| p{0.11\textwidth} | p{0.075\textwidth} | p{0.08\textwidth} | p{0.12\textwidth} | p{0.33\textwidth} | p{0.185\textwidth} |}
+\caption{ICU0 Functional Requirements}\\
+\hline
+Requirement & ID & Importance & Verifiable & Description & Remarks \\
+\hline
+\hline
+\endfirsthead
+\multicolumn{6}{l}{\small\itshape continued from previous page}\\
+\hline
+Requirement & ID & Importance & Verifiable & Description & Remarks \\
+\hline
+\hline
+\endhead
+\hline
+\multicolumn{6}{r}{\small\itshape continued on next page}\\
+\endfoot
+\hline
+\endlastfoot
+
+\multicolumn{6}{|l|}{Source Management}\\
+\hline
+ICU-SR: spare sources & SR-001 & High & Testbench &
+  The ICU shall reserve input slots for peripherals that do not exist
+  yet: at least 2 spare sources. &
+  Explicitly requested by A. Siggelkow. \\
+\hline
+ICU-SR: existing peripherals & SR-002 & High & Testbench &
+  The ICU shall accept one interrupt input per existing
+  interrupt-capable peripheral (GPIO0, UART0, and -- on
+  \textit{RV\_PipelineCacheFwd} -- QSPI0), plus the spares from SR-001. &
+  Explicitly requested. \\
+\hline
+ICU-SR: slot count & SR-003 & High & RTL Review &
+  The register file shall provision exactly 8 source slots (1 byte per
+  bitmap register): 3 wired to real peripherals, 2 requested spares, 3
+  reserved. &
+  Decided via clarifying question (option: exactly 5 slots, minimal, was
+  rejected in favour of headroom + a chip-independent register map). \\
+\hline
+
+\multicolumn{6}{|l|}{Priority Resolution}\\
+\hline
+ICU-PR: configurable priority & PR-001 & High & Testbench &
+  The ICU shall resolve priority in hardware across all simultaneously
+  pending, unmasked sources, via a software-writable 4-bit priority value
+  per source (ICU0\_PRIO). &
+  Explicitly requested (``Priorit\"at ist wichtig''). \\
+\hline
+ICU-PR: tie-break & PR-002 & Medium & Testbench &
+  On equal priority between two or more pending, unmasked sources, the
+  lowest source index shall win. &
+  Gap identified during implementation; left undefined this would be
+  simulator/synthesis-dependent. \\
+\hline
+
+\multicolumn{6}{|l|}{Masking}\\
+\hline
+ICU-MA: per-source mask & MA-001 & High & Testbench &
+  The ICU shall provide an individually maskable enable bit per source
+  (ICU0\_IMSC). &
+  Explicitly requested (``Masking ist wichtig''). \\
+\hline
+ICU-MA: global enable & MA-002 & Medium & Testbench &
+  The ICU shall additionally provide one global interrupt enable bit
+  (ICU0\_CTRL.GIE) gating the aggregated output line independent of
+  per-source masking. &
+  Gap identified during implementation: atomic ``disable everything''
+  primitive not achievable with IMSC alone. \\
+\hline
+
+\multicolumn{6}{|l|}{Pending/Clear Semantics}\\
+\hline
+ICU-PE: sticky pending & PE-001 & High & Testbench &
+  A source's pending bit (ICU0\_RIS) shall be edge-triggered and sticky:
+  it latches the source line's 0$\to$1 transition and remains set until
+  explicitly cleared by software. &
+  Decided via clarifying question (option: level pass-through, closer to
+  the graded reference submission's design, was rejected). \\
+\hline
+ICU-PE: race-free clear & PE-002 & High & Testbench &
+  A pending bit shall not be silently cleared by a software CLEAR that
+  coincides, in the same clock cycle, with a new hardware edge (or
+  software-forced SET) on the same bit: SET shall take priority over
+  CLEAR. &
+  Root-caused against a documented defect in
+  \texttt{ip\_icu/DUMMY\_ICU/asInterruptController.sv} (the graded
+  reference submission this peripheral replaces): a same-cycle set+clear
+  silently favoured the clear. \\
+\hline
+
+\multicolumn{6}{|l|}{Cause Identification}\\
+\hline
+ICU-ID: cause register & ID-001 & High & Testbench &
+  The ICU shall expose a register (ICU0\_IRQID) identifying the current
+  highest-priority pending, unmasked source. &
+  Not named explicitly by the requester; the single biggest practical
+  benefit of a real ICU over the OR-combine placeholder it replaces. \\
+\hline
+ICU-ID: valid bit & ID-002 & Medium & Testbench &
+  ICU0\_IRQID shall carry an explicit VALID bit, separate from the
+  source-id field. &
+  Source index 0 (GPIO0) is a real, valid id; collapsing ``no interrupt''
+  onto id\,=\,0 would make the register ambiguous. \\
+\hline
+ICU-ID: GIE-independence & ID-003 & Medium & Testbench &
+  ICU0\_IRQID shall reflect pending/priority state independent of
+  ICU0\_CTRL.GIE. &
+  Keeps IRQID useful for diagnostics even while interrupts are globally
+  disabled. \\
+\hline
+
+\multicolumn{6}{|l|}{Software Interface}\\
+\hline
+ICU-SW: register control & SW-001 & High & Testbench &
+  The ICU shall be controllable exclusively through memory-mapped,
+  64-bit registers on a Wishbone B4 Classic slave interface
+  (as\_slave\_bpi). &
+  Explicitly requested (``Controlle \"uber memory mapped Register''). \\
+\hline
+ICU-SW: alignment & SW-002 & Medium & RTL Review &
+  Registers shall be 8-byte aligned. &
+  Project-wide convention. \\
+\hline
+ICU-SW: address range & SW-003 & High & RTL Review &
+  The base address of ICU0 shall be 0x0000\_0001\_0000\_0800 (cs[5]). &
+  Explicitly requested (``Adressbereich festlegen''); placed at the first
+  free 512\,B slot after UART0. \\
+\hline
+ICU-SW: ID register & SW-004 & Low & Testbench &
+  The ICU shall expose a read-only peripheral ID register at offset
+  0x00. &
+  Consistency with every other peripheral in this SoC. \\
+\hline
+ICU-SW: functional reset & SW-005 & Medium & Testbench &
+  Reset values shall keep the system interrupt-functional without any
+  firmware setup: ICU0\_IMSC resets to all-enabled, ICU0\_CTRL.GIE resets
+  to 1. &
+  Matches pre-ICU behaviour, where interrupts already worked without
+  firmware configuration. \\
+\hline
+ICU-SW: bus timing & SW-006 & Low & Testbench &
+  The Wishbone interface shall respond with zero wait states
+  (combinational ACK). &
+  Consistent with all other Wishbone slaves in the system. \\
+\hline
+
+\multicolumn{6}{|l|}{Hardware Interface}\\
+\hline
+ICU-HW: aggregated output & HW-001 & High & Testbench &
+  The ICU shall expose exactly one aggregated interrupt output line
+  (icu\_irq\_o) to the CPU boundary. &
+  Explicitly requested. \\
+\hline
+ICU-HW: level semantics & HW-002 & Medium & RTL Review &
+  icu\_irq\_o shall be a level output, asserted while at least one
+  unmasked, pending, globally-enabled source exists. &
+  Matches mip[11]'s existing read-only, level-mirroring semantics; no CPU
+  changes required. \\
+\hline
+ICU-HW: shared design & HW-003 & High & Regression &
+  ICU0 shall be a single, shared design instantiated identically on both
+  chip variants, with a fixed, chip-independent source-index assignment. &
+  Explicitly requested (``f\"ur beide Chips''); verified by re-running
+  both chips' full existing regression suites after integration
+  (64/64+59/59 and 70/70+59/59, zero regressions). \\
+\hline
+ICU-HW: no internal CDC & HW-004 & Medium & RTL Review &
+  The ICU shall perform no cross-clock-domain synchronization; all
+  connected sources shall already be synchronous to clk\_i. &
+  True for GPIO0/QSPI0/UART0/CPU today (all on clk\_div\_s on both
+  chips); documented as an explicit assumption for future sources. \\
+\hline
+\end{longtable}
