@@ -17,7 +17,7 @@ TOPLEVEL             := as_top_mem
 #   make COCOTB_TEST_MODULES=test_poc
 COCOTB_TEST_MODULES  ?= test_regression
 
-VENV          := $(abspath venv)
+VENV          := $(HOME)/venvs/cocotb
 PYTHON        := $(VENV)/bin/python3
 
 COCOTB_HDL_TIMEUNIT      := 1ns

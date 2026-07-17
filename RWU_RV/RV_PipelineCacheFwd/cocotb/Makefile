@@ -18,7 +18,7 @@ SIM                  := verilator
 TOPLEVEL             := tb_flash_wrap
 COCOTB_TEST_MODULES  ?= test_regression
 
-VENV          := $(abspath venv)
+VENV          := $(HOME)/venvs/cocotb
 PYTHON        := $(VENV)/bin/python3
 
 COCOTB_HDL_TIMEUNIT      := 1ns
