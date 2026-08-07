@@ -72,6 +72,8 @@ set(ASM_TESTS
     instr27or
     instr28and
     instr29lui
+    test_csrs
+    test_trap
     instr30beq
     instr31bne
     instr32blt

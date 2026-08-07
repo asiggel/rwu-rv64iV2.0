@@ -51,6 +51,12 @@ rm -rf build
 cmake -S . -B build -DSIMULATOR=verilator
 cmake --build build --target collect_errors
 
+- Regression Verilator simulation with wave
+---------------------------------------------
+rm -rf build_verilator
+cmake -S . -B build_verilator -DSIMULATOR=verilator -DWAVES=ON
+cmake --build build_verilator --target sim_test_trap
+
 - Separate Build-Verzeichnisse (kein rm -rf beim Simulator-Wechsel)
 --------------------------------------------------------------------
 cmake -S . -B build_xsim      -DSIMULATOR=xsim

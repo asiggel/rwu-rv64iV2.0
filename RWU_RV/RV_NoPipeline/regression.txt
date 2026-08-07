@@ -1,0 +1,37 @@
+=== RV64I REGRESSION REPORT ===
+
+--- instr99scantest ---
+06/07/26 - scan test: Test ok
+
+--- instr99loadimem ---
+06/07/26 - Load I-Mem: Test ok
+
+--- readgpioid ---
+06/07/26 - readgpioid: Test ok
+
+--- instr01loadbyte ---
+06/07/26 - load byte: Test ok
+
+--- instr02loadhalf ---
+06/07/26 - load half: Test ok
+
+--- instr03loadword ---
+06/07/26 - load word: Test ok
+
+--- instr04loadbyteu ---
+06/07/26 - load byteu: Test ok
+
+--- instr05loadhalfu ---
+06/07/26 - load halfu: Test ok
+
+--- instr06addi ---
+06/07/26 - addi: Test ok
+
+--- instr19add ---
+06/07/26 - add: Test ok
+
+--- instr07slli ---
+06/07/26 - slli: Test ok
+
+--- instr29lui ---
+06/07/26 - lui: Test ok
