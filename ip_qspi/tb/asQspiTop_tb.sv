@@ -70,8 +70,10 @@ module asQspiTop_tb;
   // ── SPI / Flash ────────────────────────────────────────────────────────────
   logic sck_o, cs_o, qspi_irq_o;
   wire  [3:0] data_io;
-  logic [3:0] flash_drive_s = 4'b0;
-  logic       flash_oe_s    = 1'b0;
+  logic [3:0] flash_drive_s;
+  logic       flash_oe_s;
+  // No declaration initializer: the flash model below assigns these procedurally (Verilator PROCASSINIT).
+  initial begin flash_drive_s = 4'b0; flash_oe_s = 1'b0; end
   assign data_io = flash_oe_s ? flash_drive_s : 4'bzzzz;
 
   // ── DUT ───────────────────────────────────────────────────────────────────
@@ -189,7 +191,7 @@ module asQspiTop_tb;
   // Reactive to cs_o posedge; counts sck_o posedges, then drives on negedges.
   logic [63:0] fm_payload='0; logic [7:0] fm_skip='0;
   logic fm_quad=0, fm_arm=0;
-  always @(negedge cs_o) begin flash_oe_s=0; flash_drive_s=4'b0; end
+  always begin @(negedge cs_o); flash_oe_s=0; flash_drive_s=4'b0; end
   always begin
     @(posedge cs_o);
     if (fm_arm) begin
@@ -251,10 +253,10 @@ module asQspiTop_tb;
     // =========================================================================
     $display("\n--- T3: TX FIFO level ---");
     do_reset();
-    wb_read(A_FIFOSTAT,rdata); chk64("T3 FIFOSTAT initial tx_level=0", rdata[4:0], 5'd0);
+    wb_read(A_FIFOSTAT,rdata); chk64("T3 FIFOSTAT initial tx_level=0", 64'(rdata[4:0]), 64'(5'd0));
     wb_write(A_TXDATA, 64'hAA); wb_write(A_TXDATA, 64'hBB); wb_write(A_TXDATA, 64'hCC);
     wb_read(A_FIFOSTAT,rdata);
-    chk64("T3 FIFOSTAT tx_level=3", rdata[4:0], 5'd3);
+    chk64("T3 FIFOSTAT tx_level=3", 64'(rdata[4:0]), 64'(5'd3));
 
     // =========================================================================
     // T4 – STATUS register at idle
@@ -262,7 +264,7 @@ module asQspiTop_tb;
     $display("\n--- T4: STATUS at idle ---");
     do_reset();
     wb_read(A_STATUS,rdata);
-    chk64("T4 STATUS idle=0", rdata[4:0], 5'b0);
+    chk64("T4 STATUS idle=0", 64'(rdata[4:0]), 64'(5'b0));
 
     // =========================================================================
     // T5 – RIS / MIS / IMSC / ICR / IRQ
@@ -274,13 +276,13 @@ module asQspiTop_tb;
     chk1("T5 IRQ low initially", qspi_irq_o, 1'b0);
     wb_write(A_ISR, 64'h01);
     @(posedge clk_i); #1;
-    wb_read(A_RIS,rdata); chk64("T5 RIS[0]=1 after ISR",  rdata[0:0], 1'b1);
-    wb_read(A_MIS,rdata); chk64("T5 MIS[0]=1 (unmasked)", rdata[0:0], 1'b1);
+    wb_read(A_RIS,rdata); chk64("T5 RIS[0]=1 after ISR",  64'(rdata[0:0]), 64'(1'b1));
+    wb_read(A_MIS,rdata); chk64("T5 MIS[0]=1 (unmasked)", 64'(rdata[0:0]), 64'(1'b1));
     @(posedge clk_i); #1;
     chk1("T5 IRQ high", qspi_irq_o, 1'b1);
     wb_write(A_ICR, 64'h01);
     @(posedge clk_i); #1;
-    wb_read(A_RIS,rdata); chk64("T5 RIS[0]=0 after ICR", rdata[0:0], 1'b0);
+    wb_read(A_RIS,rdata); chk64("T5 RIS[0]=0 after ICR", 64'(rdata[0:0]), 64'(1'b0));
     @(posedge clk_i); #1;
     chk1("T5 IRQ low after ICR", qspi_irq_o, 1'b0);
 
@@ -292,8 +294,8 @@ module asQspiTop_tb;
     wb_write(A_IMSC, 64'h00);
     wb_write(A_ISR,  64'h01);
     @(posedge clk_i); #1;
-    wb_read(A_RIS,rdata); chk64("T6 RIS[0]=1 (unmasked)", rdata[0:0], 1'b1);
-    wb_read(A_MIS,rdata); chk64("T6 MIS[0]=0 (masked)",   rdata[0:0], 1'b0);
+    wb_read(A_RIS,rdata); chk64("T6 RIS[0]=1 (unmasked)", 64'(rdata[0:0]), 64'(1'b1));
+    wb_read(A_MIS,rdata); chk64("T6 MIS[0]=0 (masked)",   64'(rdata[0:0]), 64'(1'b0));
     chk1("T6 IRQ=0 when masked", qspi_irq_o, 1'b0);
     wb_write(A_IMSC, 64'h01);
     @(posedge clk_i); #1;
@@ -307,14 +309,14 @@ module asQspiTop_tb;
     do_reset();
     for (int i = 0; i < FDEPTH; i++) wb_write(A_TXDATA, 64'(i));
     wb_read(A_FIFOSTAT,rdata);
-    chk64("T7 TX FIFO full (level=16)", rdata[4:0], 5'd16);
+    chk64("T7 TX FIFO full (level=16)", 64'(rdata[4:0]), 64'(5'd16));
     @(negedge clk_i);
     wbdAddr_i=A_TXDATA; wbdDat_i=64'hDEAD; wbdWe_i=1; wbdSel_i='1; wbdStb_i=1; wbdCyc_i=1;
     @(posedge clk_i); #1;
     chk1("T7 ACK on full-FIFO write", wbdAck_o, 1'b1);
     @(negedge clk_i); wbdStb_i=0; wbdCyc_i=0; wbdWe_i=0;
     wb_read(A_FIFOSTAT,rdata);
-    chk64("T7 level still 16", rdata[4:0], 5'd16);
+    chk64("T7 level still 16", 64'(rdata[4:0]), 64'(5'd16));
 
     // =========================================================================
     // T8 – Wishbone ACK zero-wait-state
@@ -352,16 +354,16 @@ module asQspiTop_tb;
       if (tout>=200000) $display("FAIL  T9: transfer timeout");
 
       wb_read(A_STATUS,rdata);
-      chk64("T9 STATUS busy=0",  rdata[0:0], 1'b0);
-      chk64("T9 STATUS error=0", rdata[3:3], 1'b0);
+      chk64("T9 STATUS busy=0",  64'(rdata[0:0]), 64'(1'b0));
+      chk64("T9 STATUS error=0", 64'(rdata[3:3]), 64'(1'b0));
       wb_read(A_RIS, rdata);
-      chk64("T9 RIS[0] done=1 (latched)", rdata[0:0], 1'b1);
+      chk64("T9 RIS[0] done=1 (latched)", 64'(rdata[0:0]), 64'(1'b1));
       chk1 ("T9 IRQ fired",      qspi_irq_o, 1'b1);
       wb_write(A_ICR, 64'h01);
       @(posedge clk_i); #1;
       chk1("T9 IRQ cleared", qspi_irq_o, 1'b0);
       wb_read(A_FIFOSTAT,rdata);
-      chk64("T9 RX level=1", rdata[20:16], 5'd1);
+      chk64("T9 RX level=1", 64'(rdata[20:16]), 64'(5'd1));
       @(posedge clk_i); #1;
       wb_read(A_RXDATA, rdata);
       chk64("T9 RX data", rdata, exp_rx);
@@ -388,8 +390,8 @@ module asQspiTop_tb;
     do_reset();
     wb_write(A_CTRL, 64'h10);   // quad bit in qspi_ctrl_t packed at bit4
     wb_read(A_CTRL, rdata);
-    chk64("T11 CTRL[4] quad preserved",   rdata[4:4], 1'b1);
-    chk64("T11 CTRL[3] start auto-clear", rdata[3:3], 1'b0);
+    chk64("T11 CTRL[4] quad preserved",   64'(rdata[4:4]), 64'(1'b1));
+    chk64("T11 CTRL[3] start auto-clear", 64'(rdata[3:3]), 64'(1'b0));
 
     // =========================================================================
     // T12 – TX flush via CTRL[1]
@@ -398,11 +400,11 @@ module asQspiTop_tb;
     do_reset();
     wb_write(A_TXDATA, 64'h01); wb_write(A_TXDATA, 64'h02);
     wb_read(A_FIFOSTAT,rdata);
-    chk64("T12 TX level=2 before flush", rdata[4:0], 5'd2);
+    chk64("T12 TX level=2 before flush", 64'(rdata[4:0]), 64'(5'd2));
     wb_write(A_CTRL, 64'h02);   // bit1=tx_flush
     @(posedge clk_i); #1;
     wb_read(A_FIFOSTAT,rdata);
-    chk64("T12 TX level=0 after flush", rdata[4:0], 5'd0);
+    chk64("T12 TX level=0 after flush", 64'(rdata[4:0]), 64'(5'd0));
 
     // =========================================================================
     // T13 – AXI4 burst read: 32-byte cache line (4 × 8-byte sub-transactions)
