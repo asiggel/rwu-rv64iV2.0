@@ -213,19 +213,14 @@ package as_pack;
   localparam logic [63:0]       gpio_data_reg_addr_offs_c      = 16;
   localparam logic [63:0]       gpio_data_reg_addr_rst_c       = '0;
   localparam logic [63:0]       gpio_irqss_reg_addr_offs_c     = 24;
-  localparam logic [63:0]       gpio_irqss_reg_rst_c           = '0;
   localparam logic [63:0]       gpio_irqsm_reg_addr_offs_c     = 32;
   localparam logic [63:0]       gpio_irqsm_reg_rst_c           =  '1;
   localparam logic [63:0]       gpio_irqsc_reg_addr_offs_c     = 40;
-  localparam logic [63:0]       gpio_irqsc_reg_rst_c           = '0;
   localparam logic [63:0]       gpio_isr_reg_addr_offs_c       = 48;
-  localparam logic [63:0]       gpio_isr_reg_rst_c             =  '0;
   localparam logic [63:0]       gpio_ris_reg_addr_offs_c       = 56;
-  localparam logic [63:0]       gpio_ris_reg_rst_c             =  '0;
   localparam logic [63:0]       gpio_imsc_reg_addr_offs_c      = 64;
   localparam logic [63:0]       gpio_imsc_reg_rst_c            =  '1; // change to 0 before tape-out
   localparam logic [63:0]       gpio_mis_reg_addr_offs_c       = 72;
-  localparam logic [63:0]       gpio_mis_reg_rst_c             =  '0;
   localparam logic [63:0]       gpio_icr_reg_addr_offs_c       = 80; // wo: write-1-to-clear (only ISR-forced RIS bits; GPIO sources clear via IRQSC)
   // QSPI  // unused (Verilator UNUSEDPARAM) — QSPI IP not yet instantiated in RV_NoPipeline
   //localparam logic [63:0]       qspi_id_reg_addr_offs_c        =  0;
