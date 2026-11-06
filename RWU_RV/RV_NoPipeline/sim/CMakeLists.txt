@@ -72,6 +72,7 @@ set(SOURCES_SV
     ${PROJECT_ROOT}/src/asSBpi.sv
 
     ${IP_ROOT}/ip_gpio/src/asGpio.sv
+    ${IP_ROOT}/ip_irqper/src/as_irq_peripheral.sv
     ${IP_ROOT}/ip_gpio/src/asGpioTop.sv
 
     #${PROJECT_ROOT}/src/asCPU.sv

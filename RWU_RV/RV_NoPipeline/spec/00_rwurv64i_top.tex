@@ -83,20 +83,22 @@
 \newcommand{\asgpioDirRegExt}{\textbf{GPIO0\_DIR}\,}
 \newcommand{\asgpioDatRegInt}{data\_reg\_s\,}
 \newcommand{\asgpioDatRegExt}{\textbf{GPIO0\_DATA}\,}
-\newcommand{\asgpioIRQSSRegInt}{irqss\_reg\_s\,}
+\newcommand{\asgpioIRQSSRegInt}{gpioIrq.irqss\_r\,}
 \newcommand{\asgpioIRQSSRegExt}{\textbf{GPIO0\_IRQSS}\,}
-\newcommand{\asgpioIRQSCRegInt}{irqsc\_reg\_s\,}
+\newcommand{\asgpioIRQSCRegInt}{gpioIrq.g\_same\_irqs.wr\_irqsc\_s\,}
 \newcommand{\asgpioIRQSCRegExt}{\textbf{GPIO0\_IRQSC}\,}
-\newcommand{\asgpioIRQSMRegInt}{irqsm\_reg\_s\,}
+\newcommand{\asgpioIRQSMRegInt}{gpioIrq.irqsm\_r\,}
 \newcommand{\asgpioIRQSMRegExt}{\textbf{GPIO0\_IRQSM}\,}
-\newcommand{\asgpioRISRegInt}{ris\_reg\_s\,}
+\newcommand{\asgpioRISRegInt}{gpioIrq.ris\_s\,}
 \newcommand{\asgpioRISRegExt}{\textbf{GPIO0\_RIS}\,}
-\newcommand{\asgpioISRRegInt}{isr\_reg\_s\,}
+\newcommand{\asgpioISRRegInt}{gpioIrq.wr\_isr\_s\,}
 \newcommand{\asgpioISRRegExt}{\textbf{GPIO0\_ISR}\,}
-\newcommand{\asgpioIMSCRegInt}{imsc\_reg\_s\,}
+\newcommand{\asgpioIMSCRegInt}{gpioIrq.imsc\_r\,}
 \newcommand{\asgpioIMSCRegExt}{\textbf{GPIO0\_IMSC}\,}
-\newcommand{\asgpioMISRegInt}{mis\_reg\_s\,}
+\newcommand{\asgpioMISRegInt}{gpioIrq.mis\_s\,}
 \newcommand{\asgpioMISRegExt}{\textbf{GPIO0\_MIS}\,}
+\newcommand{\asgpioICRRegInt}{gpioIrq.wr\_icr\_s\,}
+\newcommand{\asgpioICRRegExt}{\textbf{GPIO0\_ICR}\,}
 \newcommand{\asgpioIDRegInt}{id\_reg\_s\,}
 \newcommand{\asgpioIDRegExt}{\textbf{GPIO0\_ID}\,}
 
@@ -169,14 +171,16 @@
 \newcommand{\asuartFifostatRegExt}{\textbf{UART0\_FIFOSTAT}\,}
 \newcommand{\asuartRxthresRegInt}{rxthres\_reg\_s\,}
 \newcommand{\asuartRxthresRegExt}{\textbf{UART0\_RXTHRES}\,}
-\newcommand{\asuartRISRegInt}{ris\_reg\_s\,}
+\newcommand{\asuartRISRegInt}{u\_irq.ris\_s\,}
 \newcommand{\asuartRISRegExt}{\textbf{UART0\_RIS}\,}
-\newcommand{\asuartIMSCRegInt}{imsc\_reg\_s\,}
+\newcommand{\asuartIMSCRegInt}{u\_irq.imsc\_r\,}
 \newcommand{\asuartIMSCRegExt}{\textbf{UART0\_IMSC}\,}
-\newcommand{\asuartMISRegInt}{mis\_reg\_s\,}
+\newcommand{\asuartMISRegInt}{u\_irq.mis\_s\,}
 \newcommand{\asuartMISRegExt}{\textbf{UART0\_MIS}\,}
-\newcommand{\asuartICRRegInt}{icr\_reg\_s\,}
+\newcommand{\asuartICRRegInt}{u\_irq.wr\_icr\_s\,}
 \newcommand{\asuartICRRegExt}{\textbf{UART0\_ICR}\,}
+\newcommand{\asuartISRRegInt}{u\_irq.wr\_isr\_s\,}
+\newcommand{\asuartISRRegExt}{\textbf{UART0\_ISR}\,}
 
 
 

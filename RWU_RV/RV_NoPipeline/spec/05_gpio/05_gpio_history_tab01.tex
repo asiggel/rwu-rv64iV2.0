@@ -21,5 +21,7 @@ Regulations for history table:
    \hline
   2025-11-19 & Andreas Siggelkow & Changed the BPI; removed the registers from the kernel and added them to GPIOTop. Added an interrupt. Removed the address output. changed the GPIO output to inout. \\
   \hline
+  2026-11-06 & Andreas Siggelkow, Claude & Interrupt registers moved to the shared block as\_irq\_peripheral. IRQSC/ISR are write strobes (not stored). IRQSS collects pulses per bit. New register ICR (0x50). RIS[0] is the level |(IRQSS \& IRQSM). \\
+  \hline
 \end{tabularx}
 \end{table}

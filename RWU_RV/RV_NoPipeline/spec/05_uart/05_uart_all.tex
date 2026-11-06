@@ -407,6 +407,27 @@ rate) and never relies on the reset default.
     corresponding bit of \textbf{UART0\_ICR} (write-1-to-clear). &
     Consistent with QSPI0 interrupt model. \\
   \hline
+  UART-IR-007 &
+    Any bit in RIS \textit{shall} be settable by writing\;1 to the
+    corresponding bit of \textbf{UART0\_ISR} (write-1-to-set). &
+    Allows SW to test the interrupt path without a real UART event.
+    Consistent with GPIO0 and QSPI0. \\
+  \hline
+  UART-IR-008 &
+    If a hardware event (or an ISR write) and an ICR write address the
+    same RIS bit in the same clock cycle, the bit \textit{shall} be set. &
+    Prevents loss of an event that coincides with the clear of the
+    previous one. \\
+  \hline
+  UART-IR-009 &
+    RIS, IMSC, MIS, ICR and ISR \textit{shall} be implemented by the shared
+    interrupt register block \texttt{as\_irq\_peripheral}
+    (\texttt{ip\_irqper}) with \texttt{irqs\_yes\_no}\,=\,0. ICR and ISR
+    \textit{shall} act only in the bus write cycle and \textit{shall} not be
+    stored. &
+    One interrupt register implementation for all peripherals (GPIO0 uses
+    the same block with \texttt{irqs\_yes\_no}\,=\,1). \\
+  \hline
 \end{tabularx}
 \end{table}
 
@@ -425,20 +446,20 @@ rate) and never relies on the reset default.
   \hline
   UART-SW-001 &
     All configuration, status, FIFO access, and interrupt control
-    \textit{shall} be accessible through exactly 12 memory-mapped,
+    \textit{shall} be accessible through exactly 13 memory-mapped,
     64-bit registers on a Wishbone B4 Classic slave interface
     implemented by \texttt{as\_slave\_bpi}. &
     Consistent with GPIO0 and QSPI0. \\
   \hline
   UART-SW-002 &
     Registers \textit{shall} be 8-byte aligned and occupy the address
-    range UART0\_BASE\,+\,0x00 to UART0\_BASE\,+\,0x5F (12\,$\times$\,8\;bytes). &
+    range UART0\_BASE\,+\,0x00 to UART0\_BASE\,+\,0x67 (13\,$\times$\,8\;bytes). &
     Fits within the reserved address range
-    0x0000\-0001\-0000\-0120 -- 0x0000\-0001\-0000\-017F. \\
+    0x0000\-0001\-0000\-0600 -- 0x0000\-0001\-0000\-07FF (512\;B, Table~\ref{tab:sysmap}). \\
   \hline
   UART-SW-003 &
     The base address of UART0 \textit{shall} be
-    \texttt{0x0000\_0001\_0000\_0120}. &
+    \texttt{0x0000\_0001\_0000\_0600}. &
     As defined in the system memory map (\texttt{as\_pack.sv}:
     \texttt{uart0\_start\_address\_c}). \\
   \hline
@@ -448,9 +469,9 @@ rate) and never relies on the reset default.
     Standard HW register protection. \\
   \hline
   UART-SW-005 &
-    Read accesses to write-only registers (ICR, and DATA when read
+    Read accesses to write-only registers (ICR, ISR, and DATA when read
     returns RX FIFO data) \textit{shall} return the correct value:
-    ICR reads as 0x0; DATA read pops the RX FIFO. &
+    ICR and ISR read as 0x0; DATA read pops the RX FIFO. &
     DATA register is bi-directional: write pushes TX FIFO, read pops
     RX FIFO (standard UART DATA register model). \\
   \hline
@@ -543,6 +564,10 @@ rate) and never relies on the reset default.
   \multicolumn{3}{|l|}{Version of this document: V0.2} \\
   \hline
   2026-06-05 & A. Siggelkow, Claude & Simulation testbenches (uart\_tx, uart\_rx); RX FIFO pop bug fix (\texttt{rd\_data\_r} in \texttt{as\_uart\_top.sv}) \\
+  \hline
+  \multicolumn{3}{|l|}{Version of this document: V0.3} \\
+  \hline
+  2026-11-06 & A. Siggelkow, Claude & Interrupt registers moved to the shared block \texttt{as\_irq\_peripheral}; new register ISR (0x60); set wins over clear (UART-IR-007\ldots009) \\
   \hline
 \end{tabularx}
 \end{table}
@@ -683,13 +708,15 @@ The UART controller exposes one bus interface:
   \hline
   0x38 & \textbf{UART0\_RXTHRES}  & rxthres\_reg\_s  & rw   & RX FIFO interrupt threshold (1\ldots16) \\
   \hline
-  0x40 & \textbf{UART0\_RIS}      & ris\_reg\_s      & ro   & Raw Interrupt Status \\
+  0x40 & \textbf{UART0\_RIS}      & u\_irq.ris\_s      & ro   & Raw Interrupt Status \\
   \hline
-  0x48 & \textbf{UART0\_IMSC}     & imsc\_reg\_s     & rw   & Interrupt Mask Control \\
+  0x48 & \textbf{UART0\_IMSC}     & u\_irq.imsc\_r     & rw   & Interrupt Mask Control \\
   \hline
-  0x50 & \textbf{UART0\_MIS}      & mis\_reg\_s      & ro   & Masked Interrupt Status (= RIS\,\&\,IMSC) \\
+  0x50 & \textbf{UART0\_MIS}      & u\_irq.mis\_s      & ro   & Masked Interrupt Status (= RIS\,\&\,IMSC) \\
   \hline
-  0x58 & \textbf{UART0\_ICR}      & icr\_reg\_s      & wo   & Interrupt Clear (write-1-to-clear RIS bits) \\
+  0x58 & \textbf{UART0\_ICR}      & u\_irq.wr\_icr\_s  & wo   & Interrupt Clear (write-1-to-clear RIS bits; strobe, not stored) \\
+  \hline
+  0x60 & \textbf{UART0\_ISR}      & u\_irq.wr\_isr\_s  & wo   & Interrupt Set (write-1-to-set RIS bits; strobe, not stored) \\
   \hline
 \end{tabularx}
 \end{table}
@@ -728,10 +755,10 @@ The UART controller exposes one bus interface:
   \multicolumn{3}{|l|}{History} \\
   \hline
   \multicolumn{1}{|l}{Target Spec.} &
-  \multicolumn{1}{l}{Current version: 0.2, 2026-06-05} &
+  \multicolumn{1}{l}{Current version: 0.3, 2026-11-06} &
   \multicolumn{1}{l|}{Author: A. Siggelkow} \\
   \multicolumn{1}{|l}{ } &
-  \multicolumn{1}{l}{Previous version: 0.1, 2026-06-05} &
+  \multicolumn{1}{l}{Previous version: 0.2, 2026-06-05} &
   \multicolumn{1}{l|}{ } \\
   \hline
   \hline
@@ -745,6 +772,10 @@ The UART controller exposes one bus interface:
   \multicolumn{3}{|l|}{Chapter Version: C0.2; Date: 2026-06-05} \\
   \hline
   --- & \ref{subsec:uartsimtest} / 2026-06-05 & Simulation testbenches (uart\_tx, uart\_rx); RX FIFO pop bug fix (AS, Claude) \\
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.3; Date: 2026-11-06} \\
+  \hline
+  \ref{tab:asUartReqIR} & \ref{tab:asUartISR} / 2026-11-06 & Shared interrupt block \texttt{as\_irq\_peripheral}; new ISR register; set-wins rule (AS, Claude) \\
   \hline
 \end{tabularx}
 \end{table}
@@ -858,6 +889,7 @@ Table~\ref{tab:asUartPer06b} shows the interrupt service requests of UART0.
   Registers         & Interrupt Mask Control      & \textbf{UART0\_IMSC}     & 0x48 \\
                     & Masked Interrupt Status     & \textbf{UART0\_MIS}      & 0x50 \\
                     & Interrupt Clear Register    & \textbf{UART0\_ICR}      & 0x58 \\
+                    & Interrupt Set Register      & \textbf{UART0\_ISR}      & 0x60 \\
   \hline
 \end{tabularx}
 \end{table}
@@ -1042,3 +1074,29 @@ Table~\ref{tab:asUartPer06b} shows the interrupt service requests of UART0.
   \hline
 \end{tabularx}
 \end{table}
+
+\subsubsection{ISR -- Interrupt Set Register (offset 0x60, wo)}
+
+\begin{table}[H]
+\caption{UART0\_ISR Bit Fields}
+\label{tab:asUartISR}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Bits & Name & Mode & Description \\
+  \hline
+  \hline
+  [6:0]  & SET\_RIS & w1s & Write\;1 sets the corresponding RIS bit (SW test of the interrupt path). Setting RIS[6:3] also sets STATUS[7:4]. \\
+  \hline
+  [63:7] & --       & --  & Reserved; writes ignored. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Implementation note.}
+RIS, IMSC, MIS, ICR and ISR are implemented by the shared block
+\texttt{as\_irq\_peripheral} (instance \texttt{u\_irq}, \texttt{irqs\_yes\_no}\,=\,0,
+seven event pulses on \texttt{irq\_other\_i}); see also the GPIO0 interrupt
+registers in Section~\ref{subsec:gpioirqregs}. ICR and ISR are write strobes and
+are not stored. If an event and an ICR write hit the same bit in the same cycle,
+the bit stays set (UART-IR-008).

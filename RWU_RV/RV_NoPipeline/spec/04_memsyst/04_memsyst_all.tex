@@ -236,7 +236,7 @@ No combinatorial or sequential logic resides in this module beyond wire connecti
 \paragraph{Internal algorithm:}
 \texttt{asMemTop} contains no logic.
 It instantiates exactly the seven modules listed in
-Table~\ref{tab:asModHierarchy} (excluding \texttt{asSpramModel}, which
+Table~\ref{tab:asModHierarchya} (excluding \texttt{asSpramModel}, which
 lives inside the SRAM wrappers) and connects them via the SV interfaces
 \texttt{as\_icache\_if}, \texttt{as\_dcache\_if}, and \texttt{as\_axi4\_if}.
 The SRAM wrappers are wired to their respective controllers through

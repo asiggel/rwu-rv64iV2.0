@@ -51,6 +51,7 @@ RTL_FILES="
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asMBpi.sv
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asSBpi.sv
   $DESIGN_PATH/ip_gpio/src/asGpio.sv
+  $DESIGN_PATH/ip_irqper/src/as_irq_peripheral.sv
   $DESIGN_PATH/ip_gpio/src/asGpioTop.sv
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asCPUx.sv
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asDecode.sv

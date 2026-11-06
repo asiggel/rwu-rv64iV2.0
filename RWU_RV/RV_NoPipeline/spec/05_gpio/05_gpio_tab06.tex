@@ -48,29 +48,30 @@ Table \ref{tab:asGpioPer06a} shows the internals  of the GPIO Top.
   Signal & Width & Explanation \\
   \hline
   \hline
-  irq\_comb\_s  & 1 & An ORed signal of all interrupts comming from the GPIO kernel. \\
+  irq\_s  & 8 & One-clock-cycle pulses from the GPIO kernel, one per pin (edge detected). Connected to irq\_same\_i of gpioIrq. \\
   \hline
-  irqsc\_comb\_s  & 1 & An ORed signal of all interrupt clear bits from register IRQSC. \\
+  gpioIrq & -- & Instance of the shared interrupt register block \texttt{as\_irq\_peripheral} (\texttt{ip\_irqper}) with irqs\_yes\_no\,=\,1, nr\_same\_irqs\,=\,8, nr\_other\_irqs\,=\,1 (input tied to 0). It implements all interrupt registers below, see Section ``Interrupt Registers''. \\
   \hline
-  \asgpioIRQSSRegInt  & 64 & GPIO Interrupt Request Source Status Register \asgpioIRQSSRegExt. If irq\_comb\_s = 1, the interrupts from the kernel will be written. Else, if irqsc\_comb\_s = 1, \asgpioIRQSSRegInt will be cleared and irqsc\_reg\_s will be cleared. \\
+  irq\_dataob\_s  & 64 & Read data of gpioIrq. Selected by the read multiplexer for all addresses not belonging to ID, DIR or DATA. \\
   \hline
-  \asgpioIRQSCRegInt  & 64 & GPIO Interrupt Request Source Clear Register \asgpioIRQSCRegExt.  One interrupt request source clear bit is provided for
-each interrupt request source: 0 - No change, 1 - Clear Interrupt source. \\
+  \asgpioIRQSSRegInt  & 64 & GPIO Interrupt Request Source Status Register \asgpioIRQSSRegExt. Sticky: irqss\_r\,$\leftarrow$\,(irqss\_r \& \textasciitilde clear) | irq\_s. A new pulse is never lost; bits are cleared individually via \asgpioIRQSCRegExt. \\
+  \hline
+  \asgpioIRQSCRegInt  & 1 & Write strobe of the GPIO Interrupt Request Source Clear Register \asgpioIRQSCRegExt. Not stored: in the write cycle every bit written as '1' clears the corresponding \asgpioIRQSSRegExt bit; 0 - No change. Reading returns 0. \\
   \hline
   \asgpioIRQSMRegInt  & 64 & GPIO Interrupt Request Source Mask Register \asgpioIRQSMRegExt.  One interrupt request source mask bit is provided for
 each interrupt request source: 0 - Interrupt Request Source Disabled, 1 - Interrupt Request Source Enabled. \\
   \hline
-  irqsm\_comb\_s  & 1 & An ORed signal of all masked single interrupts comming from the GPIO kernel. \\
+  irq\_same\_comb\_s  & 1 & |(\asgpioIRQSSRegInt \& \asgpioIRQSMRegInt): OR of all unmasked pending pin interrupts. Drives RIS[0] as a level. \\
   \hline
-  \asgpioRISRegInt  & 64 & GPIO Raw Interrupt Status Register \asgpioRISRegExt. One interrupt status bit is provided for each service
-request: 0 - No Interrupt, 1 - Interrupt Pending. \\
+  \asgpioRISRegInt  & 64 & GPIO Raw Interrupt Status \asgpioRISRegExt = ris\_r | irq\_same\_comb\_s (bit 0). ris\_r is sticky, set by \asgpioISRRegExt, cleared by \asgpioICRRegExt. 0 - No Interrupt, 1 - Interrupt Pending. \\
   \hline
-  \asgpioISRRegInt  & 64 & GPIO Interrupt Set Register \asgpioISRRegExt. One interrupt set bit is provided for each service request. The interrupt status bits in the \asgpioRISRegExt and the MIS (if IMSC = 1) registers are set by writing a ’1’ to the desired positions.  0 - No change, 1 - Set Interrupt. Reading the register returns 0. \\
+  \asgpioISRRegInt  & 1 & Write strobe of the GPIO Interrupt Set Register \asgpioISRRegExt. Not stored: writing a '1' sets the corresponding \asgpioRISRegExt bit (and MIS if IMSC = 1).  0 - No change. Reading returns 0. \\
+  \hline
+  \asgpioICRRegInt  & 1 & Write strobe of the GPIO Interrupt Clear Register \asgpioICRRegExt. Not stored: writing a '1' clears the corresponding ISR-forced \asgpioRISRegExt bit.  0 - No change. Reading returns 0. \\
   \hline
   \asgpioIMSCRegInt  & 64 & GPIO Interrupt Mask Control Register \asgpioIMSCRegExt. One interrupt mask bit is provided for each service request: 0 - Interrupt Disabled, 1 - Interrupt Enabled. \\
   \hline
-  \asgpioMISRegInt  & 64 & GPIO Masked Interrupt Status Register \asgpioMISRegExt. One interrupt status bit is provided for each service
-request: 0 - No Interrupt, 1 - Interrupt Pending. \\
+  \asgpioMISRegInt  & 64 & GPIO Masked Interrupt Status \asgpioMISRegExt = \asgpioRISRegExt \& \asgpioIMSCRegExt (combinatorial). gpio\_irq\_o = |\asgpioMISRegExt. \\
   \hline
   \asgpioIDRegInt  & 64 & GPIO ID Register \asgpioIDRegExt. \\
   \hline

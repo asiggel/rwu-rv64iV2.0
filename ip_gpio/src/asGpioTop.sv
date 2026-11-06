@@ -36,24 +36,13 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
 
   // IRQ
   logic [nr_gpios-1:0]	     irq_s;        // IRQs from kernel
-  logic			     irq_comb_s;   // OR of all IRQs
-  logic			     irqsc_comb_s; // OR of all irqsc
-  logic			     irqsm_comb_s; // OR of all irqsm, mask
-  logic			     irq_mis_s;
+  logic [reg_width-1:0]      irq_dataob_s; // read data of the IRQ registers
 
   // registers
   logic [reg_width-1:0]      id_reg_s;      // GPIO peripheral ID-register;                    address=00 (0x00)
   logic [reg_width-1:0]      dir_reg_s;     // GPIO direction register;                        address=08 (0x08)
   logic [reg_width-1:0]      data_reg_s;    // GPIO data register;                             address=16 (0x10)
-  logic [reg_width-1:0]      irqss_reg_s;   // GPIO Interrupt Request Source Status Register;  address=24 (0x18)
-  logic [reg_width-1:0]      irqsc_reg_s;   // GPIO Interrupt Request Source Clear Register;   address=40 (0x28)
-  logic [reg_width-1:0]      irqsm_reg_s;   // GPIO Interrupt Request Source Mask Register;    address=32 (0x20)
-  /* verilator lint_off UNUSEDSIGNAL */ // only bit 0 used: single interrupt source in current implementation
-  logic [reg_width-1:0]      isr_reg_s;     // GPIO Interrupt Set Register;                    address=48 (0x30)
-  /* verilator lint_on UNUSEDSIGNAL */
-  logic [reg_width-1:0]      ris_reg_s;     // GPIO Raw Interrupt Status Register;             address=56 (0x38)
-  logic [reg_width-1:0]      imsc_reg_s;    // GPIO Interrupt Mask Control Register;           address=64 (0x40)
-  logic [reg_width-1:0]      mis_reg_s;     // GPIO Masked Interrupt Status Register;          address=72 (0x48)
+  // IRQSS 0x18, IRQSM 0x20, IRQSC 0x28, ISR 0x30, RIS 0x38, IMSC 0x40, MIS 0x48, ICR 0x50: as_irq_peripheral
   
   //--------------------------------------------
   // Slave BPI
@@ -93,106 +82,34 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
 
   //--------------------------------------------
   // SRB: IRQ & DMA
-  //      in:  clk_i
-  //      in:  rst_i
-  //      in:  irq_s
-  //      in:  en_s
-  //      in:  addr_s
-  //      in:  data_s
-  //      out: dataob_s
   //--------------------------------------------
-  assign irq_comb_s   =| irq_s;         // All IRQs comming from kernel will be ORed to one signal here.
-  assign irqsc_comb_s =| irqsc_reg_s;   // All IRQ clears will be ORed.
-  
-  // All IRQ clears will be ORed.
-		     
-  // IRQSS: 64 bit, rh
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      irqss_reg_s                 <= gpio_irqss_reg_rst_c;
-    else
-      if(irq_comb_s) // an IRQ is there; one or more of many
-        irqss_reg_s[nr_gpios-1:0] <= irq_s; // Every single GPIO-input will be stored as an IRQ here.
-      else
-        if(irqsc_comb_s) // an IRQ clear has been written
-        begin
-          irqss_reg_s  <= 0;
-          //irqsc_reg_s  <= 0;
-        end
-  end
-
-  // IRQSC: 64 bit, w
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      irqsc_reg_s        <= gpio_irqsc_reg_rst_c;
-    else
-      if ( (en_s == 1) & (addr_s == gpio_irqsc_reg_addr_offs_c[gpioaddr_width-1:0]) )
-        irqsc_reg_s      <= data_s;
-      else
-        if(irqsc_comb_s)
-          irqsc_reg_s  <= 0;
-  end
-
-  // IRQSM: 64 bit, rw
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      irqsm_reg_s        <= gpio_irqsm_reg_rst_c;
-    else
-      if ( (en_s == 1) & (addr_s == gpio_irqsm_reg_addr_offs_c[gpioaddr_width-1:0]) )
-        irqsm_reg_s      <= data_s;
-  end
-
-  assign irqsm_comb_s =|  (irqss_reg_s & irqsm_reg_s); // first bit wise AND, then OR the single bits, input to RIS
-
-  // RIS: 64 bit, rh
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      ris_reg_s                <= gpio_ris_reg_rst_c;
-    else
-    begin
-      ris_reg_s[0]             <= irqsm_comb_s | isr_reg_s[0];
-      ris_reg_s[reg_width-1:1] <= 0;
-    end
-  end
-
-  // ISR: 64 bit, w
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      isr_reg_s        <= gpio_isr_reg_rst_c;
-    else
-      if ( (en_s == 1) & (addr_s == gpio_isr_reg_addr_offs_c[gpioaddr_width-1:0]) )
-        isr_reg_s      <= data_s;
-  end
-
-  // IMSC: 64 bit, rw
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      imsc_reg_s        <= gpio_imsc_reg_rst_c;
-    else
-      if ( (en_s == 1) & (addr_s == gpio_imsc_reg_addr_offs_c[gpioaddr_width-1:0]) )
-        imsc_reg_s      <= data_s;
-  end
-
-  // MIS: 64 bit, rh
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      mis_reg_s        <= gpio_mis_reg_rst_c;
-    else
-      mis_reg_s      <= imsc_reg_s & ris_reg_s;
-  end
-
-  // GPIO IRQ
-  //assign gpio_irq_o = imsc_reg_s[0] & ris_reg_s[0];
-  assign irq_mis_s  = imsc_reg_s[0] & ris_reg_s[0];
-  //assign gpio_irq_o = {irq_mis_s, irq_s[6:0]};
-  assign gpio_irq_o = irq_mis_s;
+  as_irq_peripheral #(.addr_width(gpioaddr_width),
+                      .data_width(reg_width),
+                      .nr_other_irqs(1),
+                      .nr_same_irqs(nr_gpios),
+                      .irqs_yes_no(1),
+                      .reg_irqsm_rst(gpio_irqsm_reg_rst_c),
+                      .reg_imsc_rst(gpio_imsc_reg_rst_c),
+                      .addr_offs_irqss(gpio_irqss_reg_addr_offs_c),
+                      .addr_offs_irqsc(gpio_irqsc_reg_addr_offs_c),
+                      .addr_offs_irqsm(gpio_irqsm_reg_addr_offs_c),
+                      .addr_offs_imsc(gpio_imsc_reg_addr_offs_c),
+                      .addr_offs_ris(gpio_ris_reg_addr_offs_c),
+                      .addr_offs_isr(gpio_isr_reg_addr_offs_c),
+                      .addr_offs_icr(gpio_icr_reg_addr_offs_c),
+                      .addr_offs_mis(gpio_mis_reg_addr_offs_c)
+                     )
+                     gpioIrq (.rst_i(rst_i),
+                              .clk_i(clk_i),
+                              .en_i(en_s),
+                              .irq_other_i(1'b0),
+                              .irq_same_i(irq_s),
+                              .addr_i(addr_s),
+                              .data_i(data_s),
+                              .data_o(irq_dataob_s),
+                              .ris_o(),
+                              .irq_o(gpio_irq_o)
+                             );
   
   //--------------------------------------------
   // SFR: all other registers
@@ -261,14 +178,7 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
       gpio_id_reg_addr_offs_c[gpioaddr_width-1:0]        : dataob_s = id_reg_s;
       gpio_direction_reg_addr_offs_c[gpioaddr_width-1:0] : dataob_s = dir_reg_s;
       gpio_data_reg_addr_offs_c[gpioaddr_width-1:0]      : dataob_s = data_reg_s;
-      gpio_irqss_reg_addr_offs_c[gpioaddr_width-1:0]     : dataob_s = irqss_reg_s;
-      gpio_irqsc_reg_addr_offs_c[gpioaddr_width-1:0]     : dataob_s = 0;
-      gpio_irqsm_reg_addr_offs_c[gpioaddr_width-1:0]     : dataob_s = irqsm_reg_s;
-      gpio_imsc_reg_addr_offs_c[gpioaddr_width-1:0]      : dataob_s = imsc_reg_s;
-      gpio_isr_reg_addr_offs_c[gpioaddr_width-1:0]       : dataob_s = 0;
-      gpio_mis_reg_addr_offs_c[gpioaddr_width-1:0]       : dataob_s = mis_reg_s;
-      gpio_ris_reg_addr_offs_c[gpioaddr_width-1:0]       : dataob_s = ris_reg_s;
-      default                                            : dataob_s = 0; // should not happen
+      default                                            : dataob_s = irq_dataob_s;
     endcase
   end
   

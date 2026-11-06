@@ -22,6 +22,7 @@ In the following the registers of a GPIO peripheral are listed and described. So
   Registers & Raw Interrupt Status Register & \asgpioRISRegExt \\
   & Masked Interrupt Status Register & \asgpioMISRegExt \\
   & Interrupt Set Register & \asgpioISRRegExt \\
+  & Interrupt Clear Register & \asgpioICRRegExt \\
   & Interrupt Source Status Register & \asgpioIRQSSRegExt \\
   & Interrupt Source Mask Register & \asgpioIRQSMRegExt \\
   & Interrupt Source Clear Register & \asgpioIRQSCRegExt \\
@@ -62,3 +63,42 @@ Identification register of this peripheral. A write will have no effect, a read 
 \subsubsection{Special Function Registers}
 
 \subsubsection{Interrupt Registers}
+\label{subsec:gpioirqregs}
+The interrupt registers are implemented by the shared block \texttt{as\_irq\_peripheral} (\texttt{ip\_irqper/src}), which is also used by UART0. GPIO0 instantiates it with irqs\_yes\_no\,=\,1, i.e.\ with the additional source registers IRQSS, IRQSM and IRQSC for the eight interrupts of the same type (one per pin). The kernel delivers a one-clock-cycle pulse per detected edge.
+
+\begin{table}[H]
+\caption{GPIO0 Interrupt Registers}
+\label{tab:asGpioIrqRegs}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Register & Mode & Function \\
+  \hline
+  \hline
+  0x18 & \asgpioIRQSSRegExt & rh & [7:0]: one sticky bit per pin, set by an edge on the pin. \\
+  \hline
+  0x20 & \asgpioIRQSMRegExt & rw & [7:0]: per-pin mask, 1 = pin contributes to RIS[0]. Reset: all 1. \\
+  \hline
+  0x28 & \asgpioIRQSCRegExt & w  & Write-1-to-clear of \asgpioIRQSSRegExt bits. Not stored, reads 0. \\
+  \hline
+  0x30 & \asgpioISRRegExt   & w  & Write-1-to-set of \asgpioRISRegExt bits (SW test). Not stored, reads 0. \\
+  \hline
+  0x38 & \asgpioRISRegExt   & rh & [0]: |(IRQSS \& IRQSM) or ISR-forced bit 0; [1]: ISR-forced only. \\
+  \hline
+  0x40 & \asgpioIMSCRegExt  & rw & Per-bit enable of RIS into MIS. Reset: all 1. \\
+  \hline
+  0x48 & \asgpioMISRegExt   & rh & RIS \& IMSC. gpio\_irq\_o = |MIS. \\
+  \hline
+  0x50 & \asgpioICRRegExt   & w  & Write-1-to-clear of ISR-forced \asgpioRISRegExt bits. Not stored, reads 0. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Clearing a GPIO interrupt.}
+RIS[0] is not a separately stored bit but the level |(IRQSS \& IRQSM). An interrupt service routine therefore only has to write the pending pin bits to \asgpioIRQSCRegExt; RIS[0], MIS[0] and gpio\_irq\_o drop in the same cycle once no unmasked IRQSS bit is left. \asgpioICRRegExt is only needed for bits that were forced by software via \asgpioISRRegExt.
+
+\paragraph{Coincidence of set and clear.}
+If a pin edge (or an ISR write) and a clear write hit the same bit in the same clock cycle, the set wins, so no event is lost.
+
+\paragraph{ICU0 interaction.}
+ICU0 latches the rising edge of gpio\_irq\_o. If several pins are pending and the ISR clears only some of them, gpio\_irq\_o stays high and ICU0 sees no new edge. The ISR must therefore clear all pending bits it read from \asgpioIRQSSRegExt (or loop until \asgpioMISRegExt = 0) before it returns.

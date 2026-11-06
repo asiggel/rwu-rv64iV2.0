@@ -589,15 +589,17 @@ it applies to.
   \hline
   \texttt{0x20} & \asgpioIRQSMRegExt & rw & Interrupt Request Source Mask (per-pin; masks IRQSS into the single RIS[0] bit) \\
   \hline
-  \texttt{0x28} & \asgpioIRQSCRegExt & wo & Interrupt Request Source Clear (write-1-to-clear IRQSS) \\
+  \texttt{0x28} & \asgpioIRQSCRegExt & wo & Interrupt Request Source Clear (write-1-to-clear IRQSS; not stored, reads 0) \\
   \hline
-  \texttt{0x30} & \asgpioISRRegExt  & wo & Interrupt Set Register (SW test: force RIS[0] without a pin change) \\
+  \texttt{0x30} & \asgpioISRRegExt  & wo & Interrupt Set Register (write-1-to-set RIS bits, SW test; not stored, reads 0) \\
   \hline
-  \texttt{0x38} & \asgpioRISRegExt  & ro & Raw Interrupt Status (single combined bit, RIS[0] only) \\
+  \texttt{0x38} & \asgpioRISRegExt  & ro & Raw Interrupt Status: [0]\,=\,|(IRQSS\,\&\,IRQSM) (level) or ISR-forced; [1]\,=\,ISR-forced only \\
   \hline
   \texttt{0x40} & \asgpioIMSCRegExt & rw & Interrupt Mask Control (chip-level enable feeding \texttt{gpio\_irq\_o}) \\
   \hline
   \texttt{0x48} & \asgpioMISRegExt  & ro & Masked Interrupt Status ($=$ IMSC $\wedge$ RIS) \\
+  \hline
+  \texttt{0x50} & \asgpioICRRegExt  & wo & Interrupt Clear (write-1-to-clear ISR-forced RIS bits; not stored, reads 0) \\
   \hline
 \end{tabularx}}
 
@@ -717,6 +719,8 @@ descriptions are in Section~\ref{sec:uartfunc01}.
   \texttt{0x50} & \asuartMISRegExt  & ro  & Masked Interrupt Status \\
   \hline
   \texttt{0x58} & \asuartICRRegExt  & wo  & Interrupt Clear (write-1-to-clear) \\
+  \hline
+  \texttt{0x60} & \asuartISRRegExt  & wo  & Interrupt Set (write-1-to-set, SW test) \\
   \hline
 \end{tabularx}}
 \end{table}

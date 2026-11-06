@@ -512,6 +512,7 @@ It is reset to all-zero on power-on reset.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{SRAM Macro Organisation}
+\label{subsec:sramMacros}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 The memory subsystem uses five X-Fab XH035 SPRAM macros in total
@@ -814,6 +815,7 @@ On a load from the Flash region the cache controller:
 \end{enumerate}
 
 \subsubsection{Address Region Policy and Absence of Write-Back}
+\label{subsubsec:dcacheAddrPolicy}
 
 Because the Flash backing store is read-only and the Scratchpad is
 uncacheable, \textbf{the dirty bit is never set} and no cache line is ever

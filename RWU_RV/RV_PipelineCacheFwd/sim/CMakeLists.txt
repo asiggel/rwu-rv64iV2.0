@@ -61,6 +61,7 @@ set(SOURCES_SV
 
     # GPIO IP
     ${IP_ROOT}/ip_gpio/src/asGpio.sv
+    ${IP_ROOT}/ip_irqper/src/as_irq_peripheral.sv
     ${IP_ROOT}/ip_gpio/src/asGpioTop.sv
 
     # CGU IP

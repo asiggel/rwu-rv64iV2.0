@@ -17,6 +17,8 @@
 //   0x48  IMSC      rw   Interrupt Mask Control
 //   0x50  MIS       ro   Masked Interrupt Status = RIS & IMSC
 //   0x58  ICR       wo   Interrupt Clear: write-1-to-clear corresponding RIS bits
+//   0x60  ISR       wo   Interrupt Set: write-1-to-set corresponding RIS bits (SW test)
+//   RIS/IMSC/MIS/ICR/ISR are implemented by as_irq_peripheral (irqs_yes_no = 0)
 // =============================================================================
 `timescale 1ns/1ps
 
@@ -57,6 +59,7 @@ module as_uart_top #(
   localparam int OFF_IMSC     = 72;
   localparam int OFF_MIS      = 80;
   localparam int OFF_ICR      = 88;
+  localparam int OFF_ISR      = 96;
 
   localparam logic [63:0] RST_ID      = 64'h00000000_00000020;
   localparam logic [63:0] RST_LCR     = 64'h00000000_00000003; // 8N1, no break
@@ -64,7 +67,6 @@ module as_uart_top #(
   localparam logic [63:0] RST_CTRL    = 64'h00000000_00000000;
   localparam logic [63:0] RST_RXTHRES = 64'(FIFO_DEPTH / 2);
   localparam logic [63:0] RST_IMSC    = 64'h00000000_00000000;
-  localparam logic [63:0] RST_RIS     = 64'h00000000_00000000;
 
   // 4 × worst-case char time (12 bits × 16 sub-clocks = 192 baud16 ticks/char)
   localparam int TIMEOUT_TICKS = 768;
@@ -94,7 +96,7 @@ module as_uart_top #(
 
   // Register write / read strobes
   logic wr_lcr_s, wr_clkdiv_s, wr_ctrl_s, wr_data_s;
-  logic wr_rxthres_s, wr_imsc_s, wr_icr_s;
+  logic wr_rxthres_s;
   logic rd_data_s;
   // rd_data_s delayed by one clock — aligns RX FIFO pop with the CPU's EXECLD_ST data-capture
   // phase.  Without this the FIFO pops at the EXEC→EXECLD edge, leaving DATA=0 in EXECLD_ST.
@@ -106,13 +108,17 @@ module as_uart_top #(
   logic [reg_width-1:0] clkdiv_reg_s;
   logic [reg_width-1:0] ctrl_reg_s;
   logic [reg_width-1:0] rxthres_reg_s;
-  logic [reg_width-1:0] imsc_reg_s;
 
-  // Status / interrupt registers (combinatorial or latched)
+  // Status registers (combinatorial)
   logic [reg_width-1:0] status_reg_s;
   logic [reg_width-1:0] fifostat_reg_s;
-  logic [reg_width-1:0] ris_reg_s;
-  logic [reg_width-1:0] mis_reg_s;
+
+  // Interrupt registers (as_irq_peripheral)
+  logic [6:0]           irq_ev_s;    // one-cycle event pulses -> RIS[6:0]
+  /* verilator lint_off UNUSEDSIGNAL */ // only error bits [6:3] mirrored into STATUS
+  logic [reg_width-1:0] ris_s;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic [reg_width-1:0] irq_rd_s;
 
   // LCR / CTRL decode
   logic [2:0] data_bits_count_s; // 5..8
@@ -209,8 +215,6 @@ module as_uart_top #(
   assign wr_ctrl_s    = wr_s && (addr_s == UART_ADDR_WIDTH'(OFF_CTRL));
   assign wr_data_s    = wr_s && (addr_s == UART_ADDR_WIDTH'(OFF_DATA));
   assign wr_rxthres_s = wr_s && (addr_s == UART_ADDR_WIDTH'(OFF_RXTHRES));
-  assign wr_imsc_s    = wr_s && (addr_s == UART_ADDR_WIDTH'(OFF_IMSC));
-  assign wr_icr_s     = wr_s && (addr_s == UART_ADDR_WIDTH'(OFF_ICR));
   assign rd_data_s    = rd_s && (addr_s == UART_ADDR_WIDTH'(OFF_DATA));
 
   // Baud generators: >= rather than == so that decreasing CLKDIV resets the
@@ -256,7 +260,7 @@ module as_uart_top #(
 
   // Status register: [1:0] live busy flags, [7:4] mirror sticky RIS error bits
   assign status_reg_s = {56'b0,
-                          ris_reg_s[6], ris_reg_s[5], ris_reg_s[4], ris_reg_s[3],
+                          ris_s[6], ris_s[5], ris_s[4], ris_s[3],
                           2'b0, rx_busy_s, tx_busy_s};
 
   // FIFO status register
@@ -270,8 +274,13 @@ module as_uart_top #(
     | (64'(tx_empty_s) <<  5)
     | (64'(tx_level_s));
 
-  assign mis_reg_s  = ris_reg_s & imsc_reg_s;
-  assign uart_irq_o = |mis_reg_s;
+  assign irq_ev_s   = {ev_break_det_s,
+                       ev_overrun_err_s,
+                       ev_parity_err_s,
+                       ev_frame_err_s,
+                       rx_timeout_s && !rx_timeout_d,
+                       tx_ready_s   && !tx_ready_d,
+                       rx_ready_s   && !rx_ready_d};
   assign tx_o       = tx_o_s;
 
   // ===========================================================================
@@ -343,11 +352,7 @@ module as_uart_top #(
       UART_ADDR_WIDTH'(OFF_DATA)    : data_rd_s = rx_empty_s ? '0 : {56'b0, rx_data_rd_s};
       UART_ADDR_WIDTH'(OFF_FIFOSTAT): data_rd_s = fifostat_reg_s;
       UART_ADDR_WIDTH'(OFF_RXTHRES) : data_rd_s = rxthres_reg_s;
-      UART_ADDR_WIDTH'(OFF_RIS)     : data_rd_s = ris_reg_s;
-      UART_ADDR_WIDTH'(OFF_IMSC)    : data_rd_s = imsc_reg_s;
-      UART_ADDR_WIDTH'(OFF_MIS)     : data_rd_s = mis_reg_s;
-      UART_ADDR_WIDTH'(OFF_ICR)     : data_rd_s = '0;
-      default                       : data_rd_s = '0;
+      default                       : data_rd_s = irq_rd_s;
     endcase
   end
 
@@ -532,35 +537,6 @@ module as_uart_top #(
     if (rst_i) rd_data_r <= 1'b0;
     else       rd_data_r <= rd_data_s;
 
-  // RIS register
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i) begin
-      ris_reg_s <= RST_RIS;
-    end else begin
-      if      (wr_icr_s && data_wr_s[0]) ris_reg_s[0] <= 1'b0;
-      else if (rx_ready_s && !rx_ready_d) ris_reg_s[0] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[1]) ris_reg_s[1] <= 1'b0;
-      else if (tx_ready_s && !tx_ready_d) ris_reg_s[1] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[2]) ris_reg_s[2] <= 1'b0;
-      else if (rx_timeout_s && !rx_timeout_d) ris_reg_s[2] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[3]) ris_reg_s[3] <= 1'b0;
-      else if (ev_frame_err_s)            ris_reg_s[3] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[4]) ris_reg_s[4] <= 1'b0;
-      else if (ev_parity_err_s)           ris_reg_s[4] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[5]) ris_reg_s[5] <= 1'b0;
-      else if (ev_overrun_err_s)          ris_reg_s[5] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[6]) ris_reg_s[6] <= 1'b0;
-      else if (ev_break_det_s)            ris_reg_s[6] <= 1'b1;
-
-      ris_reg_s[reg_width-1:7] <= '0;
-    end
-
   // Configuration registers
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i) id_reg_s <= RST_ID;
@@ -585,10 +561,6 @@ module as_uart_top #(
     if (rst_i)             rxthres_reg_s <= RST_RXTHRES;
     else if (wr_rxthres_s) rxthres_reg_s <= data_wr_s;
 
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)          imsc_reg_s <= RST_IMSC;
-    else if (wr_imsc_s) imsc_reg_s <= data_wr_s;
-
   // ===========================================================================
   // Module instantiations
   // ===========================================================================
@@ -609,6 +581,31 @@ module as_uart_top #(
     .wb_s_stb_i     (wbdStb_i),
     .wb_s_ack_o     (wbdAck_o),
     .wb_s_cyc_i     (wbdCyc_i)
+  );
+
+  as_irq_peripheral #(
+    .addr_width     (UART_ADDR_WIDTH),
+    .data_width     (reg_width),
+    .nr_other_irqs  (7),
+    .nr_same_irqs   (1),
+    .irqs_yes_no    (0),
+    .reg_imsc_rst   (RST_IMSC),
+    .addr_offs_imsc (OFF_IMSC),
+    .addr_offs_ris  (OFF_RIS),
+    .addr_offs_isr  (OFF_ISR),
+    .addr_offs_icr  (OFF_ICR),
+    .addr_offs_mis  (OFF_MIS)
+  ) u_irq (
+    .rst_i      (rst_i),
+    .clk_i      (clk_i),
+    .en_i       (wr_s),
+    .irq_other_i(irq_ev_s),
+    .irq_same_i (1'b0),
+    .addr_i     (addr_s),
+    .data_i     (data_wr_s),
+    .data_o     (irq_rd_s),
+    .ris_o      (ris_s),
+    .irq_o      (uart_irq_o)
   );
 
   as_fifo #(.DATA_WIDTH(8), .FIFO_DEPTH(FIFO_DEPTH)) u_txfifo (
