@@ -393,12 +393,15 @@ Generic features for ICU0 are listed in Table~\ref{tab:asIcuPer01a}.
   \hline
   yes & Software Test/Force       & \textbf{ICU0\_ISR} \\
   \hline
-  no  & Vectored Dispatch         & Not implemented; both CPUs support
-    \texttt{mtvec} Direct mode only (Section~\ref{subsec:irqconcept}) \\
+  no  & Vectored Dispatch         & Not in ICU0: all ICU0 sources share MEI
+    (cause 11), per-source dispatch via \textbf{ICU0\_IRQID} in software.
+    The CPUs' vectored \texttt{mtvec} only separates MEI/MSI/MTI
+    (Section~\ref{subsec:irqconcept}) \\
   \hline
-  no  & Nested/Preemptive Interrupts & Not implemented; precluded at the
-    CPU level (\texttt{mstatus.MIE} cleared on trap entry) independent of
-    the ICU \\
+  no  & Nested/Preemptive Interrupts & Not implemented in ICU0 (no priority
+    masking of a running handler); a handler may re-enable
+    \texttt{mstatus.MIE} after saving \texttt{mepc}/\texttt{mcause}
+    (Section~\ref{subsec:irqconcept}) \\
   \hline
 \end{tabularx}
 \end{table}

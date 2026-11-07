@@ -41,13 +41,27 @@ class ISS:
     """RV64I software reference model."""
 
     _CSR_RESET: dict[int, int] = {
-        0x300: 0x1808,  # mstatus  (MIE=1, MPIE=1)
-        0x304: 0x800,   # mie      (MEIE=1)
+        0x300: 0x1800,  # mstatus  (MPP=11, MIE=0, MPIE=0)
+        0x304: 0,       # mie
         0x305: 0x7F00,  # mtvec
+        0x340: 0,       # mscratch
         0x341: 0,       # mepc
         0x342: 0,       # mcause
+        0x343: 0,       # mtval
         0x344: 0,       # mip
     }
+
+    # WARL: writable bits per CSR (cc_trap_csr.sv); bits outside the mask
+    # keep their fixed value (mstatus.MPP = 11, everything else 0).
+    _CSR_WMASK: dict[int, int] = {
+        0x300: 0x88,                        # mstatus: MIE, MPIE
+        0x304: 0x888,                       # mie: MSIE, MTIE, MEIE
+        0x305: MASK64 & ~0x2,               # mtvec: MODE[1] = 0
+        0x341: MASK64 & ~0x3,               # mepc[1:0] = 0
+        0x342: (1 << 63) | 0xF,             # mcause: interrupt bit + code
+        0x344: 0,                           # mip: read-only levels
+    }
+    _CSR_FIXED: dict[int, int] = {0x300: 0x1800}
 
     # ------------------------------------------------------------------
     def reset(self, imem_words: list[int]) -> None:
@@ -229,7 +243,9 @@ class ISS:
                 src = a if f3 < 5 else zi      # register vs. immediate variant
                 new = {1: src, 2: old | src, 3: old & ~src,
                        5: src, 6: old | src, 7: old & ~src}[f3]
-                self.csrs[csr] = _u64(new)
+                if f3 in (1, 5) or ((raw >> 15) & 0x1F):   # csrrs/c with rs1=x0 only read
+                    mask = self._CSR_WMASK.get(csr, MASK64)
+                    self.csrs[csr] = (_u64(new) & mask) | self._CSR_FIXED.get(csr, 0)
                 self._wx(rd, old); wr = (rd, _u64(old))
 
         self.pc = npc

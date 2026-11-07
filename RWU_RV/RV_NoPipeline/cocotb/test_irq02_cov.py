@@ -15,12 +15,13 @@ gaps visible instead of hoping the sweep was broad enough.
 
 Note on stimulus richness: with an all-NOP instruction stream, EXECLD_ST
 (asCPUx.sv's load-data state) is structurally unreachable -- NOP never
-sets load_pending_s. So the very first instruction is a LW (opcode
-LOAD), which is otherwise a no-op for this test (the loaded value is
-never used), purely to make all four CPU states reachable for the
-coverage sweep. This is itself a small illustration of the same lesson:
-coverage closure needs the *stimulus* to be rich enough, not just the
-injection timing.
+sets load_pending_s. So after ENABLE_MEI the program loops over a LW
+(opcode LOAD, the loaded value is never used) and a JAL back, purely to
+make all four CPU states reachable for the coverage sweep. This is itself
+a small illustration of the same lesson: coverage closure needs the
+*stimulus* to be rich enough, not just the injection timing.
+The injection delay counts from the moment ENABLE_MEI has set
+MSTATUS.MIE (it is 0 after reset).
 
 The coverage database is also exported to coverage_irq02.xml/.yml next to
 this file (not checked in, see .gitignore) for inspection outside the log.
@@ -38,13 +39,17 @@ THIS_DIR = Path(__file__).resolve().parent
 
 IMEM_DEPTH  = 8192                    # words; matches as_pack::imemdepth
 NOP         = 0x00000013              # addi x0, x0, 0
-LW_X1_0_X0  = 0x00002083              # lw x1, 0(x0) -- makes EXECLD_ST reachable
+LW_X3_0_X0  = 0x00002183              # lw x3, 0(x0) -- makes EXECLD_ST reachable
+JAL_BACK    = 0xFFDFF06F              # jal x0, -4 (back to the LW)
 MRET        = 0x30200073              # mret
-MTVEC_RESET = 0x0000000000007F00      # csr_mtvec_r reset value (asCPUx.sv)
+MTVEC_RESET = 0x0000000000007F00      # cc_trap_csr MTVEC_RST in asCPUx.sv
 MTVEC_WORD  = MTVEC_RESET >> 2        # word index into iram_s = 8128
 
-MSTATUS_MIE_BIT = 3
-MCAUSE_MEIP     = (1 << 63) | 11      # machine external interrupt (asCPUx.sv:725)
+MCAUSE_MEIP     = (1 << 63) | 11      # machine external interrupt
+
+# mstatus.MIE and mie.MEIE are 0 after reset (privileged spec): enable them
+#   lui x1, 1 / addi x1, x1, -2048 / csrrs x0, mie, x1 / csrrsi x0, mstatus, 8
+ENABLE_MEI = [0x000010B7, 0x80008093, 0x3040A073, 0x30046073]
 
 STATE_NAMES = ["FETCH0", "FETCH1", "EXEC", "EXECLD"]  # asCPUx.sv statetype_t order
 
@@ -61,9 +66,8 @@ class IrqStimulus(Randomized):
                            when the interrupt lands.
     clear_before_mret  -- whether the emulated ISR clears the ICU pending
                            bit before MRET (correct handling) or leaves it
-                           set (must provoke an immediate re-trap, per the
-                           documented "direct wire-through" mip behaviour,
-                           asCPUx.sv:564).
+                           set (must provoke an immediate re-trap: mip.MEIP
+                           is the level of the ICU output, cc_trap_csr.sv).
     """
 
     def __init__(self):
@@ -119,59 +123,62 @@ async def _wait_until(dut, predicate, cycles, what: str):
 def _load_program(dut) -> None:
     for i in range(IMEM_DEPTH):
         dut.imem.iram_s[i].value = NOP
-    dut.imem.iram_s[0].value          = LW_X1_0_X0
+    prog = ENABLE_MEI + [LW_X3_0_X0, JAL_BACK]
+    for i, w in enumerate(prog):
+        dut.imem.iram_s[i].value = w
     dut.imem.iram_s[MTVEC_WORD].value = MRET
 
 
 async def _run_one(dut, stim: IrqStimulus, iteration: int) -> None:
     """Run one randomized IRQ-injection scenario against a freshly reset DUT."""
 
+    trap = dut.cpu.trap_csr
+    tag = f"[iter {iteration}] {stim}"
+
     await _reset(dut)
+    await _wait_until(dut, lambda: int(trap.mstatus_mie_r.value) == 1,
+                       FAST_CLK_CYCLES_PER_POLL, f"{tag}: ENABLE_MEI sets MSTATUS.MIE")
     for _ in range(stim.delay_cycles):
         await RisingEdge(dut.clk_i)
 
-    tag = f"[iter {iteration}] {stim}"
-
-    assert int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT), \
-        f"{tag}: MSTATUS.MIE not set before stimulus"
-    assert int(dut.cpu.trap_taken_s.value) == 0, \
-        f"{tag}: trap_taken_s already asserted before stimulus"
+    assert int(dut.cpu.trap_s.value) == 0, \
+        f"{tag}: trap_s already asserted before stimulus"
 
     state_at_injection = int(dut.cpu.state_s.value)
     sample_injection(state_at_injection, stim.clear_before_mret)
 
     dut.icu0.ris_reg_s.value = 1
 
-    await _wait_until(dut, lambda: int(dut.cpu.trap_taken_s.value) == 1,
-                       FAST_CLK_CYCLES_PER_POLL, f"{tag}: trap_taken_s asserts")
-    await _wait_until(dut, lambda: int(dut.cpu.PC_s.value) == MTVEC_RESET,
-                       FAST_CLK_CYCLES_PER_POLL, f"{tag}: PC_s redirects to mtvec")
+    await _wait_until(dut, lambda: int(dut.cpu.trap_s.value) == 1,
+                       FAST_CLK_CYCLES_PER_POLL, f"{tag}: trap_s asserts")
+    await _wait_until(dut, lambda: int(dut.cpu.PC_instr_r.value) == MTVEC_RESET,
+                       FAST_CLK_CYCLES_PER_POLL, f"{tag}: fetch redirects to mtvec")
 
-    mcause = int(dut.cpu.csr_mcause_r.value)
+    mcause = (int(trap.mcause_int_r.value) << 63) | int(trap.mcause_code_r.value)
     assert mcause == MCAUSE_MEIP, f"{tag}: mcause=0x{mcause:016x}"
-    assert int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT) == 0, \
+    assert int(trap.mstatus_mie_r.value) == 0, \
         f"{tag}: MSTATUS.MIE must be cleared while the trap is active"
 
-    mepc = int(dut.cpu.csr_mepc_r.value)
+    mepc = int(trap.mepc_r.value)
 
     if stim.clear_before_mret:
         dut.icu0.ris_reg_s.value = 0   # the ICR write a real ISR would do
 
-    await _wait_until(dut, lambda: int(dut.cpu.PC_s.value) == mepc,
+    await _wait_until(dut, lambda: int(dut.cpu.PC_instr_r.value) == mepc,
                        FAST_CLK_CYCLES_PER_POLL, f"{tag}: MRET returns PC to mepc")
-    await _wait_until(dut, lambda: int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT),
+    await _wait_until(dut, lambda: int(trap.mstatus_mie_r.value) == 1,
                        FAST_CLK_CYCLES_PER_POLL, f"{tag}: MSTATUS.MIE restored after MRET")
 
     if stim.clear_before_mret:
         for _ in range(300):
             await RisingEdge(dut.clk_i)
-            assert int(dut.cpu.trap_taken_s.value) == 0, \
+            assert int(dut.cpu.trap_s.value) == 0, \
                 f"{tag}: spurious re-trap despite cleared pending bit"
     else:
         # Pending bit deliberately left set: hardware must re-trap almost
-        # immediately (mip[11] is a direct wire-through of the ICU output,
-        # not a one-shot pulse -- see asCPUx.sv:564).
-        await _wait_until(dut, lambda: int(dut.cpu.trap_taken_s.value) == 1,
+        # immediately (mip.MEIP is the level of the ICU output, not a
+        # one-shot pulse -- see cc_trap_csr.sv).
+        await _wait_until(dut, lambda: int(dut.cpu.trap_s.value) == 1,
                            FAST_CLK_CYCLES_PER_POLL,
                            f"{tag}: expected immediate re-trap (pending bit left set)")
 

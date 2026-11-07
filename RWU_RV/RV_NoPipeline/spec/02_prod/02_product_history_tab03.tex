@@ -22,5 +22,10 @@
   \hline
   & 2026-07-14 & Documented \texttt{ecall}/\texttt{ebreak} exceptions (mcause 11/3), both variants (AS) \\
   \hline
+  Interrupt Concept & 2026-11-06 & Rewritten for the shared trap/CSR unit \texttt{cc\_trap\_csr}:
+    precise traps, MSI/MTI inputs for a CLINT, vectored \texttt{mtvec}, WARL CSRs,
+    \texttt{mscratch}/\texttt{mhartid}/\texttt{misa}/counters, \texttt{wfi},
+    \texttt{mstatus.MIE}\,=\,0 after reset (CC) \\
+  \hline
 \end{tabularx}
 \end{table}

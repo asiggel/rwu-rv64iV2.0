@@ -284,7 +284,9 @@ module as_top_mem (input logic                       clk_i,
               .icpu_if(icpu_if_s),
               .dcpu_if(dcpu_if_s),
                // IRQ
-              .irq_ext_i(irq_external_s)
+              .irq_ext_i(irq_external_s),
+              .irq_m_soft_i(1'b0),  // no CLINT in this variant yet
+              .irq_m_timer_i(1'b0)
              );
 
   //--------------------------------------------

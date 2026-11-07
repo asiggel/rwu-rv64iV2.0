@@ -32,6 +32,7 @@ VERILOG_SOURCES = \
 	../../../ip_gpio/src/asGpio.sv \
 	../../../ip_irqper/src/as_irq_peripheral.sv \
 	../../../ip_gpio/src/asGpioTop.sv \
+	../../../ip_trapcsr/src/cc_trap_csr.sv \
 	../src/asCPUx.sv \
 	../src/asDecode.sv \
 	../../../ip_cgu/src/asCguCore.sv \

@@ -26,3 +26,8 @@ Was bringt Randomization hier konkret? Nicht "mehr Stimuli", sondern das Treffen
 alias python3="$HOME/venvs/cocotb/bin/python"
 python3 test_runner_irq01.py 
 python3 test_runner_irq02_cov.py 
+
+# Traps (precise IRQ entry, all exception causes, mtvec vectored, wfi)
+# Test bodies in trap_tests.py are shared with ../../RV_PipelineCacheFwd/cocotb
+make COCOTB_TEST_MODULES=test_traps
+make COCOTB_TEST_MODULES=test_traps COCOTB_TESTCASE=irq_jumps

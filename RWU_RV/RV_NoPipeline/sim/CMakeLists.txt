@@ -76,6 +76,7 @@ set(SOURCES_SV
     ${IP_ROOT}/ip_gpio/src/asGpioTop.sv
 
     #${PROJECT_ROOT}/src/asCPU.sv
+    ${IP_ROOT}/ip_trapcsr/src/cc_trap_csr.sv
     ${PROJECT_ROOT}/src/asCPUx.sv
     ${PROJECT_ROOT}/src/asDecode.sv
 

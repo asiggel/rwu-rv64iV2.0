@@ -70,6 +70,7 @@ VERILOG_SOURCES := \
   $(abspath $(IP_ROOT)/ip_scratch/src/asScratch.sv) \
   $(abspath $(IP_ROOT)/ip_memarb/src/asMemArb.sv)   \
   $(abspath $(IP_ROOT)/ip_memsyst/src/asMemTop.sv)  \
+  $(abspath $(IP_ROOT)/ip_trapcsr/src/cc_trap_csr.sv) \
   $(abspath ../src/cc_cpupipefwd.sv)                \
   $(abspath ../src/asTopMem.sv)                     \
   $(abspath tb_flash_wrap.sv)

@@ -54,6 +54,7 @@ VERILOG_SOURCES := \
   $(abspath $(IP_ROOT)/ip_gpio/src/asGpio.sv)       \
   $(abspath $(IP_ROOT)/ip_irqper/src/as_irq_peripheral.sv)    \
   $(abspath $(IP_ROOT)/ip_gpio/src/asGpioTop.sv)    \
+  $(abspath $(IP_ROOT)/ip_trapcsr/src/cc_trap_csr.sv) \
   $(abspath ../src/asCPUx.sv)              \
   $(abspath ../src/asDecode.sv)            \
   $(abspath $(IP_ROOT)/ip_cgu/src/asCguCore.sv)     \

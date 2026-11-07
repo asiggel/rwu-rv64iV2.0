@@ -45,6 +45,7 @@ VERILOG_SOURCES = [
     IP_ROOT / "ip_gpio" / "src" / "asGpio.sv",
     IP_ROOT / "ip_irqper" / "src" / "as_irq_peripheral.sv",
     IP_ROOT / "ip_gpio" / "src" / "asGpioTop.sv",
+    IP_ROOT / "ip_trapcsr" / "src" / "cc_trap_csr.sv",
     SRC_DIR / "src" / "asCPUx.sv",
     SRC_DIR / "src" / "asDecode.sv",
     IP_ROOT / "ip_cgu" / "src" / "asCguCore.sv",

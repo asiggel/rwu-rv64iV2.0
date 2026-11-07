@@ -3,11 +3,12 @@ White-box IRQ test (irq01): verifies the CPU's trap-entry / trap-return
 hardware directly, without going through any firmware bring-up sequence
 and without driving any chip pin.
 
-Rationale: GPIO0's IRQSM/IMSC, ICU0's IMSC/CTRL.GIE and the CPU's
-MSTATUS.MIE/MIE.MEIE are all enabled by their RESET default (as_pack.sv:
-gpio_irqsm_reg_rst_c, gpio_imsc_reg_rst_c, icu_imsc_reg_rst_c,
-icu_ctrl_reg_rst_c; asCPUx.sv: csr_mstatus_r/csr_mie_r reset values), so a
-real external event only ever has to set one bit: ICU0's sticky RIS
+Rationale: GPIO0's IRQSM/IMSC and ICU0's IMSC/CTRL.GIE are enabled by their
+RESET default (as_pack.sv: gpio_irqsm_reg_rst_c, gpio_imsc_reg_rst_c,
+icu_imsc_reg_rst_c, icu_ctrl_reg_rst_c). The CPU's MSTATUS.MIE/MIE.MEIE are
+0 after reset (privileged spec), so the program starts with the 4
+instructions in ENABLE_MEI. After that a real external event only ever has
+to set one bit: ICU0's sticky RIS
 register for the GPIO0 source. This test pokes that register directly
 (cc_icu_top.sv's ris_reg_s, a plain always_ff register, not a
 continuously-driven net) instead of toggling the GPIO0 pin -- Verilator's
@@ -21,7 +22,7 @@ IRQSM masking logic are a separate, GPIO0-local test concern, see
 ip_gpio/tb).
 
 The "ISR" is reduced to the theoretical minimum: I-Mem is filled with NOP
-everywhere except a single MRET at the MTVEC reset target (0x7F00), so the
+everywhere (after ENABLE_MEI) except a single MRET at the MTVEC reset target (0x7F00), so the
 round trip (trap in -> mtvec -> mret -> back to mepc) is exercised without
 any hand-written assembler program.
 """
@@ -33,11 +34,14 @@ from cocotb.triggers import RisingEdge
 IMEM_DEPTH  = 8192                    # words; matches as_pack::imemdepth
 NOP         = 0x00000013              # addi x0, x0, 0
 MRET        = 0x30200073              # mret
-MTVEC_RESET = 0x0000000000007F00      # csr_mtvec_r reset value (asCPUx.sv)
+MTVEC_RESET = 0x0000000000007F00      # cc_trap_csr MTVEC_RST in asCPUx.sv
 MTVEC_WORD  = MTVEC_RESET >> 2        # word index into iram_s = 8128
 
-MSTATUS_MIE_BIT = 3
-MCAUSE_MEIP     = (1 << 63) | 11      # machine external interrupt (asCPUx.sv:725)
+MCAUSE_MEIP     = (1 << 63) | 11      # machine external interrupt
+
+# mstatus.MIE and mie.MEIE are 0 after reset (privileged spec): enable them
+#   lui x1, 1 / addi x1, x1, -2048 / csrrs x0, mie, x1 / csrrsi x0, mstatus, 8
+ENABLE_MEI = [0x000010B7, 0x80008093, 0x3040A073, 0x30046073]
 
 FAST_CLK_CYCLES_PER_POLL = 4000       # generous vs. clk_core_div=80 slow-clock ratio
 
@@ -71,39 +75,42 @@ async def irq_whitebox_test(dut):
     # ---- program: NOP everywhere, MRET at the mtvec target ----
     for i in range(IMEM_DEPTH):
         dut.imem.iram_s[i].value = NOP
+    for i, w in enumerate(ENABLE_MEI):
+        dut.imem.iram_s[i].value = w
     dut.imem.iram_s[MTVEC_WORD].value = MRET
 
+    trap = dut.cpu.trap_csr
     await _reset(dut)
+    assert int(trap.mstatus_mie_r.value) == 0, "MSTATUS.MIE must be 0 after reset"
+    await _wait_until(dut, lambda: int(trap.mstatus_mie_r.value) == 1,
+                       FAST_CLK_CYCLES_PER_POLL, "ENABLE_MEI sets MSTATUS.MIE")
     for _ in range(200):
         await RisingEdge(dut.clk_i)
 
-    # ---- sanity: everything needed is already enabled by reset default ----
+    # ---- sanity: everything needed is enabled ----
     assert int(dut.icu0.imsc_reg_s.value) & 0x1, "ICU0 GPIO0 source not unmasked by reset"
     assert int(dut.icu0.ctrl_gie_r.value) == 1, "ICU0 GIE not set by reset"
-    assert int(dut.cpu.csr_mie_r.value) & (1 << 11), "CPU MEIE not set by reset"
-    assert int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT), \
-        "MSTATUS.MIE not set before stimulus (expected reset default)"
-    assert int(dut.cpu.trap_taken_s.value) == 0, \
-        "trap_taken_s already asserted before stimulus"
+    assert int(trap.mie_r.value) & (1 << 11), "CPU MEIE not set by ENABLE_MEI"
+    assert int(dut.cpu.trap_s.value) == 0, "trap_s already asserted before stimulus"
 
     # ---- stimulus: pretend GPIO0 just latched a pending edge ----
     dut.icu0.ris_reg_s.value = 1
 
-    await _wait_until(dut, lambda: int(dut.cpu.trap_taken_s.value) == 1,
-                       FAST_CLK_CYCLES_PER_POLL, "trap_taken_s asserts")
+    await _wait_until(dut, lambda: int(dut.cpu.trap_s.value) == 1,
+                       FAST_CLK_CYCLES_PER_POLL, "trap_s asserts")
 
-    await _wait_until(dut, lambda: int(dut.cpu.PC_s.value) == MTVEC_RESET,
-                       FAST_CLK_CYCLES_PER_POLL, "PC_s redirects to mtvec")
+    await _wait_until(dut, lambda: int(dut.cpu.PC_instr_r.value) == MTVEC_RESET,
+                       FAST_CLK_CYCLES_PER_POLL, "fetch redirects to mtvec")
 
-    mcause = int(dut.cpu.csr_mcause_r.value)
+    mcause = (int(trap.mcause_int_r.value) << 63) | int(trap.mcause_code_r.value)
     assert mcause == MCAUSE_MEIP, (
         f"mcause=0x{mcause:016x}, expected machine external interrupt "
         f"0x{MCAUSE_MEIP:016x}"
     )
-    assert int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT) == 0, \
+    assert int(trap.mstatus_mie_r.value) == 0, \
         "MSTATUS.MIE must be cleared while the trap is active"
 
-    mepc = int(dut.cpu.csr_mepc_r.value)
+    mepc = int(trap.mepc_r.value)
     dut._log.info(f"trap entry OK: mepc=0x{mepc:016x}  mcause=0x{mcause:016x}")
 
     # ---- emulate the ICR write a real ISR would do before MRET ----
@@ -117,21 +124,16 @@ async def irq_whitebox_test(dut):
     dut.icu0.ris_reg_s.value = 0
 
     # ---- the "ISR" (a single MRET) returns; verify the round trip ----
-    await _wait_until(dut, lambda: int(dut.cpu.PC_s.value) == mepc,
+    await _wait_until(dut, lambda: int(dut.cpu.PC_instr_r.value) == mepc,
                        FAST_CLK_CYCLES_PER_POLL, "MRET returns PC to mepc")
 
-    # MSTATUS.MIE restore is gated on the MRET reaching EXEC_ST via ir_s,
-    # which lags the PC_s redirect above by a few pipeline cycles (PC_s is
-    # updated one fetch0 cycle ahead of the instruction actually being
-    # decoded/executed) -- so poll for it separately instead of checking it
-    # in the same instant as the PC_s match.
-    await _wait_until(dut, lambda: int(dut.cpu.csr_mstatus_r.value) & (1 << MSTATUS_MIE_BIT),
-                       FAST_CLK_CYCLES_PER_POLL, "MSTATUS.MIE restored after MRET")
+    # MRET restores MSTATUS.MIE in the same FETCH0_ST that fetches mepc.
+    assert int(trap.mstatus_mie_r.value) == 1, "MSTATUS.MIE not restored after MRET"
 
     # ---- confirm the return is stable, i.e. no spurious re-trap ----
     for _ in range(800):
         await RisingEdge(dut.clk_i)
-        assert int(dut.cpu.trap_taken_s.value) == 0, \
+        assert int(dut.cpu.trap_s.value) == 0, \
             "spurious re-trap after MRET (pending bit not actually cleared?)"
 
     dut._log.info("PASS: IRQ trap entry + MRET return verified end-to-end")

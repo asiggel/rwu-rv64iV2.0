@@ -29,6 +29,7 @@ set(SOURCES_SV
     ${NP_ROOT}/src/asAluBr.sv
     ${NP_ROOT}/src/asInstrDecode.sv
     ${IP_ROOT}/ip_jtag/src/scan_cell.sv
+    ${IP_ROOT}/ip_trapcsr/src/cc_trap_csr.sv
     ${PC_ROOT}/src/cc_cpupipefwd.sv
     ${TB_DIR}/${TB_TOP}.sv
 )

@@ -1,20 +1,35 @@
-The \aschip{} implements a minimal \textbf{single external interrupt source,
-machine-mode-only} interrupt concept, identical in both chip variants
-(\texttt{as\_cpux} in \texttt{RV\_NoPipeline} and \texttt{cc\_cpupipefwd} in
-\texttt{RV\_PipelineCacheFwd} implement the same CSR/trap logic).
-There is no timer interrupt (no \texttt{mtime}/\texttt{mtimecmp}) and no
-software interrupt (\texttt{MSIP}); only the RISC-V \textbf{Machine External
-Interrupt} (MEI, \texttt{mcause}\,=\,\texttt{0x800...B}, cause code 11) is
-implemented.
+The \aschip{} implements the RISC-V \textbf{machine-mode-only} interrupt and
+trap concept of the privileged specification. Both chip variants use the
+same trap/CSR unit \texttt{cc\_trap\_csr} from \texttt{ip\_trapcsr/src}.
+It is instantiated as \texttt{trap\_csr} in the cores \texttt{as\_cpux}
+(\texttt{RV\_NoPipeline}) and \texttt{cc\_cpupipefwd}
+(\texttt{RV\_PipelineCacheFwd}). The core decides \emph{when} a trap is
+taken (its precise-trap point, see below); \texttt{cc\_trap\_csr} holds the
+architectural state and decides \emph{what} happens.
+
+All three standard machine interrupts are supported:
+\begin{itemize}
+  \item \textbf{Machine External Interrupt} (MEI, \texttt{mcause}\,=\,\texttt{0x800...B}):
+    from ICU0 via \texttt{irq\_ext\_i[7]}.
+  \item \textbf{Machine Software Interrupt} (MSI, \texttt{mcause}\,=\,\texttt{0x800...3}):
+    CPU input \texttt{irq\_m\_soft\_i}, intended for the \texttt{msip} bit of
+    a CLINT.
+  \item \textbf{Machine Timer Interrupt} (MTI, \texttt{mcause}\,=\,\texttt{0x800...7}):
+    CPU input \texttt{irq\_m\_timer\_i}, intended for the \texttt{mtip}
+    output (\texttt{mtime}\,$\geq$\,\texttt{mtimecmp}) of a CLINT.
+\end{itemize}
+No CLINT exists on the chip yet; in both variants \texttt{as\_top\_mem}
+ties the inputs \texttt{irq\_m\_soft\_i} and \texttt{irq\_m\_timer\_i} to 0.
+A CLINT only has to drive these two level signals.
 
 \paragraph{Peripheral-to-CPU path.}
 The top level (\texttt{as\_top\_mem}) presents an 8-bit vector,
 \texttt{irq\_ext\_i} (\texttt{irq\_total\_num\_ext\_c}\,=\,8), to the CPU.
-Of these 8 bits, \textbf{only bit~7 is actually wired into the CPU's
-interrupt logic}: the core synchronises \texttt{irq\_ext\_i[7]} through a
-2-flip-flop synchroniser and feeds it directly into \texttt{mip.MEIP}.
-Bits~\texttt{[6:0]} are declared but not consumed by either CPU
-implementation (marked \texttt{UNUSEDSIGNAL} in \texttt{asCPUx.sv}).
+Of these 8 bits, \textbf{only bit~7 is wired into the CPU's interrupt
+logic}: \texttt{cc\_trap\_csr} synchronises it (like
+\texttt{irq\_m\_soft\_i} and \texttt{irq\_m\_timer\_i}) through a
+2-flip-flop synchroniser and shows the result as \texttt{mip.MEIP}.
+Bits~\texttt{[6:0]} are declared but not consumed.
 Bit~7 is driven by \textbf{ICU0} (Section~\ref{sec:icufunc01}), a
 Wishbone-addressable interrupt controller that aggregates GPIO0, UART0,
 and (on \texttt{RV\_PipelineCacheFwd}) QSPI0 with software-configurable
@@ -25,87 +40,188 @@ $\rightarrow$ single-bit \texttt{RIS[0]} $\rightarrow$ \texttt{IMSC[0]}
 $\rightarrow$ \texttt{MIS[0]} $=$ \texttt{gpio\_irq\_o}) collapses all GPIO
 pins onto one line before it ever reaches ICU0; see
 Section~\ref{sec:gpiofunc01} for the full GPIO0 register description.
-On \texttt{RV\_NoPipeline}, UART0's interrupt now reaches the CPU for the
-first time via ICU0 -- previously it was wired directly to
-\texttt{irq\_ext\_i[6]}, a bit the CPU never reads, so it had no effect on
-program flow.
 
-\paragraph{CPU-side CSR mechanism.}
+\paragraph{Machine-mode CSRs.}
+Table~\ref{tab:asTrapCsr} lists the CSRs of \texttt{cc\_trap\_csr}. Every
+other CSR address raises an illegal-instruction exception, as does a write
+to a read-only CSR (\texttt{csr[11:10]}\,=\,\texttt{11}).
+\texttt{csrrs}/\texttt{csrrc} (and the immediate forms) with
+\texttt{rs1}\,=\,\texttt{x0} (\texttt{uimm}\,=\,0) only read; they do not
+write the CSR. Bits that are not listed as writable are WARL: writes are
+ignored and they read as the fixed value given.
+
+\begin{table}[htbp]
+\caption{Machine-mode CSRs (\texttt{cc\_trap\_csr})}
+\label{tab:asTrapCsr}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|p{1.6cm} |p{2.1cm} |p{1.5cm} |X |}
+  \hline
+  Addr. & Name & Reset & Function / WARL rule \\
+  \hline
+  \hline
+  0x300 & \texttt{mstatus}   & 0x1800 & Only \texttt{MIE}[3] and \texttt{MPIE}[7] writable;
+    \texttt{MPP}[12:11]\,=\,11 fixed (M-mode only). \texttt{MIE}\,=\,0 after reset. \\
+  \hline
+  0x301 & \texttt{misa}      & fixed & Read-only 0x8000\_0000\_0000\_0100: MXL\,=\,2 (64 bit), extension I. \\
+  \hline
+  0x304 & \texttt{mie}       & 0 & \texttt{MSIE}[3], \texttt{MTIE}[7], \texttt{MEIE}[11] writable. \\
+  \hline
+  0x305 & \texttt{mtvec}     & 0x7F00 & \texttt{BASE}[63:2]; \texttt{MODE}[0]: 0 = direct,
+    1 = vectored; \texttt{MODE}[1]\,=\,0 fixed. \\
+  \hline
+  0x340 & \texttt{mscratch}  & 0 & 64-bit scratch register for the trap handler. \\
+  \hline
+  0x341 & \texttt{mepc}      & 0 & \texttt{mepc}[1:0]\,=\,0 fixed (IALIGN\,=\,32). \\
+  \hline
+  0x342 & \texttt{mcause}    & 0 & Interrupt bit [63] and cause code [3:0] stored (WLRL). \\
+  \hline
+  0x343 & \texttt{mtval}     & 0 & Faulting address or instruction, see Table~\ref{tab:asTrapCause}. \\
+  \hline
+  0x344 & \texttt{mip}       & 0 & Read-only levels \texttt{MSIP}[3], \texttt{MTIP}[7],
+    \texttt{MEIP}[11] of the synchronised inputs. \\
+  \hline
+  0xB00 & \texttt{mcycle}    & 0 & Counts every core clock cycle; writable. \\
+  \hline
+  0xB02 & \texttt{minstret}  & 0 & Counts retired instructions (not trapping ones); writable. \\
+  \hline
+  0xC00\newline 0xC02 & \texttt{cycle}\newline \texttt{instret} & -- & Read-only shadows of
+    \texttt{mcycle}/\texttt{minstret}. \\
+  \hline
+  0xF11\newline 0xF12\newline 0xF13 & \texttt{mvendorid}\newline \texttt{marchid}\newline \texttt{mimpid} & 0 & Read-only. \\
+  \hline
+  0xF14 & \texttt{mhartid}   & param. & Read-only; core parameter \texttt{HART\_ID}
+    (default 0). \\
+  \hline
+  0xF15 & \texttt{mconfigptr} & 0 & Read-only. \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+\paragraph{Taking an interrupt.}
 \begin{itemize}
-  \item \texttt{mip[11]} (MEIP) is \textbf{read-only}: it directly mirrors
-    the synchronised \texttt{icu\_irq\_o} line and cannot be set or
-    cleared by software: it stays 1 for as long as ICU0 has at least one
-    pending, unmasked, globally-enabled source, and clears only when
-    firmware clears the responsible source(s) via ICU0's own
-    \textbf{ICU0\_ICR} (and, typically, the underlying peripheral's own
-    clear register too).
-  \item \texttt{mie[11]} (MEIE) is a normal read/write CSR bit, enabled
-    (\texttt{=1}) by default out of reset.
-  \item An interrupt is taken when
-    \texttt{mip[11]\,\&\,mie[11]\,\&\,mstatus.MIE} all hold.
-  \item \texttt{mtvec} supports \textbf{Direct mode only}
-    (\texttt{mtvec[1:0]}\,=\,\texttt{00}); every trap -- exception or
-    interrupt alike -- jumps to the same handler address, reset default
-    \texttt{0x0000\_0000\_0000\_7F00}.
-    There is no vectored mode and no per-cause offset.
-  \item On trap entry: \texttt{mepc} $\leftarrow$ PC (faulting instruction,
-    for illegal-instruction/misaligned-address/\texttt{ecall}/\texttt{ebreak}
-    exceptions) or PC$+4$ (return address, for the external interrupt);
-    \texttt{mstatus.MPIE}
-    $\leftarrow$ \texttt{mstatus.MIE}; \texttt{mstatus.MIE} $\leftarrow$ 0;
-    PC $\leftarrow$ \texttt{mtvec}.
-  \item \texttt{mret} restores \texttt{mstatus.MIE} $\leftarrow$
-    \texttt{mstatus.MPIE} and sets \texttt{mstatus.MPIE} $\leftarrow$ 1.
-  \item \textbf{Trap priority} (highest first): illegal instruction
-    $>$ misaligned load/store address $>$ \texttt{ecall}/\texttt{ebreak}
-    $>$ external interrupt.
-    Only one trap is taken per cycle; a pending external interrupt is
-    deferred behind any pending exception.
-    In practice this ordering is never contended: \texttt{ecall}/\texttt{ebreak}
-    are a single, unambiguous instruction encoding that cannot simultaneously
-    be illegal or trigger a misaligned load/store.
+  \item An interrupt is \emph{pending and enabled} when
+    \texttt{mip}\,\&\,\texttt{mie}\,$\neq$\,0, and it is taken only if
+    \texttt{mstatus.MIE}\,=\,1.
+  \item If several are pending, the priority is MEI $>$ MSI $>$ MTI.
+  \item All three are level-sensitive: \texttt{mip} follows the input
+    lines and cannot be changed by software. The handler must remove the
+    cause at its source (ICU0\_ICR and the peripheral's clear register;
+    CLINT \texttt{msip}/\texttt{mtimecmp}) before \texttt{mret}, or the
+    interrupt is taken again immediately.
+  \item Target address: \texttt{mtvec.BASE} in direct mode; in vectored mode
+    \texttt{BASE}\,+\,4\,$\times$\,cause for interrupts (MSI: +0x0C,
+    MTI: +0x1C, MEI: +0x2C) and \texttt{BASE} for exceptions.
 \end{itemize}
 
-\paragraph{Synchronous exceptions: \texttt{ecall} and \texttt{ebreak}.}
-Besides the illegal-instruction and misaligned-address traps, both CPU
-variants decode the two mandatory RV64I \texttt{SYSTEM} exceptions directly:
+\paragraph{Precise traps.}
+A trap is \emph{precise}: \texttt{mepc} points to an instruction such that
+every older instruction has completed and neither this instruction nor any
+younger one has changed a register, a CSR or memory.
 \begin{itemize}
-  \item \texttt{ecall} (\texttt{funct3}\,=\,\texttt{000},
-    \texttt{imm[11:0]}\,=\,\texttt{0x000}) sets
-    \texttt{mcause}\,=\,11 (\textit{Environment call from M-mode}).
-  \item \texttt{ebreak} (\texttt{funct3}\,=\,\texttt{000},
-    \texttt{imm[11:0]}\,=\,\texttt{0x001}) sets
-    \texttt{mcause}\,=\,3 (\textit{Breakpoint}).
+  \item An \textbf{exception} is taken on the faulting instruction:
+    \texttt{mepc} = its own address. The instruction is suppressed: no
+    register write, no CSR write, and a load/store does \emph{not} access
+    memory.
+  \item An \textbf{interrupt} is taken between two instructions:
+    \texttt{mepc} = address of the first instruction that has not been
+    executed (also directly after a taken branch or jump: then it is the
+    branch target).
+  \item \texttt{RV\_NoPipeline}: exceptions are detected in
+    \texttt{EXEC\_ST}/\texttt{EXECLD\_ST}; the store write enable and the
+    register write are suppressed. Interrupts, exceptions and
+    \texttt{mret} redirect the fetch in the following \texttt{FETCH0\_ST},
+    before the next instruction is fetched, so no wrong-path instruction
+    ever enters IR. The address of the next instruction in program order is
+    registered at commit (\texttt{npc\_r}).
+  \item \texttt{RV\_PipelineCacheFwd}: misaligned loads/stores and
+    misaligned branch/jump targets are detected in EX and, like illegal
+    instructions and I-/D-cache faults, carried as flags to WB, where the
+    trap is taken. A load/store with an exception sends no
+    \texttt{dc\_req}, and no younger instruction in MEM sends
+    \texttt{dc\_req} in the cycle WB traps or returns. An interrupt is
+    taken on the instruction in WB before it commits (it is squashed,
+    \texttt{mepc} = its address), except for a load/store, whose memory
+    access in MEM has already happened: it commits, and the interrupt is
+    taken on the next instruction that reaches WB.
 \end{itemize}
-Both traps behave like the illegal-instruction/misaligned-address case:
-\texttt{mepc} points at the \texttt{ecall}/\texttt{ebreak} instruction itself
-(not PC$+4$), \texttt{mstatus.MPIE}/\texttt{MIE} update the same way, and
-\texttt{mret} returns control to the trap handler's chosen resume address.
-Neither instruction has any side effect beyond the trap -- there is no
-environment-call ABI and no hardware breakpoint comparator; both exist purely
-to enter the trap handler, which is what \texttt{riscv-arch-test} compliance
-and a future GDB-stub breakpoint mechanism require. In
-\texttt{RV\_NoPipeline} (\texttt{as\_cpux}), the redirect to \texttt{mtvec}
-is triggered one cycle early via \texttt{ecbrk\_pending\_s} against the
-live I-Mem prefetch, mirroring how \texttt{mret\_pending\_s} already handles
-\texttt{mret} -- otherwise the design's always-ack instruction prefetch would
-transiently execute one stale, wrong-path instruction before the redirect
-lands. \texttt{RV\_PipelineCacheFwd} (\texttt{cc\_cpupipefwd}) needs no such
-trick: its I-Cache uses an explicit req/rvalid handshake, so the ordinary
-commit-stage flush already used for illegal-instruction/misaligned traps is
-sufficient.
+
+\paragraph{Trap entry and return.}
+On trap entry \texttt{mepc} $\leftarrow$ trap PC, \texttt{mcause} and
+\texttt{mtval} $\leftarrow$ Table~\ref{tab:asTrapCause},
+\texttt{mstatus.MPIE} $\leftarrow$ \texttt{mstatus.MIE},
+\texttt{mstatus.MIE} $\leftarrow$ 0, PC $\leftarrow$ trap target.
+\texttt{mret} sets PC $\leftarrow$ \texttt{mepc},
+\texttt{mstatus.MIE} $\leftarrow$ \texttt{mstatus.MPIE},
+\texttt{mstatus.MPIE} $\leftarrow$ 1. A handler that saves \texttt{mepc}
+and \texttt{mcause} (e.g.\ via \texttt{mscratch}) may set
+\texttt{mstatus.MIE} again to allow nested interrupts.
+
+\begin{table}[htbp]
+\caption{Trap causes}
+\label{tab:asTrapCause}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |X |X |}
+  \hline
+  \texttt{mcause} & Cause & \texttt{mtval} \\
+  \hline
+  \hline
+  0 & Instruction address misaligned (taken branch/jump to an address with
+      bit 1 set; JALR clears bit 0 first) & target address \\
+  \hline
+  1 & Instruction access fault (I-cache AXI4 error, \texttt{RV\_PipelineCacheFwd}) & fetch address \\
+  \hline
+  2 & Illegal instruction (decoder, unknown CSR, write to read-only CSR,
+      reserved \texttt{SYSTEM} encoding) & instruction bits \\
+  \hline
+  3 & Breakpoint (\texttt{ebreak}) & 0 \\
+  \hline
+  4 / 6 & Load / store address misaligned & access address \\
+  \hline
+  5 & Load access fault (D-cache AXI4 error, \texttt{RV\_PipelineCacheFwd}) & access address \\
+  \hline
+  11 & Environment call from M-mode (\texttt{ecall}) & 0 \\
+  \hline
+  \hline
+  0x800\ldots3 / 7 / B & Machine software / timer / external interrupt & 0 \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+\texttt{ecall} and \texttt{ebreak} have no side effect beyond the trap;
+\texttt{mepc} points at the instruction itself, so the handler has to add 4
+before \texttt{mret} to continue after it.
+
+\paragraph{WFI.}
+In \texttt{RV\_NoPipeline}, \texttt{wfi} stays in \texttt{EXEC\_ST} until an
+interrupt is pending and enabled in \texttt{mie} (independent of
+\texttt{mstatus.MIE}); then it completes, and if \texttt{mstatus.MIE}\,=\,1
+the interrupt is taken with \texttt{mepc} = address after \texttt{wfi}.
+In \texttt{RV\_PipelineCacheFwd}, \texttt{wfi} is executed as a NOP, which
+the privileged specification allows.
+
+\paragraph{Verification.}
+\texttt{ip\_trapcsr/tb/cc\_trap\_csr\_tb.sv} checks the unit alone (reset
+values, legality, WARL, priority, vectoring, counters).
+\texttt{cocotb/test\_traps.py} of both variants (shared bodies in
+\texttt{RV\_NoPipeline/cocotb/trap\_tests.py}) interrupts programs at random
+points and checks that no instruction is lost or repeated (also around
+jumps and memory read-modify-write sequences) and that every \texttt{mepc}
+is the first unexecuted instruction; it also checks every exception cause,
+\texttt{mtval}, the suppression of the trapping instruction, vectored
+\texttt{mtvec} and \texttt{wfi}.
 
 \paragraph{Open items.}
-ICU0 provisions 8 source slots but only 3 are wired to real hardware on
-either chip (GPIO0, UART0, and -- \texttt{RV\_PipelineCacheFwd} only --
-QSPI0); connecting a future interrupt-capable peripheral only requires
-wiring it into one of the 5 remaining slots
-(Table~\ref{tab:asIcuSrcAssign}), not a redesign of the register map.
-Both CPUs still support \texttt{mtvec} Direct mode only -- ICU0's
-\textbf{ICU0\_IRQID} register lets firmware branch on cause in software
-from the one shared handler, but hardware-vectored dispatch (a per-cause
-jump table) would require CPU changes outside ICU0's scope and remains
-unimplemented. Nested/preemptive interrupt handling (a higher-priority
-interrupt preempting an in-progress lower-priority ISR) is likewise not
-implemented; RISC-V M-mode already precludes it at the CPU level
-(\texttt{mstatus.MIE} is cleared on trap entry) independent of ICU0.
+\begin{itemize}
+  \item A CLINT (\texttt{mtime}, \texttt{mtimecmp}, \texttt{msip}) is not
+    yet on the chip; the CPU inputs are ready for it. The \texttt{time}
+    CSR (0xC01) is not implemented and traps as illegal.
+  \item \texttt{mcountinhibit} is not implemented (illegal).
+  \item ICU0 provisions 8 source slots but only 3 are wired to real
+    hardware (GPIO0, UART0, and -- \texttt{RV\_PipelineCacheFwd} only --
+    QSPI0); connecting a future interrupt-capable peripheral only requires
+    wiring it into one of the 5 remaining slots
+    (Table~\ref{tab:asIcuSrcAssign}). All ICU0 sources share MEI
+    (cause 11), so per-source dispatch uses ICU0\_IRQID in software.
+\end{itemize}

@@ -279,7 +279,9 @@ module as_top_mem (
     .sc01_shift_i(sc01_shift_s), .sc01_clock_i(sc01_clock_s),
     .icpu_if(icpu_if_s),
     .dcpu_if(dcpu_if_s),
-    .irq_ext_i({icu_irq_s, {(irq_total_num_ext_c-1){1'b0}}})
+    .irq_ext_i({icu_irq_s, {(irq_total_num_ext_c-1){1'b0}}}),
+    .irq_m_soft_i (1'b0),   // no CLINT in this variant yet
+    .irq_m_timer_i(1'b0)
   );
 
   // ── Memory subsystem ─────────────────────────────────────────────

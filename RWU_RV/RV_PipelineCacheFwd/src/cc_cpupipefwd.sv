@@ -33,12 +33,24 @@
 //     for CSR register values.  Any CSR instruction in ID is held until the
 //     pipeline contains no earlier CSR instructions.
 //
-// Interface, cache handling, branch/trap/IRQ:  identical to cc_cpupipe.
+// Interface, cache handling, branch:  identical to cc_cpupipe.
+//
+// Traps / IRQ (cc_trap_csr holds all M-mode CSRs):
+//   Exceptions are detected up to EX/MEM and carried as flags to WB, where
+//   the trap is taken with mepc = PC of the faulting instruction. A load or
+//   store that carries an exception never sends dc_req, and no younger
+//   instruction in MEM sends dc_req in the cycle WB traps -- so a trapping or
+//   squashed instruction leaves memory untouched.
+//   An interrupt is taken on the instruction in WB BEFORE it commits
+//   (squashed, mepc = its own PC), except for a load/store: its memory access
+//   in MEM has already happened, so it commits and the interrupt is taken on
+//   the next instruction that reaches WB.
+//   WFI is executed as a NOP (allowed by the privileged spec).
 `timescale 1ns/1ps
 
 import as_pack::*;
 
-module cc_cpupipefwd (
+module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
     input  logic                           clk_i,
     input  logic                           rst_i,
     input  logic                           tck_i,
@@ -52,9 +64,11 @@ module cc_cpupipefwd (
     /* verilator lint_on UNUSEDSIGNAL */
     as_icache_if.cpu                       icpu_if,
     as_dcache_if.cpu                       dcpu_if,
-    /* verilator lint_off UNUSEDSIGNAL */
-    input  logic [irq_total_num_ext_c-1:0] irq_ext_i
+    /* verilator lint_off UNUSEDSIGNAL */ // only bit 7 (ICU output -> mip.MEIP) implemented
+    input  logic [irq_total_num_ext_c-1:0] irq_ext_i,
     /* verilator lint_on UNUSEDSIGNAL */
+    input  logic                           irq_m_soft_i,   // CLINT msip -> mip.MSIP
+    input  logic                           irq_m_timer_i   // CLINT mtip -> mip.MTIP
 );
 
   localparam int XLEN = reg_width;
@@ -138,6 +152,10 @@ module cc_cpupipefwd (
   logic [63:0]            ex_dc_wdata_s;
   logic [7:0]             ex_dc_wstrb_s;
   logic                   ex_branch_taken_s;
+  logic [iaddr_width-1:0] ex_target_s;      // branch/jump target, JALR bit 0 cleared
+  logic                   ex_misal_pc_s;    // taken branch/jump to a non-word address
+  logic                   ex_misal_mem_s;   // misaligned load/store address
+  logic                   ex_sys_illegal_s; // illegal SYSTEM instruction (cc_trap_csr)
 
   // ── EX/MEM pipeline register ───────────────────────────────────────────────
   logic [instr_width-1:0] ex_mem_instr_r;
@@ -149,6 +167,7 @@ module cc_cpupipefwd (
   result_src_t            ex_mem_resultSrc_r;
   logic                   ex_mem_trap_illegal_r;
   logic                   ex_mem_trap_icfault_r;
+  logic                   ex_mem_trap_misaligned_r;
   logic [reg_width-1:0]   ex_mem_aluRes_r;
   logic [reg_width-1:0]   ex_mem_csr_rdata_r;
   logic [reg_width-1:0]   ex_mem_csr_wdata_r;
@@ -170,6 +189,7 @@ module cc_cpupipefwd (
   logic                   mem_wb_trap_illegal_r;
   logic                   mem_wb_trap_icfault_r;  // I-cache AXI4 error on the fetch of this slot
   logic                   mem_wb_trap_dcfault_r;  // D-cache AXI4 error on this slot's load
+  logic                   mem_wb_trap_misaligned_r;
   logic [reg_width-1:0]   mem_wb_aluRes_r;
   logic [reg_width-1:0]   mem_wb_memData_r;
   logic [reg_width-1:0]   mem_wb_csr_rdata_r;
@@ -181,26 +201,30 @@ module cc_cpupipefwd (
   logic                   wb_commit_s;
   logic                   wb_committed_r;
   logic                   wb_trap_taken_s;
+  logic                   wb_exc_s;
+  logic                   wb_irq_take_s;
   logic                   wb_mret_s;
   logic                   wb_is_mret_s;
   logic                   wb_is_ecall_s;
   logic                   wb_is_ebreak_s;
+  logic                   wb_is_mem_s;
   logic                   wb_trap_illegal_s;
   logic                   wb_trap_misaligned_s;
   logic                   wb_trap_icfault_s;
   logic                   wb_trap_dcfault_s;
-  logic                   wb_irq_pending_s;
+  logic [3:0]             wb_exc_cause_s;
+  logic [63:0]            wb_exc_tval_s;
 
   // ── Register file ──────────────────────────────────────────────────────────
   logic [reg_width-1:0] rf_rdata1_s, rf_rdata2_s;
 
-  // ── CSR registers ──────────────────────────────────────────────────────────
-  logic [63:0] csr_mepc_r, csr_mcause_r, csr_mtvec_r, csr_mtval_r;
-  logic [63:0] csr_mstatus_r, csr_mie_r, csr_mip_r;
-  logic        csr_mstatus_mie, csr_mstatus_mpie;
+  // ── Trap / CSR unit ────────────────────────────────────────────────────────
+  logic        irq_pending_s;
+  logic        csr_we_s;
+  logic        instret_s;
+  logic [63:0] trap_vec_s;
+  logic [63:0] mepc_s;
 
-  // ── IRQ ────────────────────────────────────────────────────────────────────
-  logic        irq_sync_r;
   logic        rst_deasserted_r;
 
   // ── Hazard helpers ─────────────────────────────────────────────────────────
@@ -238,7 +262,8 @@ module cc_cpupipefwd (
   // AXI4 error would hang the CPU forever instead of trapping.
   assign icache_stall_s = !ibuf_valid_r && !icpu_if.ic_rvalid && !icpu_if.ic_err;
 
-  assign dcache_stall_s = ex_mem_valid_r && ex_mem_dMemRd_r
+  // A misaligned load sends no dc_req, so it must not wait for rvalid.
+  assign dcache_stall_s = ex_mem_valid_r && ex_mem_dMemRd_r && !ex_mem_trap_misaligned_r
                           && !dcpu_if.dc_rvalid && !dc_rdata_buf_valid_r
                           && !dcpu_if.dc_err && !dc_err_buf_r;
 
@@ -255,7 +280,8 @@ module cc_cpupipefwd (
                              ((icpu_if.ic_rvalid || icpu_if.ic_err) && !discard_ic_r))
                            && !data_stall_s && !dcache_stall_s;
 
-  assign ex_branch_taken_s = id_ex_valid_r && ex_take_s && !global_stall_s;
+  // A branch to a misaligned target traps in WB instead of redirecting.
+  assign ex_branch_taken_s = id_ex_valid_r && ex_take_s && !ex_misal_pc_s && !global_stall_s;
   assign flush_s           = ex_branch_taken_s | wb_trap_taken_s | wb_mret_s;
 
   // ── RAW hazard / forwarding register addresses ─────────────────────────────
@@ -280,8 +306,12 @@ module cc_cpupipefwd (
   assign dcpu_if.dc_wdata = ex_mem_dc_wdata_r;
   assign dcpu_if.dc_wstrb = ex_mem_dc_wstrb_r;
 
+  // Precise traps: no memory access for a misaligned load/store, and none
+  // for the (younger) MEM instruction while WB traps or returns.
   assign dcpu_if.dc_req = ex_mem_valid_r &&
                           (ex_mem_dMemRd_r || ex_mem_dMemWr_r) &&
+                          !ex_mem_trap_misaligned_r &&
+                          !wb_trap_taken_s && !wb_mret_s &&
                           !dc_req_sent_r;
 
   // ── WB outputs ────────────────────────────────────────────────────────────
@@ -297,13 +327,13 @@ module cc_cpupipefwd (
                           (mem_wb_instr_r[14:12] == 3'b000)     &&
                           (mem_wb_instr_r[31:20] == 12'h001);
 
-  assign wb_commit_s      = mem_wb_valid_r && !wb_committed_r;
-  assign csr_mstatus_mie  = csr_mstatus_r[3];
-  assign csr_mstatus_mpie = csr_mstatus_r[7];
-  assign wb_irq_pending_s = csr_mip_r[11] && csr_mie_r[11] && csr_mstatus_mie;
-  assign wb_trap_illegal_s = mem_wb_trap_illegal_r;
-  assign wb_trap_icfault_s = mem_wb_trap_icfault_r;
-  assign wb_trap_dcfault_s = mem_wb_trap_dcfault_r;
+  assign wb_is_mem_s = (mem_wb_instr_r[6:0] == 7'b0000011) || (mem_wb_instr_r[6:0] == 7'b0100011);
+
+  assign wb_commit_s          = mem_wb_valid_r && !wb_committed_r;
+  assign wb_trap_illegal_s    = mem_wb_trap_illegal_r;
+  assign wb_trap_misaligned_s = mem_wb_trap_misaligned_r;
+  assign wb_trap_icfault_s    = mem_wb_trap_icfault_r;
+  assign wb_trap_dcfault_s    = mem_wb_trap_dcfault_r;
 
   // ECALL/EBREAK need no early-redirect trick here (unlike RV_NoPipeline):
   // this pipeline's I-cache uses a proper req/rvalid handshake with explicit
@@ -312,13 +342,18 @@ module cc_cpupipefwd (
   // The same holds for the I-cache/D-cache AXI4 fault traps below: they are
   // detected synchronously (icache_stall_s/dcache_stall_s release on ic_err/
   // dc_err exactly like a normal completion), so no early redirect is needed.
-  assign wb_trap_taken_s = wb_commit_s && !wb_is_mret_s &&
+  assign wb_exc_s        = wb_commit_s &&
                            (wb_trap_illegal_s || wb_trap_misaligned_s ||
                             wb_trap_icfault_s || wb_trap_dcfault_s ||
-                            wb_is_ecall_s || wb_is_ebreak_s || wb_irq_pending_s);
-  assign wb_mret_s       = wb_commit_s && wb_is_mret_s;
+                            wb_is_ecall_s || wb_is_ebreak_s);
+  // A load/store in WB has already accessed memory in MEM: not interruptible.
+  assign wb_irq_take_s   = wb_commit_s && irq_pending_s && !wb_is_mem_s;
+  assign wb_trap_taken_s = wb_exc_s || wb_irq_take_s;
+  assign wb_mret_s       = wb_commit_s && wb_is_mret_s && !wb_trap_taken_s;
 
   assign wb_regWr_final_s = mem_wb_regWr_r && wb_commit_s && !wb_trap_taken_s;
+  assign csr_we_s         = wb_is_csr_s && wb_commit_s && !wb_trap_taken_s;
+  assign instret_s        = wb_commit_s && !wb_trap_taken_s;
 
   // ── ID/EX: register-file read outputs ─────────────────────────────────────
   assign id_regA_s = rf_rdata1_s;
@@ -333,6 +368,9 @@ module cc_cpupipefwd (
   assign ex_srcB_s    = id_ex_aluSrcB_r ? id_ex_immExt_r : fwd_srcB_s;
   assign ex_PCorRS1_s = id_ex_jump_r    ? fwd_srcA_s     : id_ex_pc_r;
   assign ex_PCbr_s    = ex_PCorRS1_s    + id_ex_immExt_r;
+  // JALR clears bit 0 of its target; with IALIGN = 32 bit 1 must then be 0.
+  assign ex_target_s   = id_ex_jump_r ? {ex_PCbr_s[iaddr_width-1:1], 1'b0} : ex_PCbr_s;
+  assign ex_misal_pc_s = ex_take_s && (ex_target_s[1:0] != 2'b00);
 
   // ─── 4. always_comb blocks ────────────────────────────────────────────────
 
@@ -426,19 +464,15 @@ module cc_cpupipefwd (
       default : id_immExt_s = {XLEN{1'b0}};
     endcase
 
-  // ── EX: CSR read value ────────────────────────────────────────────────────
+  // ── EX: misaligned load/store (funct3[1:0] = access size B, H, W, D) ────────
   always_comb begin
-    ex_csr_rdata_s = 64'h0;
-    if ((id_ex_instr_r[6:0] == 7'b1110011) && (id_ex_instr_r[14:12] != 3'b000))
-      case (id_ex_instr_r[31:20])
-        12'h300: ex_csr_rdata_s = csr_mstatus_r;
-        12'h304: ex_csr_rdata_s = csr_mie_r;
-        12'h305: ex_csr_rdata_s = csr_mtvec_r;
-        12'h341: ex_csr_rdata_s = csr_mepc_r;
-        12'h342: ex_csr_rdata_s = csr_mcause_r;
-        12'h343: ex_csr_rdata_s = csr_mtval_r;
-        12'h344: ex_csr_rdata_s = csr_mip_r;
-        default: ex_csr_rdata_s = 64'h0;
+    ex_misal_mem_s = 1'b0;
+    if (id_ex_dMemRd_r || id_ex_dMemWr_r)
+      case (id_ex_instr_r[13:12])
+        2'b01:   ex_misal_mem_s = ex_aluRes_s[0];
+        2'b10:   ex_misal_mem_s = (ex_aluRes_s[1:0] != 2'b00);
+        2'b11:   ex_misal_mem_s = (ex_aluRes_s[2:0] != 3'b000);
+        default: ex_misal_mem_s = 1'b0;
       endcase
   end
 
@@ -486,16 +520,30 @@ module cc_cpupipefwd (
       default : wb_result_s = {XLEN{1'b0}};
     endcase
 
-  // ── WB: misaligned trap detection ─────────────────────────────────────────
+  // ── WB: exception cause and mtval ─────────────────────────────────────────
+  // For a misaligned branch/jump, mem_wb_aluRes_r holds the target (see the
+  // EX/MEM register); for loads/stores it is the access address.
   always_comb begin
-    wb_trap_misaligned_s = 1'b0;
-    if (mem_wb_instr_r[6:0] == 7'b0000011 || mem_wb_instr_r[6:0] == 7'b0100011)
-      case (mem_wb_instr_r[14:12])
-        3'b001, 3'b101: wb_trap_misaligned_s = mem_wb_aluRes_r[0];
-        3'b010:         wb_trap_misaligned_s = (mem_wb_aluRes_r[1:0] != 2'b00);
-        3'b011:         wb_trap_misaligned_s = (mem_wb_aluRes_r[2:0] != 3'b000);
-        default:;
-      endcase
+    wb_exc_cause_s = 4'd0;
+    wb_exc_tval_s  = 64'h0;
+    if (wb_trap_icfault_s) begin
+      wb_exc_cause_s = 4'd1;                 // instruction access fault
+      wb_exc_tval_s  = mem_wb_pc_r;
+    end else if (wb_trap_illegal_s) begin
+      wb_exc_cause_s = 4'd2;
+      wb_exc_tval_s  = {32'b0, mem_wb_instr_r};
+    end else if (wb_trap_misaligned_s) begin
+      if      (mem_wb_instr_r[6:0] == 7'b0000011) wb_exc_cause_s = 4'd4;
+      else if (mem_wb_instr_r[6:0] == 7'b0100011) wb_exc_cause_s = 4'd6;
+      else                                         wb_exc_cause_s = 4'd0;
+      wb_exc_tval_s  = mem_wb_aluRes_r;
+    end else if (wb_trap_dcfault_s) begin
+      wb_exc_cause_s = 4'd5;                 // load access fault
+      wb_exc_tval_s  = mem_wb_aluRes_r;
+    end else if (wb_is_ecall_s)
+      wb_exc_cause_s = 4'd11;
+    else if (wb_is_ebreak_s)
+      wb_exc_cause_s = 4'd3;
   end
 
   // ─── 5. always_ff blocks ──────────────────────────────────────────────────
@@ -505,9 +553,9 @@ module cc_cpupipefwd (
     if (rst_i)
       PC_r <= 64'h0;
     else begin
-      if      (wb_trap_taken_s)   PC_r <= {csr_mtvec_r[63:2], 2'b00};
-      else if (wb_mret_s)         PC_r <= csr_mepc_r;
-      else if (ex_branch_taken_s) PC_r <= ex_PCbr_s;
+      if      (wb_trap_taken_s)   PC_r <= trap_vec_s;
+      else if (wb_mret_s)         PC_r <= mepc_s;
+      else if (ex_branch_taken_s) PC_r <= ex_target_s;
       else if (start_fetch_s)     PC_r <= PC_r + 64'd4;
     end
   end
@@ -519,12 +567,17 @@ module cc_cpupipefwd (
   end
 
   // ── Fetch in-flight ────────────────────────────────────────────────────────
+  // A flush does not end an outstanding fetch: the I-cache accepts ic_req only
+  // in IDLE_ST, so a new request issued while the old miss is still being
+  // filled would be ignored, and the old (discarded) response would then be
+  // taken as the end of the new fetch -- the first instruction at the trap
+  // vector / mret target was lost. The new fetch starts after the discarded
+  // response instead.
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       fetch_in_flight_r <= 1'b0;
     else begin
-      if      (flush_s)             fetch_in_flight_r <= 1'b0;
-      else if (start_fetch_s)       fetch_in_flight_r <= 1'b1;
+      if      (start_fetch_s)       fetch_in_flight_r <= 1'b1;
       else if (icpu_if.ic_rvalid || icpu_if.ic_err)
                                      fetch_in_flight_r <= 1'b0;
     end
@@ -693,6 +746,7 @@ module cc_cpupipefwd (
       ex_mem_resultSrc_r    <= RES_ALU;
       ex_mem_trap_illegal_r <= 1'b0;
       ex_mem_trap_icfault_r <= 1'b0;
+      ex_mem_trap_misaligned_r <= 1'b0;
       ex_mem_aluRes_r       <= {XLEN{1'b0}};
       ex_mem_csr_rdata_r    <= 64'h0;
       ex_mem_csr_wdata_r    <= 64'h0;
@@ -710,6 +764,7 @@ module cc_cpupipefwd (
       ex_mem_dMemWr_r       <= 1'b0;
       ex_mem_trap_illegal_r <= 1'b0;
       ex_mem_trap_icfault_r <= 1'b0;
+      ex_mem_trap_misaligned_r <= 1'b0;
     end else if (!global_stall_s) begin
       ex_mem_valid_r        <= id_ex_valid_r;
       ex_mem_instr_r        <= id_ex_instr_r;
@@ -718,9 +773,12 @@ module cc_cpupipefwd (
       ex_mem_dMemRd_r       <= id_ex_dMemRd_r;
       ex_mem_dMemWr_r       <= id_ex_dMemWr_r;
       ex_mem_resultSrc_r    <= id_ex_resultSrc_r;
-      ex_mem_trap_illegal_r <= id_ex_trap_illegal_r;
+      ex_mem_trap_illegal_r <= id_ex_trap_illegal_r || (id_ex_valid_r && ex_sys_illegal_s);
       ex_mem_trap_icfault_r <= id_ex_trap_icfault_r;
-      ex_mem_aluRes_r       <= ex_aluRes_s;
+      ex_mem_trap_misaligned_r <= id_ex_valid_r && (ex_misal_mem_s || ex_misal_pc_s);
+      // A branch/jump never uses its ALU result; for a misaligned target the
+      // slot carries the target to WB as mtval.
+      ex_mem_aluRes_r       <= ex_misal_pc_s ? ex_target_s : ex_aluRes_s;
       ex_mem_csr_rdata_r    <= ex_csr_rdata_s;
       ex_mem_csr_wdata_r    <= ex_csr_wdata_s;
       ex_mem_dc_wdata_r     <= ex_dc_wdata_s;
@@ -774,10 +832,20 @@ module cc_cpupipefwd (
       mem_wb_trap_illegal_r <= 1'b0;
       mem_wb_trap_icfault_r <= 1'b0;
       mem_wb_trap_dcfault_r <= 1'b0;
+      mem_wb_trap_misaligned_r <= 1'b0;
       mem_wb_aluRes_r       <= {XLEN{1'b0}};
       mem_wb_memData_r      <= {XLEN{1'b0}};
       mem_wb_csr_rdata_r    <= 64'h0;
       mem_wb_csr_wdata_r    <= 64'h0;
+    end else if (wb_trap_taken_s || wb_mret_s) begin
+      // The MEM instruction is younger than the trapping/returning one in WB:
+      // it must not move on into WB and commit.
+      mem_wb_valid_r        <= 1'b0;
+      mem_wb_regWr_r        <= 1'b0;
+      mem_wb_trap_illegal_r <= 1'b0;
+      mem_wb_trap_icfault_r <= 1'b0;
+      mem_wb_trap_dcfault_r <= 1'b0;
+      mem_wb_trap_misaligned_r <= 1'b0;
     end else if (!global_stall_s) begin
       mem_wb_valid_r        <= ex_mem_valid_r;
       mem_wb_instr_r        <= ex_mem_instr_r;
@@ -788,6 +856,7 @@ module cc_cpupipefwd (
       mem_wb_trap_icfault_r <= ex_mem_trap_icfault_r;
       mem_wb_trap_dcfault_r <= ex_mem_valid_r && ex_mem_dMemRd_r &&
                                (dc_err_buf_r || dcpu_if.dc_err);
+      mem_wb_trap_misaligned_r <= ex_mem_trap_misaligned_r;
       mem_wb_aluRes_r       <= ex_mem_aluRes_r;
       mem_wb_memData_r      <= dc_rdata_buf_valid_r ? dc_rdata_buf_r : dcpu_if.dc_rdata;
       mem_wb_csr_rdata_r    <= ex_mem_csr_rdata_r;
@@ -811,124 +880,35 @@ module cc_cpupipefwd (
     else        rst_deasserted_r <= 1'b1;
   end
 
-  // ── IRQ synchroniser ──────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) irq_sync_r <= 1'b0;
-    else       irq_sync_r <= irq_ext_i[7];
-  end
-
-  // ── CSR: MIP ──────────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) csr_mip_r <= 64'h0;
-    else       csr_mip_r[11] <= irq_sync_r;
-  end
-
-  // ── CSR: MIE ──────────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mie_r <= 64'h0000000000000800;
-    else if (wb_commit_s && !wb_trap_taken_s &&
-             mem_wb_instr_r[6:0] == 7'b1110011 &&
-             mem_wb_instr_r[31:20] == 12'h304)
-      case (mem_wb_instr_r[14:12])
-        3'b001, 3'b101: csr_mie_r <= mem_wb_csr_wdata_r;
-        3'b010, 3'b110: csr_mie_r <= csr_mie_r | mem_wb_csr_wdata_r;
-        3'b011, 3'b111: csr_mie_r <= csr_mie_r & ~mem_wb_csr_wdata_r;
-        default:;
-      endcase
-  end
-
-  // ── CSR: MSTATUS ──────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mstatus_r <= 64'h0000000000001808;
-    else if (wb_trap_taken_s) begin
-      csr_mstatus_r[7] <= csr_mstatus_mie;
-      csr_mstatus_r[3] <= 1'b0;
-    end else if (wb_mret_s) begin
-      csr_mstatus_r[3] <= csr_mstatus_mpie;
-      csr_mstatus_r[7] <= 1'b1;
-    end else if (wb_commit_s && !wb_trap_taken_s &&
-                 mem_wb_instr_r[6:0] == 7'b1110011 &&
-                 mem_wb_instr_r[31:20] == 12'h300)
-      case (mem_wb_instr_r[14:12])
-        3'b001, 3'b101: csr_mstatus_r <= mem_wb_csr_wdata_r;
-        3'b010, 3'b110: csr_mstatus_r <= csr_mstatus_r | mem_wb_csr_wdata_r;
-        3'b011, 3'b111: csr_mstatus_r <= csr_mstatus_r & ~mem_wb_csr_wdata_r;
-        default:;
-      endcase
-  end
-
-  // ── CSR: MEPC ─────────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mepc_r <= 64'h0;
-    else if (wb_trap_taken_s) begin
-      if (wb_trap_illegal_s || wb_trap_misaligned_s || wb_trap_icfault_s ||
-          wb_trap_dcfault_s || wb_is_ecall_s || wb_is_ebreak_s)
-        csr_mepc_r <= mem_wb_pc_r;
-      else
-        csr_mepc_r <= mem_wb_pc_r + 64'd4;  // IRQ: return address after the interrupted instruction
-    end else if (wb_commit_s && !wb_trap_taken_s &&
-                 mem_wb_instr_r[6:0] == 7'b1110011 &&
-                 mem_wb_instr_r[31:20] == 12'h341)
-      case (mem_wb_instr_r[14:12])
-        3'b001, 3'b101: csr_mepc_r <= mem_wb_csr_wdata_r;
-        3'b010, 3'b110: csr_mepc_r <= csr_mepc_r | mem_wb_csr_wdata_r;
-        3'b011, 3'b111: csr_mepc_r <= csr_mepc_r & ~mem_wb_csr_wdata_r;
-        default:;
-      endcase
-  end
-
-  // ── CSR: MTVEC ────────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mtvec_r <= 64'h0000000000007F00;
-    else if (wb_commit_s && !wb_trap_taken_s &&
-             mem_wb_instr_r[6:0] == 7'b1110011 &&
-             mem_wb_instr_r[31:20] == 12'h305)
-      case (mem_wb_instr_r[14:12])
-        3'b001, 3'b101: csr_mtvec_r <= mem_wb_csr_wdata_r;
-        3'b010, 3'b110: csr_mtvec_r <= csr_mtvec_r | mem_wb_csr_wdata_r;
-        3'b011, 3'b111: csr_mtvec_r <= csr_mtvec_r & ~mem_wb_csr_wdata_r;
-        default:;
-      endcase
-  end
-
-  // ── CSR: MCAUSE ───────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mcause_r <= 64'h0;
-    else if (wb_trap_taken_s) begin
-      if      (wb_trap_illegal_s)    csr_mcause_r <= 64'd2;
-      else if (wb_trap_misaligned_s) begin
-        if      (mem_wb_instr_r[6:0] == 7'b0000011) csr_mcause_r <= 64'd4;
-        else if (mem_wb_instr_r[6:0] == 7'b0100011) csr_mcause_r <= 64'd6;
-        else                                         csr_mcause_r <= 64'd0;
-      end else if (wb_trap_icfault_s) csr_mcause_r <= 64'd1;   // Instruction access fault (I-cache AXI4 error)
-      else if (wb_trap_dcfault_s)     csr_mcause_r <= 64'd5;   // Load access fault (D-cache AXI4 error)
-      else if (wb_is_ecall_s)    csr_mcause_r <= 64'd11;  // Environment call from M-mode
-      else if (wb_is_ebreak_s)       csr_mcause_r <= 64'd3;   // Breakpoint
-      else if (wb_irq_pending_s) csr_mcause_r <= {1'b1, 63'd11};
-    end
-  end
-
-  // ── CSR: MTVAL ────────────────────────────────────────────────────────────
-  // Hardware-write-only (no CSRRW write path, matching MCAUSE): only the two
-  // AXI4 cache-fault causes populate a meaningful value (the faulting
-  // address); all other trap types leave it at 0. RISC-V privileged spec
-  // permits MTVAL to be hardwired/simplified for embedded implementations.
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      csr_mtval_r <= 64'h0;
-    else if (wb_trap_taken_s) begin
-      if      (wb_trap_icfault_s) csr_mtval_r <= mem_wb_pc_r;     // faulting fetch address
-      else if (wb_trap_dcfault_s) csr_mtval_r <= mem_wb_aluRes_r; // faulting load address
-      else                        csr_mtval_r <= 64'h0;
-    end
-  end
-
   // ─── 6. Module instantiations ─────────────────────────────────────────────
+
+  cc_trap_csr #(.HART_ID(HART_ID), .MTVEC_RST(64'h0000_0000_0000_7F00))
+  trap_csr (
+    .clk_i        (clk_i),
+    .rst_i        (rst_i),
+    .irq_m_ext_i  (irq_ext_i[7]),
+    .irq_m_soft_i (irq_m_soft_i),
+    .irq_m_timer_i(irq_m_timer_i),
+    .rd_instr_i   (id_ex_instr_r),
+    .rd_data_o    (ex_csr_rdata_s),
+    .rd_illegal_o (ex_sys_illegal_s),
+    .wr_en_i      (csr_we_s),
+    .wr_instr_i   (mem_wb_instr_r),
+    .wr_data_i    (mem_wb_csr_wdata_r),
+    .exc_i        (wb_exc_s),
+    .exc_cause_i  (wb_exc_cause_s),
+    .exc_tval_i   (wb_exc_tval_s),
+    .irq_take_i   (wb_irq_take_s),
+    .trap_pc_i    (mem_wb_pc_r),
+    .mret_i       (wb_mret_s),
+    .instret_i    (instret_s),
+    .irq_pending_o(irq_pending_s),
+    /* verilator lint_off PINCONNECTEMPTY */ // WFI runs as a NOP here
+    .wfi_wake_o   (),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .trap_vec_o   (trap_vec_s),
+    .mepc_o       (mepc_s)
+  );
 
   // Register file: WBR=1 so the k=3 RAW (WB writes same cycle ID reads) is
   // resolved combinatorially without a pipeline stall.

@@ -97,6 +97,7 @@ set(SOURCES_SV
     ${IP_ROOT}/ip_memsyst/src/asMemTop.sv
 
     # Pipeline CPU RTL with EX/MEM + MEM/WB forwarding
+    ${IP_ROOT}/ip_trapcsr/src/cc_trap_csr.sv
     ${PROJECT_ROOT}/src/cc_cpupipefwd.sv
     ${PROJECT_ROOT}/src/asTopMem.sv
 

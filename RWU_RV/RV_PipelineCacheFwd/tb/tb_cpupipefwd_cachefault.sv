@@ -37,7 +37,9 @@ module tb_cpupipefwd_cachefault;
     .sc01_tdo_o(), .sc01_tdi_i(1'b0),
     .sc01_shift_i(1'b0), .sc01_clock_i(1'b0),
     .icpu_if(icpu_if_s), .dcpu_if(dcpu_if_s),
-    .irq_ext_i(irq_ext_i)
+    .irq_ext_i(irq_ext_i),
+    .irq_m_soft_i(1'b0),
+    .irq_m_timer_i(1'b0)
   );
 
   // ── Scorecard ───────────────────────────────────────────────────────────
@@ -139,7 +141,7 @@ module tb_cpupipefwd_cachefault;
     ic_resp_q.push_back(33'h0_00000013); // NOP
     ic_resp_q.push_back(33'h0_00000013); // NOP
     repeat (40) @(posedge clk_i);
-    chk64("T0 baseline: mcause stays 0 (no spurious trap)", dut.csr_mcause_r, 64'd0);
+    chk64("T0 baseline: mcause stays 0 (no spurious trap)", 64'(dut.trap_csr.mcause_code_r), 64'd0);
     chk64("T0 baseline: PC advanced past reset (0x0)", (dut.PC_r != 64'h0), 64'd1);
 
     // =========================================================================
@@ -165,9 +167,9 @@ module tb_cpupipefwd_cachefault;
       end
     join_any
     disable fork;
-    chk64("T1 icfault: mcause == 1 (Instruction access fault)", dut.csr_mcause_r, 64'd1);
-    chk64("T1 icfault: mepc == 0 (faulting fetch address)",     dut.csr_mepc_r,   64'd0);
-    chk64("T1 icfault: mtval == 0 (faulting fetch address)",    dut.csr_mtval_r,  64'd0);
+    chk64("T1 icfault: mcause == 1 (Instruction access fault)", 64'(dut.trap_csr.mcause_code_r), 64'd1);
+    chk64("T1 icfault: mepc == 0 (faulting fetch address)",     dut.trap_csr.mepc_r,   64'd0);
+    chk64("T1 icfault: mtval == 0 (faulting fetch address)",    dut.trap_csr.mtval_r,  64'd0);
     chk64("T1 icfault: PC redirected to mtvec (0x7F00)",        dut.PC_r,         64'h7F00);
 
     // =========================================================================
@@ -194,9 +196,9 @@ module tb_cpupipefwd_cachefault;
       end
     join_any
     disable fork;
-    chk64("T2 dcfault: mcause == 5 (Load access fault)", dut.csr_mcause_r, 64'd5);
-    chk64("T2 dcfault: mepc == 0 (PC of the LW instruction)", dut.csr_mepc_r, 64'd0);
-    chk64("T2 dcfault: mtval == 0 (faulting load address, x0+0)", dut.csr_mtval_r, 64'd0);
+    chk64("T2 dcfault: mcause == 5 (Load access fault)", 64'(dut.trap_csr.mcause_code_r), 64'd5);
+    chk64("T2 dcfault: mepc == 0 (PC of the LW instruction)", dut.trap_csr.mepc_r, 64'd0);
+    chk64("T2 dcfault: mtval == 0 (faulting load address, x0+0)", dut.trap_csr.mtval_r, 64'd0);
     chk64("T2 dcfault: PC redirected to mtvec (0x7F00)", dut.PC_r, 64'h7F00);
 
     // =========================================================================

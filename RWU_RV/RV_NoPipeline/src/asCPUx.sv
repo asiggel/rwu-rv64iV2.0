@@ -4,7 +4,8 @@
 
 import as_pack::*;
 
-module as_cpux (input  logic                         clk_i,
+module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
+              (input  logic                         clk_i,
                input  logic                          rst_i,
                input  logic tck_i,
                output logic [instr_width-1:0]        ir_o,         // needed for byte-select logic in D-Mem
@@ -28,9 +29,11 @@ module as_cpux (input  logic                         clk_i,
                as_icache_if.cpu                      icpu_if,
                as_dcache_if.cpu                      dcpu_if,
                // IRQ
-               /* verilator lint_off UNUSEDSIGNAL */ // only highest-priority IRQ (bit 7) implemented; lower bits reserved
-               input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts, irq_ext_i[7] = GPIO
+               /* verilator lint_off UNUSEDSIGNAL */ // only bit 7 (ICU output -> mip.MEIP) implemented; lower bits reserved
+               input logic [irq_total_num_ext_c-1:0] irq_ext_i, // External interrupts, irq_ext_i[7] = ICU0
                /* verilator lint_on UNUSEDSIGNAL */
+               input logic                           irq_m_soft_i,  // CLINT msip  -> mip.MSIP
+               input logic                           irq_m_timer_i  // CLINT mtip  -> mip.MTIP
               );
 
   localparam int XLEN = reg_width;
@@ -56,7 +59,6 @@ module as_cpux (input  logic                         clk_i,
   logic                       dMemWr_s;     // write enable for dmem
 
   // PC
-  logic [iaddr_width-1:0] PCp4_s;    // next sequential fetch address (PC_s + 4)
   logic [iaddr_width-1:0] PC_link_s; // JAL/JALR return address = PC_instr_r + 4
   logic [iaddr_width-1:0] PCbr_s;    // branch/jump target
   logic	[iaddr_width-1:0] PCorRS1_s;
@@ -80,26 +82,13 @@ module as_cpux (input  logic                         clk_i,
   logic	and_out_s;
 
   //IRQ
-  logic [63:0] csr_mepc_r;
-  logic [63:0] csr_mcause_r;
-  logic [63:0] csr_mtvec_r;
-  logic [63:0] csr_mstatus_r;
-  logic [63:0] csr_mie_r;
-  logic [63:0] csr_mip_r;
-
   logic [reg_width-1:0] csr_data_s;
+  logic [reg_width-1:0] csr_wdata_s;
   logic [reg_width-1:0] regfile_data_w_s;
-  logic			csr_mstatus_mpie;
-  logic			csr_mstatus_mie;
   
   logic	regWr_final_s;
   
-  logic	trap_taken_s;
-  
-  logic	irq_pending_s;
-
   logic [instr_width-1:0] ir_s; // instruction register
-  logic ir_valid_s;
   logic	trap_illegal_instrx_s;
 
   // FSM for pipeline timing
@@ -112,25 +101,44 @@ module as_cpux (input  logic                         clk_i,
     
   logic instr_commit_s;
 
-  logic	trap_misaligned_s;
-  
   logic load_pending_s;
-  
-  logic irq_ext_sync1_s;
-  logic irq_ext_sync2_s;
   
   logic is_mret_s;          // Current instruction is MRET
   logic is_ecall_s;         // Current instruction is ECALL
   logic is_ebreak_s;        // Current instruction is EBREAK
+  logic is_wfi_s;           // Current instruction is WFI
+  logic is_csr_s;           // Current instruction is csrrw/s/c[i]
   logic [iaddr_width-1:0] PC_s;
 
   logic [6:0] opcode_s;
   logic trap_illegal_s;
-  logic	mret_pending_s;
-  logic is_mret_fetched_s;  // MRET detected in fetch1 (from I-Mem)
-  logic is_ecall_fetched_s;  // ECALL detected in fetch1 (from I-Mem)
-  logic is_ebreak_fetched_s; // EBREAK detected in fetch1 (from I-Mem)
-  logic ecbrk_pending_s;     // ECALL/EBREAK pending, like mret_pending_s
+  logic sys_illegal_s;      // illegal SYSTEM instruction, decided by the trap unit
+
+  // Traps (see "Precise traps" below)
+  logic                   misal_pc_s;   // taken branch/jump to a non-word address
+  logic                   misal_ld_s;
+  logic                   misal_st_s;
+  logic [iaddr_width-1:0] PCtarget_s;   // branch/jump target, JALR bit 0 cleared
+  logic                   exc_s;        // instruction in IR raises an exception
+  logic [3:0]             exc_cause_s;
+  logic [63:0]            exc_tval_s;
+  logic                   exc_r;
+  logic [3:0]             exc_cause_r;
+  logic [63:0]            exc_tval_r;
+  logic [iaddr_width-1:0] npc_r;        // address of the next instruction in program order
+  logic [iaddr_width-1:0] fetch_pc_s;   // address fetched in FETCH0_ST
+  logic [iaddr_width-1:0] trap_pc_s;    // -> mepc
+  logic                   irq_pending_s;
+  logic                   irq_take_s;
+  logic                   exc_take_s;
+  logic                   mret_s;
+  logic                   trap_s;
+  logic                   wfi_wake_s;
+  logic                   wfi_stall_s;
+  logic                   csr_we_s;
+  logic                   instret_s;
+  logic [63:0]            trap_vec_s;
+  logic [63:0]            mepc_s;
 
   logic	gated_clk_s;
   logic	clk_mux_s;
@@ -150,7 +158,8 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   //assign dbpi_req_s = 1'b1; // kann weg!!
 
-  assign dBusWe_o     = dMemWr_s && exec_phase_s;
+  // A store that traps must not reach memory (precise exception).
+  assign dBusWe_o     = dMemWr_s && exec_phase_s && !exc_s;
   assign dBusAddr_o   = dBusAddr_s;
   assign dBusDataWr_o = dBusDataWr_s;
   assign dBusDataRd_s = dBusDataRd_i;
@@ -158,9 +167,20 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // PC, Program Counter and IR (Instruction Register)
   //--------------------------------------------
-  // During FETCH0_ST: when branch/jump taken, redirect I-Mem to the target;
-  // otherwise present PC_s (the address being refetched for the next instruction).
-  assign iBusAddr_s = (fetch0_phase_s && take_s) ? PCbr_s : PC_s;
+  // FETCH0_ST fetches the next instruction: the trap vector, mepc (MRET) or
+  // the next instruction in program order. All three are known before the
+  // fetch, so no wrong-path instruction ever enters IR.
+  always_comb
+  begin
+    if (trap_s)
+      fetch_pc_s = trap_vec_s;
+    else if (mret_s)
+      fetch_pc_s = mepc_s;
+    else
+      fetch_pc_s = npc_r;
+  end
+
+  assign iBusAddr_s = fetch0_phase_s ? fetch_pc_s : PC_s;
   
   //--------------------------------------------
   // ... PC itself:
@@ -175,32 +195,12 @@ module as_cpux (input  logic                         clk_i,
     else
     begin
       if(fetch0_phase_s)
-      begin
-        if(trap_taken_s)
-          PC_s <= {csr_mtvec_r[63:2], 2'b00};
-        else
-          if(mret_pending_s)
-            PC_s <= csr_mepc_r;
-          else
-            if(ecbrk_pending_s)
-              // Same target as the trap_taken_s branch above, but decided one
-              // cycle early (see ecbrk_pending_s) so the stale look-ahead
-              // prefetch never gets loaded into ir_s.
-              PC_s <= {csr_mtvec_r[63:2], 2'b00};
-            else
-              if(take_s)
-                // +4 keeps PC one slot ahead of the branch target, matching
-                // the invariant for sequential instructions (PC = instr_addr + 4).
-                PC_s <= PCbr_s + 4;
-              else
-                PC_s <= PCp4_s;  // Sequential
-      end
+        PC_s <= fetch_pc_s + 64'd4;
     end
   end
 
   // Captures the address of the instruction being fetched in FETCH0_ST.
-  // Used as branch/jump base and for AUIPC — correct even when a branch
-  // redirects iBusAddr_s away from PC_s.
+  // Used as branch/jump base, for AUIPC and as mepc of an exception.
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i)
@@ -212,43 +212,15 @@ module as_cpux (input  logic                         clk_i,
   //===========================================
   // Instruction Register
   //===========================================
+  // IR keeps the committed instruction through FETCH0_ST: the trap/MRET
+  // decision of that cycle is taken on it.
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i)
-    begin
       ir_s <= 32'h00000013;  // NOP
-      ir_valid_s <= 1'b0;
-    end
     else
-    begin
       if(fetch1_phase_s)
-      begin
-        // Don't load instruction if MRET/ECALL/EBREAK is pending (PC is changing)
-        if(!mret_pending_s && !ecbrk_pending_s)
-        begin
-          ir_s <= iBusDataRd_s;
-          ir_valid_s <= 1'b1;
-        end
-        else
-        begin
-          ir_s <= 32'h00000013;  // NOP during MRET/ECALL/EBREAK redirect
-          ir_valid_s <= 1'b0;
-        end
-      end
-      else
-        if(trap_taken_s)
-        begin
-          ir_s <= 32'h00000013;  // NOP after trap
-          ir_valid_s <= 1'b0;
-        end
-        else
-          if((is_mret_s || is_ecall_s || is_ebreak_s) && exec_phase_s)
-          begin
-            // Invalidate after MRET/ECALL/EBREAK execution
-            ir_s <= 32'h00000013;  // NOP
-            ir_valid_s <= 1'b0;
-          end
-    end
+        ir_s <= iBusDataRd_s;
   end
   
   //--------------------------------------------
@@ -263,6 +235,8 @@ module as_cpux (input  logic                         clk_i,
       FETCH1_ST  : nextstate_s = EXEC_ST;
       EXEC_ST    : if(load_pending_s)
                      nextstate_s = EXECLD_ST;
+                   else if(wfi_stall_s)
+                     nextstate_s = EXEC_ST;
                    else
                      nextstate_s = FETCH0_ST;
       EXECLD_ST  : nextstate_s = FETCH0_ST;
@@ -291,15 +265,13 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // ... indicates, when a regular instruction should be executed
   //--------------------------------------------
-  //assign instr_commit_s = exec_phase_s && ir_valid_s && !flush_fetch_s && !load_pending_s;
-  assign instr_commit_s = (exec_phase_s && !load_pending_s) || execld_phase_s;
+  assign instr_commit_s = (exec_phase_s && !load_pending_s && !wfi_stall_s) || execld_phase_s;
   // Load detection
   assign load_pending_s = (opcode_s == 7'b0000011) && exec_phase_s;
   
   //--------------------------------------------
-  // Adder +4 for the address of the next instruction
+  // Adder +4 for the link address
   //--------------------------------------------
-  assign PCp4_s    = PC_s + 64'd4;
   assign PC_link_s = PC_instr_r + 64'd4;  // spec-correct return address for JAL/JALR
 
   //--------------------------------------------
@@ -324,7 +296,7 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // CSR or result
   assign regfile_data_w_s = result_s;
-  assign regWr_final_s    = regWr_s && !trap_taken_s && instr_commit_s;
+  assign regWr_final_s    = regWr_s && !exc_s && instr_commit_s;
   as_regfile regfile (.clk_i(clk_i),
                       .rst_i(rst_i),
                       .we_i(regWr_final_s),
@@ -416,336 +388,155 @@ module as_cpux (input  logic                         clk_i,
                       );
   
   //--------------------------------------------
-  // IRQ
+  // IRQ, exceptions and CSRs
   //--------------------------------------------
+  // Precise traps:
+  //  - An exception is detected while its instruction executes (EXEC_ST or
+  //    EXECLD_ST). The instruction is suppressed (no register write, no
+  //    store, no CSR write) and the trap is taken in the next FETCH0_ST with
+  //    mepc = address of the faulting instruction.
+  //  - An interrupt is taken in FETCH0_ST, between two instructions: the
+  //    instruction in IR has completed, the next one (npc_r) is not fetched
+  //    yet, so mepc = npc_r.
+  //  - MRET redirects in FETCH0_ST as well, so no look-ahead decode of the
+  //    prefetched instruction is needed.
 
-  // MRET detection
-  assign is_mret_s = (ir_s[6:0] == 7'b1110011) && (ir_s[14:12] == 3'b000) && (ir_s[31:20] == 12'h302);
-  assign is_mret_fetched_s = (iBusDataRd_s[6:0] == 7'b1110011) &&
-                             (iBusDataRd_s[14:12] == 3'b000) &&
-                             (iBusDataRd_s[31:20] == 12'h302);
-
-  // ECALL / EBREAK detection (RV64I base, mandatory)
-  assign is_ecall_s  = (ir_s[6:0] == 7'b1110011) && (ir_s[14:12] == 3'b000) && (ir_s[31:20] == 12'h000);
-  assign is_ebreak_s = (ir_s[6:0] == 7'b1110011) && (ir_s[14:12] == 3'b000) && (ir_s[31:20] == 12'h001);
-  // Look-ahead versions (checked against the live I-Mem prefetch, one instruction
-  // slot early) mirroring is_mret_fetched_s: the target (mtvec) needs no decode,
-  // so the redirect for the FOLLOWING fetch can be decided one cycle before
-  // ECALL/EBREAK itself reaches EXEC_ST, exactly like MRET does for mepc.
-  assign is_ecall_fetched_s  = (iBusDataRd_s[6:0] == 7'b1110011) &&
-                               (iBusDataRd_s[14:12] == 3'b000) &&
-                               (iBusDataRd_s[31:20] == 12'h000);
-  assign is_ebreak_fetched_s = (iBusDataRd_s[6:0] == 7'b1110011) &&
-                               (iBusDataRd_s[14:12] == 3'b000) &&
-                               (iBusDataRd_s[31:20] == 12'h001);
-
-  //===========================================
-  // IRQ Synchronization (2-FF)
-  //===========================================
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if(rst_i) begin
-      irq_ext_sync1_s <= 1'b0;
-      irq_ext_sync2_s <= 1'b0;
-    end else begin
-      irq_ext_sync1_s <= irq_ext_i[7];  // GPIO IRQ
-      irq_ext_sync2_s <= irq_ext_sync1_s;
-    end
-  end
-
-  //===========================================
-  // Interrupt & Trap Detection
-  //===========================================
-  // IRQ pending when: MIP.MEIP & MIE.MEIE & MSTATUS.MIE
-  assign irq_pending_s = csr_mip_r[11] && csr_mie_r[11] && csr_mstatus_mie;
-  
-  // Illegal instruction detection
   assign opcode_s = ir_s[6:0];
 
-  assign trap_illegal_s = trap_illegal_instrx_s;
-  
-  // Misaligned detection
-  always_comb begin
-    trap_misaligned_s = 1'b0;
-    if(ir_valid_s && exec_phase_s) begin
-      // Load/Store misalignment
-      if(opcode_s == 7'b0000011 || opcode_s == 7'b0100011) begin
-        case(ir_s[14:12])  // funct3
-          3'b000, 3'b100:  // LB, LBU, SB - no alignment required
-            trap_misaligned_s = 1'b0;
-          3'b001, 3'b101:  // LH, LHU, SH - halfword alignment
-            trap_misaligned_s = (dBusAddr_s[0] != 1'b0);
-          3'b010:          // LW, SW - word alignment
-            trap_misaligned_s = (dBusAddr_s[1:0] != 2'b00);
-          3'b011:          // LD, SD - doubleword alignment
-            trap_misaligned_s = (dBusAddr_s[2:0] != 3'b000);
-          default:
-            trap_misaligned_s = 1'b0;
-        endcase
-      end
-      // Branch/Jump misalignment (must be 4-byte aligned)
-      if(opcode_s == 7'b1100011 || opcode_s == 7'b1101111 || opcode_s == 7'b1100111) begin
-        if(take_s && PCbr_s[1:0] != 2'b00)
-          trap_misaligned_s = 1'b1;
-      end
-    end
-  end
+  assign is_mret_s   = (ir_s == 32'h30200073);
+  assign is_ecall_s  = (ir_s == 32'h00000073);
+  assign is_ebreak_s = (ir_s == 32'h00100073);
+  assign is_wfi_s    = (ir_s == 32'h10500073);
+  assign is_csr_s    = (opcode_s == 7'b1110011) && (ir_s[13:12] != 2'b00);
 
-  //===========================================
-  // Trap Taking Logic
-  //===========================================
-  // Trap is taken at instruction commit boundary
-  // Priority: Illegal instruction > Misaligned > IRQ
-  // ECALL/EBREAK redirect one cycle earlier via ecbrk_pending_s (see below),
-  // the same way MRET does via mret_pending_s, so they are excluded here.
+  assign trap_illegal_s = trap_illegal_instrx_s || sys_illegal_s;
 
-  // MRET pending flag: set during exec, used during next fetch0
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i)
-      mret_pending_s <= 1'b0;
-    else
-      //if(is_mret_s && exec_phase_s)
-      if(exec_phase_s && is_mret_fetched_s)// && ir_valid_s)
-        mret_pending_s <= 1'b1;
-      else if(fetch0_phase_s)
-        mret_pending_s <= 1'b0;
-  end
+  // JALR clears bit 0 of its target; with IALIGN = 32 bit 1 must then be 0.
+  assign PCtarget_s = jump_s ? {PCbr_s[iaddr_width-1:1], 1'b0} : PCbr_s;
+  assign misal_pc_s = take_s && (PCtarget_s[1:0] != 2'b00);
 
-  // ECALL/EBREAK pending flag: set during exec (from the look-ahead I-Mem
-  // prefetch), used during next fetch0 — mirrors mret_pending_s exactly.
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i)
-      ecbrk_pending_s <= 1'b0;
-    else
-      if(exec_phase_s && (is_ecall_fetched_s || is_ebreak_fetched_s))
-        ecbrk_pending_s <= 1'b1;
-      else if(fetch0_phase_s)
-        ecbrk_pending_s <= 1'b0;
-  end
-
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i)
-      trap_taken_s <= 1'b0;
-    else
-      if(instr_commit_s && !is_mret_s && !is_ecall_s && !is_ebreak_s)
-        // Check traps in priority order
-        if(trap_illegal_s)
-          trap_taken_s <= 1'b1;
-        else
-          if(trap_misaligned_s)
-            trap_taken_s <= 1'b1;
-          else
-            if(irq_pending_s)
-              trap_taken_s <= 1'b1;
-            else
-              trap_taken_s <= 1'b0;
-      else
-        trap_taken_s <= 1'b0;
-  end
-
-
-  // Write the CSRs
-  // MIP: 64 bit, r, h344; OK (only GPIO IRQs)
-  /* From spec: on external IRQ -> mip.MEIP = 1 (remains 1 as long as the external IRQ is active)
-                                                (can not be changed by SW)
-                                                (will be removed only ba the external IRQ)
-   */
-  //===========================================
-  // MIP Register (Read-Only for MEIP)
-  //===========================================
-  // MIP[11] = MEIP (Machine External Interrupt Pending)
-  // This is directly driven by synchronized external IRQ
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if(rst_i)
-      csr_mip_r <= 64'h0;
-    else
-      csr_mip_r[11] <= irq_ext_sync2_s;  // Direct wire-through
-  end
-  
-  // MIE: 64 bit, rw, h304); OK
-  //===========================================
-  // CSR: MIE (Machine Interrupt Enable)
-  //===========================================
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      csr_mie_r <= 64'h0000000000000800;  // MEIE enabled by default
-    else
-    begin
-      if(exec_phase_s && ir_valid_s)
-        if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h304))               // csr..
-          case(ir_s[14:12])
-            3'b001: csr_mie_r <= regA_s;                                        // csrrw
-            3'b010: csr_mie_r <= csr_mie_r | regA_s;                            // csrrs
-            3'b011: csr_mie_r <= csr_mie_r & ~regA_s;                           // csrrc
-            3'b101: csr_mie_r <= {{59{1'b0}}, ir_s[19:15]};               // csrrwi
-            3'b110: csr_mie_r <= csr_mie_r | {{59{1'b0}}, ir_s[19:15]};   // csrrsi
-            3'b111: csr_mie_r <= csr_mie_r & ~{{59{1'b0}}, ir_s[19:15]};  // csrrci
-            default: csr_mie_r <= csr_mie_r;
-          endcase
-    end
-  end
-
-  // MSTATUS: 64 bit, rw/r, h300
-  /* From spec: on external IRQ -> mstatus.MPIE = mstatus.MIE, 
-                                   mstatus.MIE  = 0
-                on mret         -> mstatus.MIE  = mstatus.MPIE
-                                   mstatus.MPIE = 1
-   */
-  //===========================================
-  // CSR: MSTATUS
-  //===========================================
-  assign csr_mstatus_mpie = csr_mstatus_r[7];
-  assign csr_mstatus_mie  = csr_mstatus_r[3];
-  
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      csr_mstatus_r <= 64'h0000000000001808;  // MIE=1, MPIE=1
-    else
-    begin
-      if( trap_taken_s || ((is_ecall_s || is_ebreak_s) && exec_phase_s) )  // Trap entry: MPIE <= MIE, MIE <= 0
-      begin
-        csr_mstatus_r[7] <= csr_mstatus_mie;  // MPIE
-        csr_mstatus_r[3] <= 0;                // MIE
-      end
-      else
-        if(is_mret_s && exec_phase_s)            // MRET: MIE <= MPIE, MPIE <= 1
-        begin
-          csr_mstatus_r[3] <= csr_mstatus_mpie;  // MIE
-          csr_mstatus_r[7] <= 1'b1;              // MPIE
-        end
-        else
-          if(exec_phase_s && ir_valid_s) // CSR write
-            if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h300)) 
-              case(ir_s[14:12])
-                3'b001: csr_mstatus_r <= regA_s;
-                3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
-                3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
-                3'b101: csr_mstatus_r <= {{59{1'b0}}, ir_s[19:15]};
-                3'b110: csr_mstatus_r <= csr_mstatus_r | {{59{1'b0}}, ir_s[19:15]};
-                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{59{1'b0}}, ir_s[19:15]};
-                default: csr_mstatus_r <= csr_mstatus_r;
-              endcase
-    end
-  end
-  
-  // MEPC: 64 bit, WARL, h341, OK
-  //===========================================
-  // CSR: MEPC (Machine Exception PC)
-  //===========================================
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i)
-      csr_mepc_r <= 0;
-    else
-    begin
-      if( (is_ecall_s || is_ebreak_s) && exec_phase_s )
-        // ECALL/EBREAK trap on their own address; PC_instr_r holds it
-        // through EXEC_ST (see mstatus block above for the same timing).
-        csr_mepc_r <= PC_instr_r;
-      else
-      if( trap_taken_s )
-        // Synchronous exceptions trap on the faulting instruction itself.
-        // PC_instr_r holds that address through EXEC_ST; PC_s does not
-        // (PC_s is already one slot ahead by then, see PC_s comment above).
-        if(trap_illegal_s || trap_misaligned_s)
-          csr_mepc_r <= PC_instr_r;
-        else
-          csr_mepc_r <= PCp4_s; // IRQ: return address after the interrupted instruction
-      else
-        if(exec_phase_s && ir_valid_s)
-          if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h341))
-            case(ir_s[14:12])
-              3'b001: csr_mepc_r <= regA_s;
-              3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
-              3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
-              3'b101: csr_mepc_r <= {{59{1'b0}}, ir_s[19:15]};
-              3'b110: csr_mepc_r <= csr_mepc_r | {{59{1'b0}}, ir_s[19:15]};
-              3'b111: csr_mepc_r <= csr_mepc_r & ~{{59{1'b0}}, ir_s[19:15]};
-              default: csr_mepc_r <= csr_mepc_r;
-            endcase
-    end
-  end
-  
-  // MTVEC: 64 bit, WARL, h305; OK
-  // MTVEC[1:0] = 0 => direct mode
-  //===========================================
-  // CSR: MTVEC (Machine Trap Vector)
-  //===========================================
-  always_ff @(posedge clk_i, posedge rst_i)
-  begin
-    if(rst_i == 1)
-      csr_mtvec_r <= 64'h0000000000007F00; // set the ISR address by reset!!!!!
-    else
-      if(exec_phase_s && ir_valid_s)
-        if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h305))
-          case(ir_s[14:12])
-            3'b001: csr_mtvec_r <= regA_s;
-            3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
-            3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
-            3'b101: csr_mtvec_r <= {{59{1'b0}}, ir_s[19:15]};
-            3'b110: csr_mtvec_r <= csr_mtvec_r | {{59{1'b0}}, ir_s[19:15]};
-            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{59{1'b0}}, ir_s[19:15]};
-            default: csr_mtvec_r <= csr_mtvec_r;
-          endcase
-  end
-  
-  // MCAUSE: 64 bit, rw/WLRL, h342; OK
-  //===========================================
-  // CSR: MCAUSE (Machine Cause)
-  //===========================================
-  always_ff @(posedge clk_i, posedge rst_i) 
-  begin
-    if(rst_i)
-      csr_mcause_r <= 64'h0;
-    else
-    begin
-      if(is_ecall_s && exec_phase_s)
-        csr_mcause_r <= 64'd11;  // Environment call from M-mode
-      else if(is_ebreak_s && exec_phase_s)
-        csr_mcause_r <= 64'd3;   // Breakpoint
-      else if(trap_taken_s)
-      begin
-        // Priority: Illegal > Misaligned > IRQ
-        if(trap_illegal_s)
-          csr_mcause_r <= 64'd2;  // Illegal instruction
-        else if(trap_misaligned_s)
-        begin
-          if(dMemRd_s)
-            csr_mcause_r <= 64'd4;  // Load address misaligned
-          else if(dMemWr_s)
-            csr_mcause_r <= 64'd6;  // Store address misaligned
-          else
-            csr_mcause_r <= 64'd0;  // Instruction address misaligned
-        end
-        else if(irq_pending_s)
-          csr_mcause_r <= {1'b1, 63'd11};  // Machine external interrupt
-      end
-    end
-  end // always_ff @ (posedge clk_i, posedge rst_i)
-  
-  //===========================================
-  // CSR Read Mux
-  //===========================================
+  // funct3[1:0] is the access size for loads and stores: B, H, W, D
   always_comb
   begin
-    csr_data_s = 64'h0;
-    if( (ir_s[6:0] == 7'b1110011) && (ir_s[14:12] != 3'b000) ) // one of the CSRs and func3 != mret
-      case(ir_s[31:20])                              // CSR address
-        12'h300: csr_data_s = csr_mstatus_r;
-        12'h304: csr_data_s = csr_mie_r;
-        12'h305: csr_data_s = csr_mtvec_r;
-        12'h341: csr_data_s = csr_mepc_r;
-        12'h342: csr_data_s = csr_mcause_r;
-        12'h344: csr_data_s = csr_mip_r;
-        default: csr_data_s = 64'h0;
-      endcase
+    misal_ld_s = 1'b0;
+    misal_st_s = 1'b0;
+    case (ir_s[13:12])
+      2'b01:
+      begin
+        misal_ld_s = dMemRd_s && dBusAddr_s[0];
+        misal_st_s = dMemWr_s && dBusAddr_s[0];
+      end
+      2'b10:
+      begin
+        misal_ld_s = dMemRd_s && (dBusAddr_s[1:0] != 2'b00);
+        misal_st_s = dMemWr_s && (dBusAddr_s[1:0] != 2'b00);
+      end
+      2'b11:
+      begin
+        misal_ld_s = dMemRd_s && (dBusAddr_s[2:0] != 3'b000);
+        misal_st_s = dMemWr_s && (dBusAddr_s[2:0] != 3'b000);
+      end
+      default: ;
+    endcase
   end
 
-  
+  always_comb
+  begin
+    exc_s       = 1'b1;
+    exc_cause_s = 4'd0;
+    exc_tval_s  = 64'd0;
+    if (trap_illegal_s)
+    begin
+      exc_cause_s = 4'd2;
+      exc_tval_s  = {32'b0, ir_s};
+    end
+    else if (misal_pc_s)
+    begin
+      exc_cause_s = 4'd0;
+      exc_tval_s  = PCtarget_s;
+    end
+    else if (misal_ld_s)
+    begin
+      exc_cause_s = 4'd4;
+      exc_tval_s  = dBusAddr_s;
+    end
+    else if (misal_st_s)
+    begin
+      exc_cause_s = 4'd6;
+      exc_tval_s  = dBusAddr_s;
+    end
+    else if (is_ecall_s)
+      exc_cause_s = 4'd11;
+    else if (is_ebreak_s)
+      exc_cause_s = 4'd3;
+    else
+      exc_s = 1'b0;
+  end
+
+  assign wfi_stall_s = exec_phase_s && is_wfi_s && !wfi_wake_s;
+  assign csr_we_s    = instr_commit_s && is_csr_s && !exc_s;
+  assign csr_wdata_s = ir_s[14] ? {{(reg_width-5){1'b0}}, ir_s[19:15]} : regA_s;
+  assign instret_s   = instr_commit_s && !exc_s;
+
+  // Decisions of FETCH0_ST, taken on the instruction that just committed
+  assign irq_take_s = fetch0_phase_s && irq_pending_s && !exc_r && !is_mret_s;
+  assign exc_take_s = fetch0_phase_s && exc_r;
+  assign trap_s     = exc_take_s || irq_take_s;
+  assign mret_s     = fetch0_phase_s && is_mret_s && !exc_r;
+  assign trap_pc_s  = exc_r ? PC_instr_r : npc_r;
+
+  // Registered at commit: in FETCH0_ST a just-written rd may already have
+  // changed the operands, so exc_s/take_s must not be re-evaluated there.
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if (rst_i)
+    begin
+      exc_r       <= 1'b0;
+      exc_cause_r <= 4'd0;
+      exc_tval_r  <= 64'd0;
+    end
+    else if (instr_commit_s)
+    begin
+      exc_r       <= exc_s;
+      exc_cause_r <= exc_cause_s;
+      exc_tval_r  <= exc_tval_s;
+    end
+    else if (fetch0_phase_s)
+      exc_r       <= 1'b0;
+  end
+
+  always_ff @(posedge clk_i, posedge rst_i)
+  begin
+    if (rst_i)
+      npc_r <= '0;
+    else if (instr_commit_s)
+      npc_r <= take_s ? PCtarget_s : PC_s;
+  end
+
+  cc_trap_csr #(.HART_ID(HART_ID), .MTVEC_RST(64'h0000_0000_0000_7F00))
+  trap_csr (.clk_i        (clk_i),
+            .rst_i        (rst_i),
+            .irq_m_ext_i  (irq_ext_i[7]),
+            .irq_m_soft_i (irq_m_soft_i),
+            .irq_m_timer_i(irq_m_timer_i),
+            .rd_instr_i   (ir_s),
+            .rd_data_o    (csr_data_s),
+            .rd_illegal_o (sys_illegal_s),
+            .wr_en_i      (csr_we_s),
+            .wr_instr_i   (ir_s),
+            .wr_data_i    (csr_wdata_s),
+            .exc_i        (exc_take_s),
+            .exc_cause_i  (exc_cause_r),
+            .exc_tval_i   (exc_tval_r),
+            .irq_take_i   (irq_take_s),
+            .trap_pc_i    (trap_pc_s),
+            .mret_i       (mret_s),
+            .instret_i    (instret_s),
+            .irq_pending_o(irq_pending_s),
+            .wfi_wake_o   (wfi_wake_s),
+            .trap_vec_o   (trap_vec_s),
+            .mepc_o       (mepc_s)
+           );
 
   // 2Do: - mret einbauen                                (done)
   //      - PC-Mux: ISR-Zieladresse einbauen             (done)
