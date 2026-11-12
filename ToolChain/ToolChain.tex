@@ -1,0 +1,952 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: Tool Chain}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Tools
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Tools}
+\renewcommand{\astitle}{Tools}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Tools}
+\end{frame}
+
+\renewcommand{\assubtitle}{Installation: RISC-V GNU Toolchain}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Assembler, linker, objcopy
+    \item Follow the current instructions on\\
+      \url{https://github.com/riscv/riscv-gnu-toolchain}
+    \item Recommended install target: \cmd{/opt/riscv}
+    \item \cmd{make linux} builds the \cmd{riscv64-unknown-linux-gnu-*} tools,
+      the prefix our CMake files use
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+git clone https://github.com/riscv/riscv-gnu-toolchain
+cd riscv-gnu-toolchain
+./configure --prefix=/opt/riscv
+make linux
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Installation: Caution with Vivado}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \textbf{Caution:} AMD Vivado ships its own RISC-V toolchain, which does not
+      suit our needs. It may still be in your PATH (after sourcing \cmd{settings64.sh}).
+    \item Our CMake files therefore call the tools with an absolute path:\\
+      \cmd{\footnotesize /opt/riscv/bin/riscv64-unknown-linux-gnu-\{as,ld,objcopy\}}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Installation: Simulator and Build System}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Simulator (one of them is enough)
+    \begin{itemize}
+      \item AMD Vivado simulator (xsim): \cmd{xvlog} / \cmd{xelab} / \cmd{xsim},
+        waveforms in the Vivado GUI
+      \item Verilator $\geq$ 5.0 (needed for \cmd{-{}-timing})
+        plus GTKWave to view the FST waveform
+    \end{itemize}
+    \item Build system
+    \begin{itemize}
+      \item CMake $\geq$ 3.20 (plus make or ninja as the backend)
+    \end{itemize}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Project Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Project Setup}
+\renewcommand{\astitle}{Project Setup}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Project Setup}
+\end{frame}
+
+\renewcommand{\assubtitle}{Project Layout (\texttt{RWU\_RV/RV\_NoPipeline})}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \small
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{rv64Sim/}        & assembler test programs (\cmd{*.asm}) + \cmd{CMakeLists.txt} (ASM $\rightarrow$ MEM)\\
+    \cmd{src/}            & RTL of the CPU and the top level\\
+    \cmd{../../ip\_*/}    & shared IPs (GPIO, UART, JTAG, CGU, DMem, ICU, trap CSR, \dots)\\
+    \cmd{tb/}             & testbenches (\cmd{tb\_rv64i\_instr.sv} = shared instruction testbench)\\
+    \cmd{sim/}            & \cmd{CMakeLists.txt} (compile + simulate), \cmd{sim\_main.cpp}, \cmd{*.tcl}, \cmd{*.wcfg}\\
+    \cmd{CMakeLists.txt}  & top level: list of tests, testbench selection, regression\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Three CMake Levels}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+CMakeLists.txt --> rv64Sim/CMakeLists.txt (target "mem")
+               --> sim/CMakeLists.txt     (target "simulate"/"waves")
+\end{lstlisting}
+  \begin{itemize}
+    \item The top level only orchestrates: one target per test
+    \item \cmd{rv64Sim}: assembler program $\rightarrow$ memory image \cmd{rv64i.mem}
+    \item \cmd{sim}: compile the RTL and run the simulation with that image
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Single test case: simulation with Verilator and waveforms
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Single Test Case}
+\renewcommand{\astitle}{Single Test Case}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Single test case: simulation with Verilator and waveforms}
+\end{frame}
+
+\renewcommand{\assubtitle}{Preparation}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+rm -rf build
+cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+cmake --build build --target sim_instr38ld
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{rm -rf build}: start from a clean build directory
+    \item Two steps: \emph{configure} (\cmd{cmake -S \dots{} -B \dots}),
+      then \emph{build} (\cmd{cmake -{}-build \dots})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What the Options Mean}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-S .}                        & source directory (the dot means the current directory)\\[2pt]
+    \cmd{-B build}                    & build directory; it is created if needed and holds all generated files\\[2pt]
+    \cmd{-DSIMULATOR=verilator}       & \cmd{-D} defines a CMake variable: simulator backend
+                                        (\cmd{xsim} = default $|$ \cmd{verilator})\\[2pt]
+    \cmd{-DWAVES=ON}                  & open the waveform viewer afterwards
+                                        (single tests only, never together with \cmd{regression})\\[2pt]
+    \cmd{-{}-build build}             & runs the build in the directory \cmd{build}\\[2pt]
+    \cmd{-{}-target sim\_instr38ld}   & picks one test case: \cmd{sim\_<name of the .asm file>}\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Under the Hood: What CMake Does}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The top-level \cmd{CMakeLists.txt} defines one target \cmd{sim\_<test>} per test,
+      each with its own build directory (here \cmd{build/instr38ld/}):
+\begin{lstlisting}
+set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})
+\end{lstlisting}
+    \item Testbench selection: \cmd{instr38ld} is listed in \cmd{INSTR\_TB\_CONFIG}
+\begin{lstlisting}
+"instr38ld"        "ld"          "38"
+\end{lstlisting}
+      $\rightarrow$ \cmd{tb/tb\_rv64i\_instr.sv} with \cmd{TEST\_NAME=ld},
+      \cmd{EXPECTED=38} (GPIO value that signals a passing test)
+    \item Tests that are not in that list use their own testbench
+      \cmd{tb/tb\_rv64i\_<test>.sv}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Step 1: \cmd{build/instr38ld/asm/} is configured with
+      \cmd{rv64Sim/CMakeLists.txt};\\
+      the target \cmd{mem} produces \cmd{rv64i.mem}
+    \item Step 2: \cmd{build/instr38ld/sim/} is configured with
+      \cmd{sim/CMakeLists.txt};\\
+      the target \cmd{waves} (\cmd{WAVES=ON}) or \cmd{simulate} (\cmd{WAVES=OFF}) runs
+    \item Step 2 depends on \cmd{rv64i.mem}, so CMake always runs step 1 first
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%% ---------------- by hand ----------------
+\renewcommand{\assubtitle}{The Same Steps by Hand (no CMake)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  Shell variables used on the next slides (start in \cmd{RWU\_RV/RV\_NoPipeline}):
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+P=$PWD          # project root
+IP=$P/../..     # IP root (ip_* directories)
+RV=/opt/riscv/bin/riscv64-unknown-linux-gnu
+mkdir -p build/instr38ld/asm build/instr38ld/sim
+\end{lstlisting}
+  \begin{enumerate}[a)]
+    \item Assembler program $\rightarrow$ memory image
+    \item Verilate and compile the C++ model
+    \item Simulate
+    \item Look at the waveforms
+  \end{enumerate}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) Assembler Program $\rightarrow$ Memory Image (1/2)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd build/instr38ld/asm
+$RV-as -march=rv64i_zicsr -mlittle-endian -g -o rv64i.o \
+       $P/rv64Sim/instr38ld.asm -al=rv64i.lst
+$RV-ld -b elf64-littleriscv -o rv64i.elf rv64i.o
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{as}: assemble; \cmd{-al=rv64i.lst} also writes a listing.
+      CMake does not produce it, but it is handy for debugging.
+    \item \cmd{ld}: link; an optional linker script can be passed with
+      \cmd{-T <file>}, in CMake with \cmd{-DLINKER\_SCRIPT=<file>}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) Assembler Program $\rightarrow$ Memory Image (2/2)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+$RV-objcopy -O verilog --verilog-data-width 4 rv64i.elf rv64i.mem
+sed -i 's/ /\n/g' rv64i.mem   # one word per line
+sed -i 's/\r//g'  rv64i.mem   # remove ^M (CR), if present
+sed -i '1d'       rv64i.mem   # delete the address header
+\end{lstlisting}
+  \small
+  \begin{itemize}
+    \item \cmd{objcopy}: ELF $\rightarrow$ Verilog hex format,
+      one 32-bit word = one instruction
+    \item The linker places \cmd{.text} at \cmd{0x100B0}; the header holds the
+      word address: \cmd{@0000402C} ($\mathtt{0x100B0} / 4 = \mathtt{0x402C}$)
+    \item Without \cmd{sed '1d'}, \cmd{\$readmemh} would load the program there
+      instead of at address 0, where the CPU starts. \alert{Required!}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) Verilate and Compile the C++ Model}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\tiny,breaklines=false]
+cd ../sim
+verilator --cc --exe $P/sim/sim_main.cpp --build --sv --timing \
+  -Wall -Wno-fatal -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-IMPORTSTAR \
+  --Mdir obj_dir -DLOGIC_SV --trace-fst --top-module tb_rv64i \
+  $P/sim/tb_waivers.vlt \
+  $P/src/as_pack.sv  $P/src/asRegFile.sv \
+  $IP/ip_dmem/src/{asDMemBack,asDMemFront,asDMemCore,asDMem,asDMemTop}.sv \
+  $P/src/asIMem.sv  $P/src/asAlu.sv  $P/src/asAluBr.sv  $P/src/asInstrDecode.sv \
+  $IP/ip_jtag/src/{tap_fsm,ir_cell,dr_cell,scan_cell,by_cell,ir_reg,dr_reg,ir_decode,jtag}.sv \
+  $P/src/asMBpi.sv  $P/src/asSBpi.sv \
+  $IP/ip_gpio/src/asGpio.sv  $IP/ip_irqper/src/as_irq_peripheral.sv \
+  $IP/ip_gpio/src/asGpioTop.sv \
+  $IP/ip_trapcsr/src/cc_trap_csr.sv  $P/src/asCPUx.sv  $P/src/asDecode.sv \
+  $IP/ip_cgu/src/{asCguCore,asCguTop}.sv \
+  $IP/ip_fifo/src/as_fifo.sv  $IP/ip_uart_v2/src/as_uart_top.sv \
+  $IP/ip_icu/src/{cc_icu,cc_icu_top}.sv \
+  $P/src/asTopMem.sv \
+  $P/tb/tb_rv64i_instr.sv
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) Verilator Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \small
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-{}-cc -{}-exe \dots{} -{}-build} & generate C++ from the RTL, compile it together with
+                                         \cmd{sim\_main.cpp} into \cmd{obj\_dir/Vtb\_rv64i}\\[2pt]
+    \cmd{-{}-timing}     & supports the \cmd{\#}delays in the testbench\\[2pt]
+    \cmd{-{}-trace-fst}  & \cmd{sim\_main.cpp} writes the waveform to \cmd{dump.fst}\\[2pt]
+    \cmd{-DLOGIC\_SV}    & same define as for xsim (\cmd{xvlog -d LOGIC\_SV})\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The order of the files matters: \cmd{as\_pack.sv} comes first,
+      the testbench last
+    \item The source list is in \cmd{sim/CMakeLists.txt} (\cmd{SOURCES\_SV})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) Simulate}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cp ../asm/rv64i.mem riscvtest.mem
+./obj_dir/Vtb_rv64i +TEST_NAME=ld +EXPECTED=38
+\end{lstlisting}
+  \begin{itemize}
+    \item The file name is fixed: the testbench and \cmd{asIMem.sv} read
+      \cmd{riscvtest.mem} with \cmd{\$readmemh} from the current working directory
+    \item \cmd{+TEST\_NAME}, \cmd{+EXPECTED}: plusargs for \cmd{tb\_rv64i\_instr.sv}
+    \item CMake does the same with:
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+cmake -E copy .../build/instr38ld/asm/rv64i.mem riscvtest.mem
+cmake -P .../build/instr38ld/sim/run_sim.cmake
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) Expected Output and Evaluation}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+CS #1: gpio=0x26  expected=0x26
+Simulation ld succeeded
+%Error: .../tb/tb_rv64i_instr.sv:74: Verilog $stop
+Aborting...
+\end{lstlisting}
+  \cmd{error.txt}: \cmd{11/10/26 - ld: Test ok}
+  \footnotesize
+  \begin{itemize}
+    \item The testbench checks the GPIO value at every CS pulse:
+    \begin{itemize}
+      \item GPIO == \cmd{EXPECTED} $\rightarrow$ ``Simulation ld succeeded'',
+        ``Test ok'' in \cmd{error.txt}
+      \item no match after 20 CS pulses $\rightarrow$ ``Test fail'' in \cmd{error.txt}
+    \end{itemize}
+    \item The test ends with \cmd{\$stop}, so Verilator exits with code 1.
+      That is not an error; \cmd{execute\_process} in \cmd{run\_sim.cmake} ignores it.
+    \item \cmd{error.txt} is opened with \cmd{"a"}: results accumulate over runs!
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) Look at the Waveforms}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+gtkwave dump.fst &
+\end{lstlisting}
+  \begin{itemize}
+    \item With \cmd{-DWAVES=ON}, CMake starts GTKWave the same way after the simulation
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%% ---------------- CMake output ----------------
+\renewcommand{\assubtitle}{What CMake Prints: Configure}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+-- AS-TOP: WAVES=ON: Waveform GUI aktiv - nicht mit 'regression' kombinieren!
+-- AS-TOP: SIMULATOR = verilator
+-- AS-TOP: SIM_TARGET = waves
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: .../RWU_RV/RV_NoPipeline/build
+\end{lstlisting}
+  \begin{itemize}
+    \item The \cmd{AS-*} lines are our own messages from the \cmd{CMakeLists.txt} files
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 1, Configure the Assembler}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cmake --build build --target sim_instr38ld
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+AS-TOP: Assembling instr38ld
+ : cmake -E make_directory .../RWU_RV/RV_NoPipeline/build/instr38ld/asm
+ : cmake -DASM_FILE=.../RWU_RV/RV_NoPipeline/rv64Sim/instr38ld.asm
+ -S .../RWU_RV/RV_NoPipeline/rv64Sim -B .../RWU_RV/RV_NoPipeline/build/instr38ld/asm
+ : cmake --build .../RWU_RV/RV_NoPipeline/build/instr38ld/asm --target mem
+-- The ASM compiler identification is GNU
+-- Found assembler: /usr/bin/cc
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: .../RWU_RV/RV_NoPipeline/build/instr38ld/asm
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{/usr/bin/cc} is only CMake's language detection. The actual calls
+      use \cmd{/opt/riscv/bin/...} (next slides).
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 1, Assemble and Link}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=out]
+AS-rv64Sim: Assembling .../RWU_RV/RV_NoPipeline/rv64Sim/instr38ld.asm
+ : /opt/riscv/bin/riscv64-unknown-linux-gnu-as
+ -march=rv64i_zicsr
+ -mlittle-endian
+ -g
+ -o .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.o
+ .../RWU_RV/RV_NoPipeline/rv64Sim/instr38ld.asm
+
+AS-rv64Sim: Linking ELF
+ : /opt/riscv/bin/riscv64-unknown-linux-gnu-ld
+ -b elf64-littleriscv
+ -o .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.elf
+ .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.o
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 1, Memory Image}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=out]
+AS-rv64Sim: Generating Verilog MEM
+ : /opt/riscv/bin/riscv64-unknown-linux-gnu-objcopy
+ -O verilog
+ --verilog-data-width 4
+ .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.elf
+ .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem
+ : sed -i 's/ /\n/g' .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem
+ : sed -i 's/\r//g' .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem
+ : sed -i '1d' .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem
+[100%] Built target mem
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 2, Configure the Simulation}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=out]
+AS-TOP: Simulating instr38ld [verilator]
+ : /usr/bin/cmake
+ -DPROJECT_ROOT=.../RWU_RV/RV_NoPipeline
+ -DIP_ROOT=.../RWU_RV/RV_NoPipeline/../..
+ -DRV64_MEM=.../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem
+ -DTB_FILE=.../RWU_RV/RV_NoPipeline/tb/tb_rv64i_instr.sv
+ -DSIMULATOR=verilator
+ -DTB_TEST_NAME=ld;-DTB_EXPECTED=38
+ -S .../RWU_RV/RV_NoPipeline/sim
+ -B .../RWU_RV/RV_NoPipeline/build/instr38ld/sim
+ : /usr/bin/cmake --build .../RWU_RV/RV_NoPipeline/build/instr38ld/sim --target waves
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: .../RWU_RV/RV_NoPipeline/build/instr38ld/sim
+\end{lstlisting}
+  \begin{itemize}
+    \item The \cmd{;} in \cmd{-DTB\_TEST\_NAME=ld;-DTB\_EXPECTED=38} is only how
+      CMake prints a list: these are two separate arguments
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 2, Verilate (1/2)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=out]
+AS-sim: Verilating and building tb_rv64i
+ : verilator
+ --cc
+ --exe .../RWU_RV/RV_NoPipeline/sim/sim_main.cpp
+ --build
+ --sv
+ --timing
+ -Wall
+ -Wno-fatal
+ -Wno-DECLFILENAME
+ -Wno-PINCONNECTEMPTY
+ -Wno-IMPORTSTAR
+ --Mdir .../RWU_RV/RV_NoPipeline/build/instr38ld/sim/obj_dir
+ -DLOGIC_SV
+ --trace-fst
+ --top-module tb_rv64i
+ .../RWU_RV/RV_NoPipeline/sim/tb_waivers.vlt
+ (source list: next slide)
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 2, Verilate (2/2)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{SOURCES\_SV}, printed as one \cmd{;}-separated list
+  (\cmd{./} = project root, \cmd{.../} = IP root):
+\begin{lstlisting}[style=out]
+./src/as_pack.sv;./src/asRegFile.sv;
+.../ip_dmem/src/asDMemBack.sv;.../ip_dmem/src/asDMemFront.sv;
+.../ip_dmem/src/asDMemCore.sv;.../ip_dmem/src/asDMem.sv;.../ip_dmem/src/asDMemTop.sv;
+./src/asIMem.sv;./src/asAlu.sv;./src/asAluBr.sv;./src/asInstrDecode.sv;
+.../ip_jtag/src/tap_fsm.sv;.../ip_jtag/src/ir_cell.sv;.../ip_jtag/src/dr_cell.sv;
+.../ip_jtag/src/scan_cell.sv;.../ip_jtag/src/by_cell.sv;.../ip_jtag/src/ir_reg.sv;
+.../ip_jtag/src/dr_reg.sv;.../ip_jtag/src/ir_decode.sv;.../ip_jtag/src/jtag.sv;
+./src/asMBpi.sv;./src/asSBpi.sv;
+.../ip_gpio/src/asGpio.sv;.../ip_irqper/src/as_irq_peripheral.sv;
+.../ip_gpio/src/asGpioTop.sv;
+.../ip_trapcsr/src/cc_trap_csr.sv;./src/asCPUx.sv;./src/asDecode.sv;
+.../ip_cgu/src/asCguCore.sv;.../ip_cgu/src/asCguTop.sv;
+.../ip_fifo/src/as_fifo.sv;.../ip_uart_v2/src/as_uart_top.sv;
+.../ip_icu/src/cc_icu.sv;.../ip_icu/src/cc_icu_top.sv;
+./src/asTopMem.sv;./tb/tb_rv64i_instr.sv
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What CMake Prints: Step 2, Simulate and Waves}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=out]
+AS-sim: Running Verilator simulation + GTKWave
+ : cmake -E copy .../RWU_RV/RV_NoPipeline/build/instr38ld/asm/rv64i.mem riscvtest.mem
+ : cmake -P .../RWU_RV/RV_NoPipeline/build/instr38ld/sim/run_sim.cmake
+ : gtkwave dump.fst &
+CS #1: gpio=0x26  expected=0x26
+Simulation ld succeeded
+%Error: .../RWU_RV/RV_NoPipeline/tb/tb_rv64i_instr.sv:74: Verilog $stop
+Aborting...
+\end{lstlisting}
+  \begin{itemize}
+    \item Same result as by hand: compare with ``c) Expected Output''
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Variant: single test case with xsim
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Single Test Case with xsim}
+\renewcommand{\astitle}{Single Test Case with xsim}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Variant: the same single test with xsim (Vivado)}
+\end{frame}
+
+\renewcommand{\assubtitle}{Preparation}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+source <Vivado install dir>/settings64.sh
+cd RWU_RV/RV_NoPipeline
+rm -rf build
+cmake -S . -B build -DSIMULATOR=xsim -DWAVES=ON
+cmake --build build --target sim_instr38ld
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{settings64.sh} puts \cmd{xvlog}, \cmd{xelab} and \cmd{xsim} into the PATH
+    \item \cmd{xsim} is the default: \cmd{-DSIMULATOR=xsim} may be left out
+    \item Step 1 (assembler $\rightarrow$ \cmd{rv64i.mem}) is identical to Verilator;
+      only step 2 in \cmd{sim/CMakeLists.txt} differs
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Under the Hood: Three xsim Steps}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{xvlog} & \emph{compile}: parses all SystemVerilog sources into the library \cmd{xsim.dir}\\[2pt]
+    \cmd{xelab} & \emph{elaborate}: builds the design hierarchy below \cmd{tb\_rv64i}
+                  and creates the snapshot \cmd{tb\_rv64i\_snapshot}\\[2pt]
+    \cmd{xsim}  & \emph{simulate}: runs the snapshot, with or without the Vivado GUI\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item CMake targets in \cmd{sim/CMakeLists.txt}:
+      \cmd{compile} $\rightarrow$ \cmd{elaborate} $\rightarrow$
+      \cmd{simulate} (\cmd{WAVES=OFF}) or \cmd{waves} (\cmd{WAVES=ON})
+    \item Each step leaves a stamp file (\cmd{compile.stamp}, \cmd{elaborate.stamp});
+      CMake reruns a step only if the stamp is missing or older than its input
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Same Steps by Hand: Compile and Elaborate}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  In \cmd{build/instr38ld/sim}, with \cmd{P} and \cmd{IP} as before:
+\begin{lstlisting}[style=sh]
+xvlog --sv --incr --relax -d LOGIC_SV <sources>
+cp ../asm/rv64i.mem riscvtest.mem
+xelab -debug all -top tb_rv64i -snapshot tb_rv64i_snapshot
+\end{lstlisting}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{<sources>}       & the same file list (and order) as for Verilator, without \cmd{tb\_waivers.vlt}\\[2pt]
+    \cmd{-{}-sv}          & treat the files as SystemVerilog\\[2pt]
+    \cmd{-{}-incr}        & incremental: only recompile files that changed\\[2pt]
+    \cmd{-{}-relax}       & relaxed language checks\\[2pt]
+    \cmd{-d LOGIC\_SV}    & the same define as \cmd{-DLOGIC\_SV} for Verilator\\[2pt]
+    \cmd{-debug all}      & keep all signals visible for the waveform viewer\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Same Steps by Hand: Simulate}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  With the Vivado GUI and waveforms (\cmd{WAVES=ON}):
+\begin{lstlisting}[style=sh]
+xsim --gui tb_rv64i_snapshot \
+     --testplusarg "TEST_NAME=ld" --testplusarg "EXPECTED=38" \
+     --tclbatch $P/sim/xsim_cfg2.tcl
+\end{lstlisting}
+  Without the GUI (\cmd{WAVES=OFF}):
+\begin{lstlisting}[style=sh]
+xsim tb_rv64i_snapshot \
+     --testplusarg "TEST_NAME=ld" --testplusarg "EXPECTED=38" \
+     --tclbatch $P/sim/xsim_cfg.tcl
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{-{}-testplusarg} passes the same plusargs as
+      \cmd{+TEST\_NAME} / \cmd{+EXPECTED} for Verilator
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Tcl Scripts}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{columns}[T]
+  \column{0.48\textwidth}
+  \cmd{sim/xsim\_cfg.tcl} (batch)
+\begin{lstlisting}
+log_wave -recursive * -v
+run all
+exit
+\end{lstlisting}
+  \column{0.48\textwidth}
+  \cmd{sim/xsim\_cfg2.tcl} (GUI)
+\begin{lstlisting}
+log_wave -recursive *
+add_wave {{*}}
+run all
+#exit
+\end{lstlisting}
+  \end{columns}
+  \footnotesize
+  \begin{itemize}
+    \item \cmd{run all} runs until the testbench's \cmd{\$stop}
+    \item Batch: \cmd{exit} ends xsim afterwards
+    \item GUI: no \cmd{exit}, so the Vivado window stays open with all
+      top-level signals in the waveform; add more signals from the scope tree
+      (or load one of the \cmd{sim/*.wcfg} files)
+    \item The result is evaluated as with Verilator: console output and
+      \cmd{error.txt} in \cmd{build/instr38ld/sim}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Regression
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Regression}
+\renewcommand{\astitle}{Regression}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Regression: all tests at once}
+\end{frame}
+
+\renewcommand{\assubtitle}{Run All Tests}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+rm -rf build
+cmake -S . -B build -DWAVES=OFF        # xsim (default)
+cmake --build build --target collect_errors -j8
+\end{lstlisting}
+  \begin{itemize}
+    \item With Verilator: add \cmd{-DSIMULATOR=verilator} as for a single test
+    \item \cmd{-DWAVES=OFF} is required: otherwise every test opens a waveform viewer
+    \item \cmd{-j8}: up to 8 tests run in parallel. That is safe, because every test
+      has its own directory \cmd{build/<test>/}
+    \item Result: \cmd{regression.txt} in the project root
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What Happens}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+collect_errors
+  `-- depends on: regression
+        `-- depends on: sim_<test>   for every test in ASM_TESTS
+              (each one exactly as in "Single Test Case")
+  then: cmake -P collect_errors.cmake
+        build/<test>/sim/error.txt  -->  regression.txt
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{ASM\_TESTS} in the top-level \cmd{CMakeLists.txt} lists all tests
+      (currently 64)
+    \item \cmd{regression} alone only runs the tests; \cmd{collect\_errors}
+      also writes the report
+    \item \cmd{regression.txt} is rewritten on every run;
+      the \cmd{error.txt} files are not (see Pitfalls)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reading the Report}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{columns}[T]
+  \column{0.5\textwidth}
+\begin{lstlisting}[basicstyle=\ttfamily\tiny]
+=== RV64I REGRESSION REPORT ===
+
+--- instr99scantest ---
+11/06/26 - scan test: Test ok
+
+--- instr01loadbyte ---
+11/06/26 - load_byte: Test ok
+
+--- instr38ld ---
+11/06/26 - ld: Test ok
+...
+\end{lstlisting}
+  \column{0.48\textwidth}
+  \footnotesize
+  One section per test with the content of its \cmd{error.txt}:
+  \begin{itemize}
+    \item \cmd{Test ok}: passed
+    \item \cmd{Test fail}: failed
+    \item \cmd{MISSING error.txt}: the test did not
+      report at all. Treat it as a failure!
+  \end{itemize}
+  \end{columns}
+  \vspace{4pt}
+  Quick check:
+\begin{lstlisting}[style=sh]
+grep -c "Test ok" regression.txt               # 64 expected
+grep -B1 "fail\|MISSING" regression.txt           # which tests?
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Adding a New Test}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{enumerate}
+    \item Write the program \cmd{rv64Sim/<test>.asm}
+    \item Add \cmd{<test>} to \cmd{ASM\_TESTS} in the top-level \cmd{CMakeLists.txt}
+    \item Choose the testbench:
+    \begin{itemize}
+      \item shared instruction testbench: add a line to \cmd{INSTR\_TB\_CONFIG}
+\begin{lstlisting}
+"<test>"   "<name in error.txt>"   "<expected GPIO value>"
+\end{lstlisting}
+      \item otherwise: write your own \cmd{tb/tb\_rv64i\_<test>.sv}
+    \end{itemize}
+    \item Configure again, then test it alone first:
+\begin{lstlisting}[style=sh]
+cmake -S . -B build
+cmake --build build --target sim_<test>
+\end{lstlisting}
+  \end{enumerate}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pitfalls
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Pitfalls}
+\renewcommand{\astitle}{Pitfalls}
+\renewcommand{\assubtitle}{Toolchain and Cache Variables}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \textbf{Vivado's RISC-V toolchain in the PATH}\\
+      After \cmd{source settings64.sh}, \cmd{riscv64-unknown-*} may resolve to Vivado's tools.
+      Always call \cmd{/opt/riscv/bin/...} with the absolute path.
+    \item \textbf{\cmd{WAVES} and \cmd{SIMULATOR} are cache variables}\\
+      They stay set in \cmd{build/CMakeCache.txt} until you change them explicitly
+      or delete \cmd{build/}:
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+cmake -S . -B build -DWAVES=OFF    # before every regression!
+\end{lstlisting}
+  \begin{itemize}
+    \item Never run a regression with \cmd{WAVES=ON}: one GUI per test
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{RTL Changes Are Not Detected}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The simulation step only depends on \cmd{rv64i.mem}, and \cmd{rv64i.mem}
+      only on the \cmd{.asm} file
+    \item After a change to the RTL (\cmd{.sv}), CMake rebuilds \emph{nothing}:
+      the old model is simulated again!
+    \item Applies to both simulators (\cmd{obj\_dir/Vtb\_rv64i} and \cmd{compile.stamp})
+  \end{itemize}
+  Before the next run:
+\begin{lstlisting}[style=sh]
+rm -rf build                     # everything, or at least
+rm -rf build/instr38ld/sim       # the simulation part of one test
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{error.txt} Accumulates}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The testbench opens \cmd{error.txt} with \cmd{"a"} (append):
+      every run adds a line, old results stay
+\begin{lstlisting}
+11/10/26 - ld: Test fail
+11/12/26 - ld: Test ok
+\end{lstlisting}
+    \item \cmd{regression.txt} copies these files completely,
+      so it also shows old results
+    \item Delete old results before you judge them:
+\begin{lstlisting}[style=sh]
+rm -f build/*/sim/error.txt
+\end{lstlisting}
+    \item Also: Verilator's exit code 1 after \cmd{\$stop} is \emph{not} a failure;
+      only \cmd{error.txt} counts
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

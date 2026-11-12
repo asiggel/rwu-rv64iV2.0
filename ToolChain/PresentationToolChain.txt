@@ -1,0 +1,172 @@
+RWU-RV64I Tool Chain
+====================
+
+1. Installation
+---------------
+
+1.1 RISC-V GNU toolchain (assembler, linker, objcopy)
+- git clone https://github.com/riscv/riscv-gnu-toolchain
+- Follow the current installation instructions on
+  https://github.com/riscv/riscv-gnu-toolchain
+- Recommended install target: /opt/riscv
+    ./configure --prefix=/opt/riscv
+    make linux          (builds riscv64-unknown-linux-gnu-*, the prefix our CMake files use)
+- Caution: AMD Vivado ships its own RISC-V toolchain, which does not suit our needs.
+  It may still be in your PATH (after sourcing settings64.sh).
+  Our CMake files therefore call the tools with an absolute path:
+    /opt/riscv/bin/riscv64-unknown-linux-gnu-{as,ld,objcopy}
+
+1.2 Simulator (one of them is enough)
+- AMD Vivado simulator (xsim): xvlog / xelab / xsim, waveforms in the Vivado GUI
+- Verilator >= 5.0 (needed for --timing) plus GTKWave to view the FST waveform
+
+1.3 Build system
+- CMake >= 3.20 (plus make or ninja as the backend)
+
+
+2. Project layout (RWU_RV/RV_NoPipeline)
+----------------------------------------
+- rv64Sim/       assembler test programs (*.asm) + CMakeLists.txt  (ASM -> MEM)
+- src/           RTL of the CPU and the top level
+- ../../ip_*/    shared IPs (GPIO, UART, JTAG, CGU, DMem, ICU, trap CSR, ...)
+- tb/            testbenches (tb_rv64i_instr.sv = shared instruction testbench)
+- sim/           CMakeLists.txt (compile + simulate), sim_main.cpp, *.tcl, *.wcfg
+- CMakeLists.txt top level: list of tests, testbench selection, regression
+
+Three CMake levels:
+  CMakeLists.txt  --calls-->  rv64Sim/CMakeLists.txt   (target "mem")
+                  --calls-->  sim/CMakeLists.txt       (target "simulate" or "waves")
+
+
+3. Single test case: simulation with Verilator and waveforms
+------------------------------------------------------------
+cd RWU_RV/RV_NoPipeline
+- rm -rf build
+- cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+- cmake --build build --target sim_instr38ld
+
+... what the options mean ...
+- -S .                 source directory (the dot means the current directory)
+- -B build             build directory; it is created if needed and holds all
+                       generated files
+- -DSIMULATOR=verilator  -D defines a CMake variable: simulator backend
+                       (xsim = default | verilator)
+- -DWAVES=ON           open the waveform viewer afterwards (single tests only,
+                       never together with "regression")
+- --build build        runs the build in the directory build
+- --target sim_instr38ld  picks one test case (sim_<name of the .asm file>)
+
+... under the hood (what CMake does) ...
+- The top-level CMakeLists.txt defines one target sim_<test> per test:
+    set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST})   ->  build/instr38ld/
+- Testbench selection: instr38ld is listed in INSTR_TB_CONFIG
+    ("instr38ld" "ld" "38")  ->  tb/tb_rv64i_instr.sv with
+    TEST_NAME=ld, EXPECTED=38 (GPIO value that signals a passing test)
+  Tests that are not in that list use their own testbench tb/tb_rv64i_<test>.sv
+- Step 1: build/instr38ld/asm/ is configured with rv64Sim/CMakeLists.txt,
+          and the target "mem" produces rv64i.mem
+- Step 2: build/instr38ld/sim/ is configured with sim/CMakeLists.txt,
+          and the target "waves" (WAVES=ON) or "simulate" (WAVES=OFF) runs
+
+... the same steps by hand (no CMake) ...
+P=$PWD                       (project root, RWU_RV/RV_NoPipeline)
+IP=$P/../..                  (IP root, holds the ip_* directories)
+RV=/opt/riscv/bin/riscv64-unknown-linux-gnu
+mkdir -p build/instr38ld/asm build/instr38ld/sim
+
+a) Assembler program -> memory image   (in build/instr38ld/asm)
+- cd build/instr38ld/asm
+- $RV-as -march=rv64i_zicsr -mlittle-endian -g -o rv64i.o $P/rv64Sim/instr38ld.asm -al=rv64i.lst
+    (assemble; -al=rv64i.lst also writes a listing that CMake does not produce,
+     handy for debugging)
+- $RV-ld -b elf64-littleriscv -o rv64i.elf rv64i.o
+    (link; an optional linker script can be passed with -T <file>,
+     in CMake with -DLINKER_SCRIPT=<file>)
+- $RV-objcopy -O verilog --verilog-data-width 4 rv64i.elf rv64i.mem
+    (ELF -> Verilog hex format, one 32-bit word = one instruction)
+- sed -i 's/ /\n/g' rv64i.mem   (one word per line: spaces -> newlines)
+- sed -i 's/\r//g'  rv64i.mem   (remove ^M (CR) at the end of lines, if present)
+- sed -i '1d'       rv64i.mem   (delete the first line: the address header, e.g. @0000402C.
+                                 The linker places .text at 0x100B0, and without this
+                                 deletion $readmemh would not load the program at
+                                 address 0, where the CPU starts. So this step is required!)
+
+b) Verilate and compile the C++ model   (in build/instr38ld/sim)
+- cd ../sim
+- verilator --cc --exe $P/sim/sim_main.cpp --build --sv --timing \
+      -Wall -Wno-fatal -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY -Wno-IMPORTSTAR \
+      --Mdir obj_dir -DLOGIC_SV --trace-fst --top-module tb_rv64i \
+      $P/sim/tb_waivers.vlt \
+      $P/src/as_pack.sv  $P/src/asRegFile.sv \
+      $IP/ip_dmem/src/{asDMemBack,asDMemFront,asDMemCore,asDMem,asDMemTop}.sv \
+      $P/src/asIMem.sv  $P/src/asAlu.sv  $P/src/asAluBr.sv  $P/src/asInstrDecode.sv \
+      $IP/ip_jtag/src/{tap_fsm,ir_cell,dr_cell,scan_cell,by_cell,ir_reg,dr_reg,ir_decode,jtag}.sv \
+      $P/src/asMBpi.sv  $P/src/asSBpi.sv \
+      $IP/ip_gpio/src/asGpio.sv  $IP/ip_irqper/src/as_irq_peripheral.sv  $IP/ip_gpio/src/asGpioTop.sv \
+      $IP/ip_trapcsr/src/cc_trap_csr.sv  $P/src/asCPUx.sv  $P/src/asDecode.sv \
+      $IP/ip_cgu/src/{asCguCore,asCguTop}.sv \
+      $IP/ip_fifo/src/as_fifo.sv  $IP/ip_uart_v2/src/as_uart_top.sv \
+      $IP/ip_icu/src/{cc_icu,cc_icu_top}.sv \
+      $P/src/asTopMem.sv \
+      $P/tb/tb_rv64i_instr.sv
+  - --cc --exe sim_main.cpp --build : generate C++ and build the executable
+                                      obj_dir/Vtb_rv64i right away
+  - --timing                        : supports the #delays in the testbench
+  - --trace-fst                     : sim_main.cpp writes the waveform to dump.fst
+  - -DLOGIC_SV                      : same define as for xsim (xvlog -d LOGIC_SV)
+  - The order of the files matters: as_pack.sv comes first, the testbench last
+    (the source list is in sim/CMakeLists.txt, SOURCES_SV)
+
+c) Simulate
+- cp ../asm/rv64i.mem riscvtest.mem [cmake -E copy /build/instr38ld/asm/rv64i.mem riscvtest.mem]
+    (the file name is fixed: tb and asIMem.sv read "riscvtest.mem" with $readmemh
+     from the current working directory)
+- ./obj_dir/Vtb_rv64i +TEST_NAME=ld +EXPECTED=38 [cmake -P /build/instr38ld/sim/run_sim.cmake]
+    (plusargs for tb_rv64i_instr.sv)
+  Expected output:
+      CS #1: gpio=0x26  expected=0x26
+      Simulation ld succeeded
+      %Error: .../tb/tb_rv64i_instr.sv:74: Verilog $stop
+      Aborting...
+    error.txt:  11/10/26 - ld: Test ok
+  - The testbench checks the GPIO value at every CS pulse:
+      GPIO == EXPECTED            ->  "Simulation ld succeeded", "Test ok" in error.txt
+      no match after 20 CS pulses ->  "Test fail" in error.txt
+  - The test ends with $stop, so Verilator exits with code 1. That is not an error;
+    CMake ignores the exit code (execute_process in run_sim.cmake).
+    The result is in error.txt (opened with "a", so results accumulate over runs!)
+
+d) Look at the waveforms
+- gtkwave dump.fst & [gtkwave dump.fst &]
+
+
+4. Variant: the same single test with xsim (Vivado)
+---------------------------------------------------
+- cmake -S . -B build -DSIMULATOR=xsim -DWAVES=ON      (or leave out -DSIMULATOR: xsim is the default)
+- cmake --build build --target sim_instr38ld
+By hand (in build/instr38ld/sim, same SOURCES_SV list as above):
+- xvlog --sv --incr --relax -d LOGIC_SV <sources>                 (compile)
+- cp ../asm/rv64i.mem riscvtest.mem
+- xelab -debug all -top tb_rv64i -snapshot tb_rv64i_snapshot      (elaborate)
+- xsim --gui tb_rv64i_snapshot --testplusarg "TEST_NAME=ld" --testplusarg "EXPECTED=38" \
+       --tclbatch $P/sim/xsim_cfg2.tcl                            (GUI with waves)
+  without the GUI: xsim tb_rv64i_snapshot ... --tclbatch $P/sim/xsim_cfg.tcl
+
+
+5. Outlook: regression (all tests)
+----------------------------------
+- cmake -S . -B build -DWAVES=OFF
+- cmake --build build --target collect_errors -j8
+  -> runs all sim_<test> targets and collects build/<test>/sim/error.txt
+     into regression.txt
+
+
+6. Pitfalls
+-----------
+- Toolchain from Vivado in the PATH: always use the absolute path /opt/riscv/bin/...
+- WAVES=ON is a cache variable. It stays set until you call cmake again with -DWAVES=OFF
+  or delete build/. Never run a regression with WAVES=ON.
+- In CMake, re-verilating/recompiling only depends on rv64i.mem.
+  After a change to the RTL (.sv) only the .asm is reassembled, not the RTL:
+  -> rm -rf build (or at least build/<test>/sim) before the next run.
+- error.txt is appended to: delete old results before you judge them.

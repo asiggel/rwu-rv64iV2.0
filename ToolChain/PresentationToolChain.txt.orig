@@ -1,0 +1,41 @@
+Installations:
+--------------
+git clone https://github.com/riscv/riscv-gnu-toolchain
+Go to https://github.com/riscv/riscv-gnu-toolchain and follow the actual installation instructions.
+Be aware, that AMD-Vivado has its own RISC-V toolchain, which is not suited for our needs. But it can be in your execution path.
+A possible target for our installation might be /opt/riscv.
+
+Simulation:
+-----------
+Either Vivado or Verilator.
+
+CMAKE:
+------
+Install cmake.
+
+Single Test Case Simulation with Verilator Wave:
+------------------------------------------------
+- rm -rf build
+- cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
+- cmake --build build --target sim_instr38ld
+... this makes ...
+- -S . * gives the source directory (the dot indicates it is here)
+- -B build * defines the target directory and generates it, all binaries will be generated here
+- -DSIMULATOR=verilator -DWAVES=ON * defines (-D) two variables, SIMULATOR=verilator and WAVES=ON
+- --build build * starts the compilation in the directory build
+- --target sim_instr38ld * choses one test case
+... under the hood ...
+- The directory ./build/instr38ld will be generated (make: set(TEST_BUILD_DIR build/instr38ld) - set(TEST_BUILD_DIR ${CMAKE_BINARY_DIR}/${TEST}))
+- 
+
+- cp rv64Sim/instr38ld.asm rv64i.asm (copy the test case to rv64i.asm)
+- /opt/riscv/bin/riscv64-unknown-linux-gnu-as -march=rv64i_zicsr -mlittle-endian -g -o rv64i.o rv64i.asm -al=rv64i.lst (assemble)
+- /opt/riscv/bin/riscv64-unknown-linux-gnu-ld -b elf64-littleriscv -o rv64i rv64i.o (linking)
+- /opt/riscv/bin/riscv64-unknown-linux-gnu-objcopy rv64i -O verilog --verilog-data-width 4 rv64i.v (copy from IntelHex to Verilog)
+- sed -i 's/ /\n/g' rv64i.v (replaces spaces by CR)
+- sed -i 's/\r//g' rv64i.v (delete ^M at the end of lines if it occurs)
+- sed -i '1d' rv64i.v (deletes the first line; not needed here)
+- cp -rf rv64i.v ../build/instr38ld/rv64i.mem
+- get test bench from ./tb
+- simulate
+
