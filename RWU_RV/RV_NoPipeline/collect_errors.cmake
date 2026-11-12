@@ -24,7 +24,7 @@ foreach(TEST ${TEST_LIST})
         file(READ ${ERR_FILE} CONTENTS)
         file(APPEND ${OUT_FILE} "${CONTENTS}")
     else()
-        file(APPEND ${OUT_FILE} "(no errors)\n")
+        file(APPEND ${OUT_FILE} "MISSING error.txt - test did not report (treat as fail)\n")
     endif()
 endforeach()
 
