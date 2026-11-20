@@ -142,3 +142,11 @@ build/
 # =========================
 README_MASTER01.txt
 PeripheralsIRQStructure/TOSPIN_Architecture_Concepts_03-03-18.pdf
+# X-FAB PDK / memory-compiler deliverables (NDA - never commit)
+XFP-*
+*.tar.gz
+*.lef
+*.lib
+XSPRAM*
+xh018/
+xh035/
