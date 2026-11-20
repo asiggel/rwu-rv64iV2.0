@@ -25,6 +25,11 @@ only lists the outputs it changes from that default).
         \item en\_regWr\_o=1; mux\_aluSrcB\_o=1 (immediate); sel\_immSrc\_o=IMM\_I;
           mux\_resultSrc\_o=RES\_MEM; alu\_op\_o=ALU\_ADD (address = rs1+imm);
           en\_dMemRd\_o=1
+        \item Only \texttt{func3} $\in$ \{000,\,\ldots,\,110\} are valid;
+          \texttt{func3}=111 sets \texttt{trap\_illegal\_instr\_o}=1 and
+          clears en\_regWr\_o and en\_dMemRd\_o, so the reserved load does
+          not reach the bus (a read can have side effects, e.g.\ the UART RX
+          FIFO pop).
       \end{itemize}
       \item opcode=19 (immediate arithmetic/logic/shift):
       \begin{itemize}
@@ -50,6 +55,10 @@ only lists the outputs it changes from that default).
       \begin{itemize}
         \item en\_dMemWr\_o=1; mux\_aluSrcB\_o=1; sel\_immSrc\_o=IMM\_S;
           alu\_op\_o=ALU\_ADD
+        \item Only \texttt{func3} $\in$ \{000,\,001,\,010,\,011\} are valid;
+          \texttt{func3} $\in$ \{100,\,\ldots,\,111\} sets
+          \texttt{trap\_illegal\_instr\_o}=1 and clears en\_dMemWr\_o, so the
+          reserved store writes nothing.
       \end{itemize}
       \item opcode=51 (R-type, RV32I arithmetic/logic/shift):
       \begin{itemize}
@@ -113,7 +122,8 @@ only lists the outputs it changes from that default).
     \item Source: Instruction from \onlyA{I-Mem}\onlyB{I-Cache}.
     \item Destination: nested \texttt{case} statements selecting
       \texttt{alu\_op\_o} (opcodes 19/27/51/59) or \texttt{br\_op\_o}
-      (opcode 99); also gates \texttt{en\_regWr\_o} for opcode 115.
+      (opcode 99); checks the reserved load/store encodings (opcodes 3/35,
+      see above); also gates \texttt{en\_regWr\_o} for opcode 115.
     \item Explanation (\texttt{alu\_op\_o} selection; \texttt{instr\_func7b5\_i}
       distinguishes the two rows sharing the same \texttt{func3}):
     \begin{itemize}

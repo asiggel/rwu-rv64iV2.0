@@ -263,6 +263,37 @@ async def illegal_instr(core: Core):
     assert core.x(9) == 1
 
 
+def with_func3(instr: int, f3: int) -> int:
+    return (instr & ~(0x7 << 12)) | (f3 << 12)
+
+
+async def illegal_store(core: Core):
+    """Store with reserved funct3 (100): must trap and must not write memory."""
+    bad = with_func3(sd(7, 8, 0), 0b100)
+    prog = [addi(7, 0, -1), addi(8, 0, DMEM), sd(0, 8, 0),
+            bad,                               # 0x0C
+            addi(9, 0, 1), jal(0, 0)]
+    isr = {MTVEC: ld(10, 8, 0), MTVEC + 4: jal(0, 0)}
+    mepc, mcause, mtval = await first_trap(core, prog, isr)
+    assert (mepc, mcause, mtval) == (0xC, 2, bad), (hex(mepc), mcause, hex(mtval))
+    await wait_pc(core, MTVEC + 4)
+    await ClockCycles(core.dut.clk_i, 400)
+    assert core.x(10) == 0, "store with reserved funct3 has written memory"
+    assert core.x(9) == 0
+
+
+async def illegal_load(core: Core):
+    """Load with reserved funct3 (111): must trap and must not write rd."""
+    bad = with_func3(ld(10, 8, 0), 0b111)
+    prog = [addi(7, 0, -1), addi(8, 0, DMEM), sd(7, 8, 0), addi(10, 0, 0x77),
+            bad,                               # 0x10
+            addi(9, 0, 1), jal(0, 0)]
+    mepc, mcause, mtval = await first_trap(core, prog)
+    assert (mepc, mcause, mtval) == (0x10, 2, bad), (hex(mepc), mcause, hex(mtval))
+    assert core.x(10) == 0x77, "load with reserved funct3 has written rd"
+    assert core.x(9) == 0
+
+
 async def illegal_csr(core: Core):
     bad = csrrw(5, CSR_MHARTID, 1)              # write to a read-only CSR
     prog = [addi(5, 0, 0x33), bad, addi(9, 0, 2), jal(0, 0)]

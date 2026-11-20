@@ -14,7 +14,6 @@ module as_dmem (input  logic                       clk_i,
                 output logic [reg_width-1:0]       data_o
                );
 
-  (* ram_style = "distributed" *) logic [reg_width-1:0] ram_s[dmemdepth-1:0]; // MEMORY; x double words capacity
   logic [reg_width-1:0]	  dataRd_s;          // 64 bit data read from memory; before byte etc. reads
   logic [reg_width-1:0]	  dataWr_s;          // arranges sb, sh, etc. then stores to memory
   logic [7:0] byteEn_s;

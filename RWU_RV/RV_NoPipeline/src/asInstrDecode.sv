@@ -56,6 +56,19 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                  sel_immSrc_o    = IMM_I;
                  mux_resultSrc_o = RES_MEM;
                  alu_op_o        = ALU_ADD; // Adresse = rs1 + imm
+                 // Reserved func3 must not reach memory: RV_PipelineCacheFwd
+                 // gates the D-cache request only on misalignment, and a
+                 // read can have side effects (UART RX FIFO pop).
+                 case (instr_func3_i)
+                   3'b000, 3'b001, 3'b010, 3'b011,
+                   3'b100, 3'b101, 3'b110: ;
+                   default:
+                   begin
+                     trap_illegal_instr_o = 1'b1;
+                     en_regWr_o           = 1'b0;
+                     en_dMemRd_o          = 1'b0;
+                   end
+                 endcase
                end
 
       // ---------------- I-TYPE ----------------
@@ -104,6 +117,14 @@ module as_instr_decode (input logic [opcode_width-1:0]    instr_opcode_i,       
                   mux_aluSrcB_o = 1'b1;
                   sel_immSrc_o  = IMM_S;
                   alu_op_o      = ALU_ADD;
+                  case (instr_func3_i)
+                    3'b000, 3'b001, 3'b010, 3'b011: ;
+                    default:
+                    begin
+                      trap_illegal_instr_o = 1'b1;
+                      en_dMemWr_o          = 1'b0;
+                    end
+                  endcase
                 end
       
       // ---------------- R-TYPE ----------------

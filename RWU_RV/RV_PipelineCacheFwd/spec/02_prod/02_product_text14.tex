@@ -196,8 +196,9 @@ values, legality, WARL, priority, vectoring, counters).
 points and checks that no instruction is lost or repeated (also around
 jumps and memory read-modify-write sequences) and that every \texttt{mepc}
 is the first unexecuted instruction; it also checks every exception cause,
-\texttt{mtval}, the suppression of the trapping instruction, vectored
-\texttt{mtvec} and \texttt{wfi}.
+\texttt{mtval}, the suppression of the trapping instruction (also for
+loads/stores with a reserved \texttt{func3}, which must neither write
+memory nor \texttt{rd}), vectored \texttt{mtvec} and \texttt{wfi}.
 
 \paragraph{Open items.}
 \begin{itemize}

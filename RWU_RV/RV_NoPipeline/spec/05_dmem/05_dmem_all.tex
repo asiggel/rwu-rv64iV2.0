@@ -159,10 +159,8 @@ are written, all others keep their value.
   \hline
   \texttt{SD} & 011 & --                       & \texttt{8'hFF}; \texttt{rs2[63:0]} \\
   \hline
-  reserved & 100--111 & -- & \texttt{8'hFF}; \texttt{rs2[63:0]} is written to the whole
-                       doubleword \texttt{addr[12:3]}. The decoder does \emph{not} trap these
-                       encodings; the CPU checks alignment by \texttt{func3[1:0]} only
-                       (100: none, 101: 2, 110: 4, 111: 8 bytes). See DMEM-02. \\
+  reserved & 100--111 & -- & Illegal instruction (cause 2). The decoder clears the
+                       write enable, so D-Mem0 is not written. \\
   \hline
 \end{tabularx}
 \end{table}
@@ -201,8 +199,8 @@ source register do not change between the two states.
   \hline
   \texttt{LWU} & 110 & \texttt{addr[2]}   & word, zero-extended \\
   \hline
-  reserved    & 111 & --                 & full doubleword, like \texttt{LD}; not trapped by the
-                       decoder (DMEM-02) \\
+  reserved    & 111 & --                 & Illegal instruction (cause 2); no read, \texttt{rd}
+                       unchanged \\
   \hline
 \end{tabularx}
 \end{table}
@@ -265,7 +263,9 @@ Section~\ref{subsec:dmemfunc01} is unchanged. The wrapper is open item TECH-01.
 The load/store behaviour is covered by the CPU-level tests of
 \texttt{RV\_NoPipeline}: the cocotb programs \texttt{instr01loadbyte} to
 \texttt{instr05loadhalfu} and the ISS scoreboard (\texttt{cocotb/iss.py}), and
-the xsim regression (Section~\ref{sec:simtest01}). There is no stand-alone
+the xsim regression (Section~\ref{sec:simtest01}). The cocotb trap tests
+\texttt{illegal\_load} and \texttt{illegal\_store} check that the reserved
+encodings trap and leave memory and \texttt{rd} unchanged. There is no stand-alone
 testbench for \texttt{ip\_dmem} (\texttt{ip\_dmem/tb} is empty).
 
 %-----------------------------------------------------------------------------
@@ -280,15 +280,13 @@ testbench for \texttt{ip\_dmem} (\texttt{ip\_dmem/tb} is empty).
   ID & Item \\
   \hline
   \hline
-  DMEM-01 & \texttt{asDMem.sv} declares an unused array \texttt{ram\_s} (dead code); remove it. \\
+  DMEM-01 & \emph{Closed 2026-11-20:} the unused array \texttt{ram\_s} in \texttt{asDMem.sv} has been removed. \\
   \hline
-  DMEM-02 & \textbf{Reserved load/store encodings are not illegal.}
-            \texttt{as\_instr\_decode} does not check \texttt{func3} for \texttt{OP\_LOAD}
-            and \texttt{OP\_STORE}, so \texttt{func3}\,=\,111 (load) and 100--111 (store)
-            execute as described in Tables~\ref{tab:asDmemStore} and \ref{tab:asDmemLoad}
-            instead of raising cause 2. Proposed fix: add \texttt{func3} cases with
-            \texttt{default: trap\_illegal\_instr\_o = 1} in the shared decoder (affects
-            both variants). \\
+  DMEM-02 & \emph{Closed 2026-11-20:} reserved load/store encodings were executed instead
+            of trapping. \texttt{as\_instr\_decode} (shared by both variants) now raises
+            cause 2 for load \texttt{func3}\,=\,111 and store \texttt{func3}\,=\,100--111
+            and clears the memory and register enables. Tests: cocotb
+            \texttt{test\_traps.illegal\_load} / \texttt{illegal\_store} (both variants). \\
   \hline
   DMEM-03 & No unit testbench for \texttt{ip\_dmem}; for formal verification the
             store/load tables above are the reference. \\
