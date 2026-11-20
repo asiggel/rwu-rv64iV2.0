@@ -1,0 +1,114 @@
+This section covers Variant~A (\texttt{RV\_NoPipeline}) in X-FAB XH018.
+The technology choice and the area budget are given in the product overview
+(Table~\ref{tab:asTechAreaA}). The memory subsystem of Variant~B (caches,
+scratchpad) still refers to XH035 (Section~\ref{subsec:sramSelection}).
+
+\subsection{SRAM Macro Selection -- Variant A}
+\label{subsec:sramSelectionA}
+
+XH018 offers several SPRAM compiler families (high speed, low power, very low
+power, low voltage), each with and without a \emph{bit} write-enable mask
+(the ``B'' variants).
+In the compiled sizes needed here, the high-speed and low-power macros have
+practically the same area. The low-power family is chosen because
+Variant~A runs at a low core clock
+(Section~\ref{subsec:clockReqNoPipeline}), so the faster macro brings no benefit.
+
+\begin{table}[H]
+\caption{Variant A -- XH018 SPRAM Instances}
+\label{tab:asSramInstancesA}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Memory & Organisation & Size & Compiler & Write enable \\
+  \hline
+  \hline
+  I-Mem & 8192 $\times$ 32\,bit & 32\,KiB & SPRAMLP  & one \texttt{WEn} for the whole word \\
+  \hline
+  D-Mem & 1024 $\times$ 64\,bit & 8\,KiB  & SPRAMBLP & \texttt{WEn[63:0]}, one per bit \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Why a bit-write macro for the D-Mem.}
+The D-Mem must support byte, halfword, word and doubleword stores
+(\texttt{SB}/\texttt{SH}/\texttt{SW}/\texttt{SD}). \texttt{asDMemCore} already
+generates an 8-bit byte enable \texttt{byteEn\_i[7:0]}.
+A macro with only one write enable would need either eight 8-bit-wide macros
+or a read-modify-write cycle for every partial store.
+The bit-write macro avoids both: each byte enable drives the eight mask bits
+of its byte.
+
+\paragraph{Why a plain macro for the I-Mem.}
+The I-Mem is written only by the JTAG loader, always as complete 32-bit
+words, and is read-only while the CPU runs. No write mask is needed.
+
+\subsection{SRAM Interface -- Variant A}
+\label{subsec:sramIfA}
+
+Both macros are synchronous single-port RAMs with one clock edge per access.
+All control inputs are \textbf{active low}.
+
+\begin{table}[H]
+\caption{Variant A -- SPRAM Port Mapping}
+\label{tab:asSramPortsA}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  SPRAM port & Direction & Connected to \\
+  \hline
+  \hline
+  \texttt{CLK}  & in  & memory clock (rising edge) \\
+  \hline
+  \texttt{CEn}  & in  & low = access in this cycle; high = idle \\
+  \hline
+  \texttt{WEn}  & in  & low = write. I-Mem: 1\,bit. D-Mem: 64\,bit,
+                        \texttt{WEn[8i+7:8i] = \{8\{\textasciitilde byteEn[i]\}\}} \\
+  \hline
+  \texttt{A}    & in  & word address (I-Mem 13\,bit, D-Mem 10\,bit) \\
+  \hline
+  \texttt{D}    & in  & write data \\
+  \hline
+  \texttt{Q}    & out & read data, valid after the clock edge \\
+  \hline
+  \texttt{RDY}  & out & test output, not used functionally \\
+  \hline
+\end{tabularx}
+\end{table}
+
+Unlike the high-speed family, the low-power macros have no output enable
+(\texttt{OEn}); \texttt{Q} is always driven.
+
+In simulation the macros are replaced by a behavioural model of our own
+(as for Variant~B, Section~\ref{subsubsec:asSpramModel}). The X-FAB
+Verilog models are covered by the NDA and are not part of the repository.
+
+\subsection{Open Items -- Technology}
+\label{subsec:techOpenA}
+
+\begin{table}[H]
+\caption{Technology Open Items (Variant A)}
+\label{tab:asTechOpenA}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  ID & Item \\
+  \hline
+  \hline
+  TECH-01 & SRAM wrappers for I-Mem and D-Mem with the port mapping of
+            Table~\ref{tab:asSramPortsA}; behavioural model selected by
+            \texttt{`ifdef SIMULATION}. \\
+  \hline
+  TECH-02 & Move the synthesis scripts (\texttt{scripts/00\_rv64\_elab.tcl},
+            \texttt{scripts/01b\_rv64\_syn.tcl}) from XH035 to XH018 and
+            select the \texttt{D\_CELLS} library variant. \\
+  \hline
+  TECH-03 & Decide the I-Mem size (32\,KiB or 16\,KiB) from the size of the
+            target software. \\
+  \hline
+  TECH-04 & Pad count and pad-ring area; check whether the die is pad-limited. \\
+  \hline
+  TECH-05 & Re-evaluate Variant~B (caches, scratchpad) for XH018. \\
+  \hline
+\end{tabularx}
+\end{table}

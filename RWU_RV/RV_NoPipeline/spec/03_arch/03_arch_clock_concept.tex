@@ -89,9 +89,9 @@ The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
 
 \subsubsection{Status}
 
-No X-FAB XH035 gate-level static timing analysis (STA) has been run yet for
+No X-FAB XH018 gate-level static timing analysis (STA) has been run yet for
 \texttt{RV\_NoPipeline}.
-The Genus synthesis script (\texttt{scripts/01b\_rv64\_syn.tcl}) still carries
+The Genus synthesis script (\texttt{scripts/01b\_rv64\_syn.tcl}) still targets XH035 (TECH-02) and carries
 a placeholder constraint (\texttt{create\_clock -period 20.000}, i.e.\ 50\,MHz
 on \texttt{clk\_i}) and is explicitly marked in its own comments as
 provisional, pending SRAM-macro integration for I-Mem/D-Mem.
@@ -133,11 +133,13 @@ timing-signed-off number.
     instruction's critical path runs through instruction decode, register
     file, the ALU, and (for loads/stores) the Wishbone master/slave BPI
     handshake, all within states of a single clock.
-    X-FAB XH035 is a 350\,nm process; without a completed STA on the actual
+    Variant~A targets X-FAB XH018 (180\,nm, Section~\ref{sec:archtech}); without a completed STA on the actual
     gate-level netlist (SRAM macros not yet integrated, see Status above),
     committing to a high frequency is premature.
     1.25\,MHz leaves a very large safety margin against any plausible
-    critical-path length on a 350\,nm standard-cell library.
+    critical-path length on a 180\,nm standard-cell library.
+    The SRAM macros are not limiting either: their cycle time is far below
+    the 800\,ns core clock period.
   \item \textbf{Why keep the already-validated operating point:} every xsim
     and cocotb regression test (58 xsim / 57 cocotb tests, see
     Section~\ref{sec:simtest01}) already runs at \texttt{clk\_i}\,=\,100\,MHz

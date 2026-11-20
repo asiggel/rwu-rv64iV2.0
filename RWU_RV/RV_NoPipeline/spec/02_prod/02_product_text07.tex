@@ -1,13 +1,67 @@
-X-FAB \textbf{XH035} 350\,nm (0.35\,\textmu m) technology.
+The process technology depends on the chip variant:
 
-X-FAB's XH035 is a 0.35\,\textmu m Modular Mixed-Signal / High-Voltage CMOS technology,
-designed for combined analog, digital, and mixed-signal circuit design.
-The digital standard-cell library used for this design is the \texttt{D\_CELLS} library
-(\texttt{xh035-D\_CELLS-liberty\_MOS}), which supplies the Liberty (\texttt{.lib}) timing
-and power views for synthesis.
-On-chip SRAM (I-Cache, D-Cache, and Scratchpad; see Section~\ref{sec:memfunc01}) is generated
-with the X-FAB XH035 SPRAM (Single-Port RAM) compiler, available directly from the
-X-FAB design-kit portal.
+\begin{itemize}
+  \item \textbf{Variant~A (RV\_NoPipeline):} X-FAB \textbf{XH018}
+    180\,nm (0.18\,\textmu m) technology, 4-metal stack.
+    This is the variant prepared for the first tapeout.
+  \item \textbf{Variant~B (RV\_PipelineCacheFwd):} X-FAB \textbf{XH035}
+    350\,nm (0.35\,\textmu m) is still assumed in the cache and memory-subsystem
+    sections. It has not yet been re-evaluated against XH018.
+\end{itemize}
 
-The nominal core voltage is 3.3\,V (a 2.2\,V low-voltage core option exists but is not used
-in this design).
+\paragraph{Variant A -- XH018.}
+XH018 is X-FAB's 0.18\,\textmu m modular mixed-signal CMOS technology.
+The digital core runs at the nominal 1.8\,V core supply; the I/O ring uses
+3.3\,V I/O cells.
+The standard-cell library is the XH018 \texttt{D\_CELLS} family; the exact
+library variant is selected together with the synthesis setup (TECH-02).
+
+On-chip SRAM (I-Mem and D-Mem) is generated with the XH018 SPRAM compilers
+from the X-FAB design-kit portal (Section~\ref{sec:archtech}).
+The compiler deliverables are covered by an NDA; this specification therefore
+gives only rounded total areas.
+
+\paragraph{Reason for XH018.}
+The selection is driven by cost. For a multi-project-wafer (MPW) run the price
+scales with the die area, and in Variant~A the die area is dominated by the
+40\,KiB of on-chip SRAM:
+
+\begin{itemize}
+  \item The per-mm\textsuperscript{2} MPW price of XH018 (4-metal) is about
+    1.5$\times$ that of XH035 (Europractice price list 2026).
+  \item The area of standard cells and SRAM is about 3--4$\times$ smaller in XH018.
+  \item As a result, the same design costs roughly half as much in XH018.
+\end{itemize}
+
+All SRAM macros use only the lower three metal layers plus the top metal, so
+the cheapest 4-metal stack is sufficient.
+
+Table~\ref{tab:asTechAreaA} gives the area budget for Variant~A.
+The SRAM figure is the rounded sum of the compiler-generated macros; all
+other figures are estimates until synthesis and place-and-route are done.
+
+\begin{table}[H]
+\caption{Variant A -- Area Budget in XH018 (rounded)}
+\label{tab:asTechAreaA}
+\centering
+\begin{tabularx}{\textwidth}{|X |l |X|}
+  \hline
+  Block & Area & Source \\
+  \hline
+  \hline
+  SRAM (I-Mem 32\,KiB + D-Mem 8\,KiB) & $\approx$\,2\,mm\textsuperscript{2} & SPRAM compiler (rounded) \\
+  \hline
+  Logic (RV64I core, peripherals) & $\approx$\,1--1.5\,mm\textsuperscript{2} & estimate \\
+  \hline
+  Routing, power ring, macro halos & $\approx$\,0.5--1\,mm\textsuperscript{2} & estimate \\
+  \hline
+  Pad ring ($\approx$\,40 pads) & $\approx$\,2--3\,mm\textsuperscript{2} & estimate \\
+  \hline
+  \textbf{Die total} & $\approx$\,\textbf{6--7.5\,mm\textsuperscript{2}} & estimate \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The I-Mem accounts for about three quarters of the SRAM area. Its size is
+therefore the strongest cost lever. Halving it to 16\,KiB would save roughly
+0.8\,mm\textsuperscript{2}, if the software allows it (TECH-03).
