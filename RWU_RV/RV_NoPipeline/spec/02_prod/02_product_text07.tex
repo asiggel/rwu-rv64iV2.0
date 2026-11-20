@@ -4,8 +4,9 @@ Variant~A uses X-FAB \textbf{XH018} 180\,nm (0.18\,\textmu m) technology with a
 XH018 is X-FAB's 0.18\,\textmu m modular mixed-signal CMOS technology.
 The digital core runs at the nominal 1.8\,V core supply; the I/O ring uses
 3.3\,V I/O cells.
-The standard-cell library is the XH018 \texttt{D\_CELLS} family; the exact
-library variant is selected together with the synthesis setup (TECH-02).
+The standard-cell library is \texttt{D\_CELLS\_HD} (1.8\,V, high density),
+the I/O library \texttt{IO\_CELLS\_3V}. Both are used in the LPMOS variant
+on the 4-metal stack, which is the variant the SRAM macros are generated for.
 
 On-chip SRAM (I-Mem and D-Mem) is generated with the XH018 SPRAM compilers
 from the X-FAB design-kit portal (Section~\ref{sec:archtech}).

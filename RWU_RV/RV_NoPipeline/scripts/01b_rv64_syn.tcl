@@ -2,77 +2,64 @@
 # 01b_rv64_syn.tcl
 #
 # Genus script: logic synthesis of RV_NoPipeline (as_top_mem)
-# Technology:   X-FAB xh035
+# Technology:   X-FAB XH018 (see 00_rv64_elab.tcl)
 #
-# Builds on the elaboration checkpoint written by 00_rv64_elab.tcl
-# (as_top_mem_elab.db) -- run 00_rv64_elab.tcl first, in the same
-# run directory.
+# Builds on the checkpoint written by 00_rv64_elab.tcl (as_top_mem_elab.db,
+# libraries, LEF, MMMC and SDC included) -- run it first, in the same run
+# directory.
 #
-# Usage (from a Genus shell):
-#   genus -files ./scripts/01b_rv64_syn.tcl
-# or interactively:
-#   genus -> source ./scripts/01b_rv64_syn.tcl
+# Usage:
+#   genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/01b_rv64_syn.tcl
 #===============================================================================
 
 set DESIGN_TOP as_top_mem
 
 # ------------------------------------------------------------------------
-# 1. Restore elaborated design from 00_rv64_elab.tcl
+# 1. Restore elaborated design
 # ------------------------------------------------------------------------
-# read_db restores libraries, RTL and elaboration state as saved by
-# write_db -all_root_attributes in 00_rv64_elab.tcl.
 read_db ${DESIGN_TOP}_elab.db
 
 # ------------------------------------------------------------------------
-# 2. Timing constraints (SDC)
-# ------------------------------------------------------------------------
-# Placeholder constraints -- replace with a dedicated constraints.sdc once
-# the target frequency for xh035 is known. clk_i / tck_i port names are
-# taken from src/asTopMem.sv.
-create_clock -name clk_i -period 20.000 [get_ports clk_i]   ;# 50 MHz placeholder
-create_clock -name tck_i -period 100.000 [get_ports tck_i]  ;# JTAG TCK, placeholder
-
-# JTAG TCK and the functional clock are unrelated -- do not time-analyze
-# paths between them.
-set_clock_groups -asynchronous -group {clk_i} -group {tck_i}
-
-# Asynchronous resets: no meaningful setup/hold relationship to any clock.
-set_false_path -from [get_ports rst_i]
-set_false_path -from [get_ports trst_i]
-
-set_input_delay  -clock clk_i 2.000 [remove_from_collection [all_inputs]  [get_ports {clk_i rst_i tck_i trst_i tms_i tdi_i}]]
-set_output_delay -clock clk_i 2.000 [all_outputs]
-
-# ------------------------------------------------------------------------
-# 3. Synthesis effort
+# 2. Synthesis settings
 # ------------------------------------------------------------------------
 set_db syn_generic_effort medium
 set_db syn_map_effort     medium
 set_db syn_opt_effort     medium
 
+# as_top_mem.sdc refers to cgu/CGUCore and as_jtag pins.
+set_db [get_db hinsts cgu/CGUCore] .ungroup_ok false
+set_db [get_db hinsts as_jtag]     .ungroup_ok false
+
 # ------------------------------------------------------------------------
-# 4. Run synthesis
+# 3. Run synthesis
 # ------------------------------------------------------------------------
-# TODO (per README_XFAB.txt, Bemerkungen): SRAMs must be integrated as
-# black-box macros BEFORE this step. as_dmem_core / as_imem are currently
-# plain RTL memories (no SRAM macro yet) -- revisit this script once SRAM
-# integration is done, so read_db above also carries the macro views.
+# TECH-01: as_imem / as_dmem_core are still RTL arrays and are mapped to
+# flip-flops (about 300k for 40 KiB). Area and run time are meaningless
+# until the SPRAM wrappers instantiate $IMEM_MACRO / $DMEM_MACRO; the
+# macro libraries and LEFs are already loaded.
 syn_generic
 syn_map
 syn_opt
 
 # ------------------------------------------------------------------------
-# 5. Reports
+# 4. Reports (setup views: slow, typ; hold view: fast)
 # ------------------------------------------------------------------------
-report_area                          > ${DESIGN_TOP}_area.rpt
-report_timing                        > ${DESIGN_TOP}_timing.rpt
-report_gates                         > ${DESIGN_TOP}_gates.rpt
-report_power                         > ${DESIGN_TOP}_power.rpt
-check_design -unresolved
+check_design -unresolved          > ${DESIGN_TOP}_check.rpt
+check_timing_intent               > ${DESIGN_TOP}_timing_intent.rpt
+report_area                       > ${DESIGN_TOP}_area.rpt
+report_gates                      > ${DESIGN_TOP}_gates.rpt
+report_clocks                     > ${DESIGN_TOP}_clocks.rpt
+report_qor                        > ${DESIGN_TOP}_qor.rpt
+report_power                      > ${DESIGN_TOP}_power.rpt
+foreach view {av_slow av_typ} {
+  report_timing -views $view -max_paths 20 > ${DESIGN_TOP}_timing_${view}.rpt
+}
 
 # ------------------------------------------------------------------------
-# 6. Outputs for the next stage (Gate-Level Simulation / DFT)
+# 5. Outputs: netlist + constraints for Innovus and gate-level simulation
 # ------------------------------------------------------------------------
 write_hdl                  > ${DESIGN_TOP}_syn.v
-write_sdc                  > ${DESIGN_TOP}_syn.sdc
+write_sdc -view av_slow    > ${DESIGN_TOP}_syn.sdc
+write_sdf -view av_slow    > ${DESIGN_TOP}_syn.sdf
 write_db -all_root_attributes ${DESIGN_TOP}_syn.db
+write_design -innovus -base_name innovus/${DESIGN_TOP}

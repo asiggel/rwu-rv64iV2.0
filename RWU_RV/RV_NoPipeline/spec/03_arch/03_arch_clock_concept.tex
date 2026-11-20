@@ -91,10 +91,14 @@ The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
 
 No X-FAB XH018 gate-level static timing analysis (STA) has been run yet for
 \texttt{RV\_NoPipeline}.
-The Genus synthesis script (\texttt{scripts/01b\_rv64\_syn.tcl}) still targets XH035 (TECH-02) and carries
-a placeholder constraint (\texttt{create\_clock -period 20.000}, i.e.\ 50\,MHz
-on \texttt{clk\_i}) and is explicitly marked in its own comments as
-provisional, pending SRAM-macro integration for I-Mem/D-Mem.
+The Genus scripts target XH018 (TECH-02). The constraint file
+\texttt{scripts/as\_top\_mem.sdc} implements the operating point of
+Table~\ref{tab:asNoPipelineClk}: \texttt{clk\_i} with 10\,ns, the generated
+clock \texttt{clk\_core} (\texttt{-divide\_by 80}) on the CGU output, the
+scan bypass mux fixed to functional mode by case analysis on
+\texttt{dr\_cap\_o}, and \texttt{tck\_i} with 40\,ns, asynchronous to the
+core clocks. The scripts have not been run yet, and the SRAM macros are not
+yet integrated (TECH-01).
 The recommendation below is therefore a conservative pre-STA target, not a
 timing-signed-off number.
 
@@ -160,10 +164,9 @@ timing-signed-off number.
 \subsubsection{Open Items}
 
 \textbf{Action (CLK-01):} Once I-Mem/D-Mem SRAM macros are integrated into
-the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} with a
-proper \texttt{create\_generated\_clock -divide\_by 80} constraint on
-\texttt{clk\_core\_o} (in addition to the existing constraint on
-\texttt{clk\_i}, which today only reflects the scan-test bypass path) and
+the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} with
+\texttt{scripts/as\_top\_mem.sdc} (generated clock \texttt{clk\_core},
+\texttt{-divide\_by 80}) at the slow corner and
 confirm that 1.25\,MHz core / 100\,MHz external clears timing with adequate
 margin at the worst-case corner.
 If margin is large, a higher core frequency may be considered for a later

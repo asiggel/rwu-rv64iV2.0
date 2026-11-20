@@ -1,26 +1,35 @@
 #===============================================================================
 # 00_rv64_elab.tcl
 #
-# Genus script: collect RTL and elaborate RV_NoPipeline (as_top_mem)
-# Technology:   X-FAB xh035
+# Genus script: read libraries (MMMC), LEF and RTL, elaborate RV_NoPipeline
+# (as_top_mem) and write the checkpoint for 01b_rv64_syn.tcl.
+# Technology:   X-FAB XH018 (4 metal layers, LPMOS),
+#               D_CELLS_HD, IO_CELLS_3V, SPRAM macros for I-Mem / D-Mem
 #
-# Usage (from a Genus shell):
-#   genus -legacy_ui -files ./scripts/00_rv64_elab.tcl
-# or interactively:
-#   genus -> source ./scripts/00_rv64_elab.tcl
+# Before running:
+#   XFAB_PATHS = local path file with the X-FAB file locations (NDA, not in
+#                git; template: scripts/xh018_paths_template.tcl)
+#
+# Usage (run directory of your choice, e.g. RV_NoPipeline/syn/genus):
+#   genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/00_rv64_elab.tcl
 #===============================================================================
 
 # ------------------------------------------------------------------------
-# 1. Paths -- adjust before running on the Cadence workstation
+# 1. Paths
 # ------------------------------------------------------------------------
-# <path-to-pdk>    : root of the xh035 PDK-Kernel install (xenv-cadence),
-#                    the directory that contains xh035-D_CELLS-liberty_MOS
-# <path-to-design> : root of the asgithub checkout (contains RWU_RV/ and
-#                    the ip_* peripheral IP directories as siblings)
-set PDK_PATH    <path-to-pdk>
-set DESIGN_PATH <path-to-design>
-
+set SCRIPT_DIR  [file dirname [file normalize [info script]]]
+set DESIGN_PATH [file normalize $SCRIPT_DIR/../../..]
 set DESIGN_TOP  as_top_mem
+
+if {![info exists ::env(XFAB_PATHS)] || ![file readable $::env(XFAB_PATHS)]} {
+  error "XFAB_PATHS must point to the local X-FAB path file (see $SCRIPT_DIR/xh018_paths_template.tcl)"
+}
+source $::env(XFAB_PATHS)
+
+foreach f [concat $LIBS_SLOW $LIBS_TYP $LIBS_FAST $LEF_FILES \
+                  $CAPTBL_MAX $CAPTBL_TYP $CAPTBL_MIN $QRC_MAX $QRC_TYP $QRC_MIN] {
+  if {![file readable $f]} { error "X-FAB file not found: $f" }
+}
 
 # ------------------------------------------------------------------------
 # 2. Genus global settings
@@ -30,17 +39,10 @@ set_db hdl_track_filename_row_col true
 set_db max_cpus_per_server 4
 
 # ------------------------------------------------------------------------
-# 3. Technology library (xh035)
+# 3. Technology: libraries per corner (MMMC) and physical data
 # ------------------------------------------------------------------------
-# Liberty file names are placeholders -- replace with the actual .lib file
-# names shipped in xh035-D_CELLS-liberty_MOS once available.
-set_db init_lib_search_path [list \
-  "$PDK_PATH/xh035-D_CELLS-liberty_MOS" \
-]
-
-set_db library [list \
-  xh035_dcells_typ_3p3v_25c.lib \
-]
+read_mmmc $SCRIPT_DIR/xh018_mmmc.tcl
+read_physical -lef $LEF_FILES
 
 # ------------------------------------------------------------------------
 # 4. RTL file list (SystemVerilog)
@@ -88,19 +90,21 @@ set RTL_FILES [list \
 ]
 
 # ------------------------------------------------------------------------
-# 5. Read and elaborate
+# 5. Read, elaborate, bind constraints
 # ------------------------------------------------------------------------
 read_hdl -sv $RTL_FILES
 elaborate $DESIGN_TOP
+init_design
 
 # ------------------------------------------------------------------------
 # 6. Sanity checks / reports
 # ------------------------------------------------------------------------
 check_design -unresolved
+check_timing_intent
 report_summary
 write_html_report -filename ${DESIGN_TOP}_elab_summary.html
 
 # ------------------------------------------------------------------------
-# 7. Checkpoint for the next stage (01_ synthesis script)
+# 7. Checkpoint for the next stage (01b synthesis script)
 # ------------------------------------------------------------------------
 write_db -all_root_attributes ${DESIGN_TOP}_elab.db

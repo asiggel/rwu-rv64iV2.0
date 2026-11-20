@@ -98,9 +98,14 @@ Verilog models are covered by the NDA and are not part of the repository.
             Table~\ref{tab:asSramPortsA}; behavioural model selected by
             \texttt{`ifdef SIMULATION}. \\
   \hline
-  TECH-02 & Move the synthesis scripts (\texttt{scripts/00\_rv64\_elab.tcl},
-            \texttt{scripts/01b\_rv64\_syn.tcl}) from XH035 to XH018 and
-            select the \texttt{D\_CELLS} library variant. \\
+  TECH-02 & \emph{Closed 2026-11-20:} the Genus scripts
+            (\texttt{scripts/00\_rv64\_elab.tcl}, \texttt{01b\_rv64\_syn.tcl})
+            target XH018 with \texttt{D\_CELLS\_HD} and \texttt{IO\_CELLS\_3V}.
+            Corners slow/typ/fast in \texttt{scripts/xh018\_mmmc.tcl},
+            constraints in \texttt{scripts/as\_top\_mem.sdc}. The X-FAB file
+            locations are read from a local file outside the repository
+            (\texttt{\$XFAB\_PATHS}, NDA). Not yet run on the Cadence
+            workstation. \\
   \hline
   TECH-03 & Decide the I-Mem size (32\,KiB or 16\,KiB) from the size of the
             target software. \\
