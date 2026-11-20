@@ -1,0 +1,297 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 05_dmem_all.tex -- Data Memory (D-Mem), Variant A (RV_NoPipeline)
+%% RTL: ip_dmem/src/asDMemTop.sv, asDMem.sv, asDMemFront.sv,
+%%      asDMemCore.sv, asDMemBack.sv
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{System Integration of D-Mem0}
+
+\subsubsection{History}
+
+\begin{table}[H]
+\caption{History of D-Mem0}
+\label{tab:asDmemHist01}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Version & Date & Author & Change \\
+  \hline
+  \hline
+  0.1 & 2026-11-20 & CC & First version, derived from the RTL in \texttt{ip\_dmem/src} \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Functional Configuration of D-Mem0}
+
+D-Mem0 is the only writable memory of Variant~A. It holds \texttt{.data},
+\texttt{.bss}, heap and stack.
+
+\begin{table}[H]
+\caption{D-Mem0 Feature Set}
+\label{tab:asDmemCfg01}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Feature & Details \\
+  \hline
+  \hline
+  yes & Capacity & 8\,KiB = 1024 words $\times$ 64\,bit
+        (\texttt{dmemdepth}\,=\,1024, \texttt{dmem\_addr\_width}\,=\,13 in \texttt{as\_pack.sv}) \\
+  \hline
+  yes & Access sizes & byte, halfword, word, doubleword; signed and unsigned loads
+        (\texttt{LB}, \texttt{LBU}, \texttt{LH}, \texttt{LHU}, \texttt{LW}, \texttt{LWU}, \texttt{LD};
+        \texttt{SB}, \texttt{SH}, \texttt{SW}, \texttt{SD}) \\
+  \hline
+  yes & Separate Kernel Clock & \texttt{clk\_core\_s} (\texttt{clk\_div\_s} in \texttt{as\_top\_mem});
+        1.25\,MHz recommended (Section~\ref{subsec:clockReqNoPipeline}) \\
+  \hline
+  yes & Synchronous read & read data is registered; valid one clock after the address \\
+  \hline
+  no  & Wait states & none; the slave acknowledges every selected cycle \\
+  \hline
+  no  & Reset of contents & the memory array and the read register are not reset \\
+  \hline
+  no  & Interrupts, DMA, registers & none \\
+  \hline
+  no  & Error response & none; misaligned accesses are trapped by the CPU before they reach D-Mem0 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{HW Interfaces}
+
+\begin{table}[H]
+\caption{HW Interfaces of D-Mem0 (\texttt{as\_dmem\_top}, instance \texttt{DMem})}
+\label{tab:asDmemIf01}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Module port & Chip level (\texttt{as\_top\_mem}) \\
+  \hline
+  \hline
+  Clock & \texttt{clk\_i} & \texttt{clk\_div\_s} (CGU \texttt{clk\_core\_o}, or the scan clock in test mode) \\
+  \hline
+  Reset & \texttt{rst\_i} & \texttt{rst\_i}; only passed to the slave BPI, which does not use it \\
+  \hline
+  Bus & \texttt{wbdAddr\_i[12:0]} & \texttt{dBusAddr\_s[12:0]} (address bits above 12 are not connected) \\
+      & \texttt{wbdDat\_i[63:0]}  & \texttt{dBusDataWr\_s} \\
+      & \texttt{wbdDat\_o[63:0]}  & \texttt{dBusDataRdDmem\_s} \\
+      & \texttt{wbdWe\_i}         & \texttt{wbdwe\_s} \\
+      & \texttt{wbdSel\_i[7:0]}   & \texttt{sel\_s} (always \texttt{8'hFF}) \\
+      & \texttt{wbdStb\_i}        & \texttt{wbdstDMem\_s} = STB $\wedge$ CYC $\wedge$ \texttt{csx\_s[0]} \\
+      & \texttt{wbdCyc\_i}        & \texttt{wbdcycarb\_s} \\
+      & \texttt{wbdAck\_o}        & \texttt{wdbAckDmem\_s} \\
+  \hline
+  Side band & \texttt{opcode\_i[6:0]} & \texttt{ir\_s[6:0]} (current instruction) \\
+            & \texttt{func3\_i[2:0]}  & \texttt{ir\_s[14:12]} \\
+  \hline
+  Interrupt, DMA & none & -- \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Bus Interface}
+
+D-Mem0 is a Wishbone slave behind \texttt{as\_slave\_bpi}
+(Section~\ref{subsec:asSlaveBpi}), base address \texttt{0x0000\_0000\_0000\_0000},
+chip select \texttt{cs[0]} (Table~\ref{tab:sysmap}).
+
+\textbf{Access size is not taken from Wishbone \texttt{SEL}.} The master drives
+\texttt{SEL}\,=\,\texttt{8'hFF} permanently, and the slave BPI only generates a
+write or read strobe when all \texttt{SEL} bits are 1. The size and the
+sign extension come from the side-band inputs \texttt{opcode\_i} and
+\texttt{func3\_i}, i.e.\ directly from the instruction register of the CPU.
+This is a deviation from the Wishbone standard.
+
+\subsubsection{Registers}
+
+None. D-Mem0 is a memory, not a register-mapped peripheral.
+
+\subsubsection{Related Sections of this Spec}
+
+\begin{itemize}
+  \item Memory concept: Section~\ref{subsec:noCacheVariant}
+  \item System memory map: Table~\ref{tab:sysmap}
+  \item Wishbone master BPI and the zero-wait-state rule: Section~\ref{subsec:asMasterBpi}
+  \item SRAM macro in XH018: Section~\ref{subsec:sramSelectionA}
+  \item Misaligned load/store exceptions: Section~\ref{subsec:irqconcept}
+\end{itemize}
+
+%-----------------------------------------------------------------------------
+\subsection{Functional Overview}
+\label{subsec:dmemfunc01}
+
+\paragraph{Address.}
+D-Mem0 receives the byte address bits \texttt{[12:0]}.
+Bits \texttt{[12:3]} select one of the 1024 64-bit words; bits \texttt{[2:0]}
+select the byte lane. The address decoder selects D-Mem0 for the whole
+window \texttt{0x0000}--\texttt{0xFFFF} (64\,KiB). Because bits \texttt{[15:13]}
+are not used, the 8\,KiB appear eight times in this window (aliasing):
+address $a$ and $a + k \cdot 0x2000$ ($k = 1 \ldots 7$) access the same byte.
+
+\paragraph{Write (store).}
+A write happens at the rising edge of \texttt{clk\_i} when
+\texttt{wrEn} = CYC $\wedge$ STB $\wedge$ \texttt{cs[0]} $\wedge$ WE $\wedge$ (\texttt{SEL}\,=\,\texttt{8'hFF}).
+The CPU asserts WE only in \texttt{EXEC\_ST} of a store instruction without
+exception (\texttt{dBusWe\_o} = \texttt{dMemWr\_s} $\wedge$ \texttt{exec\_phase\_s}
+$\wedge$ $\neg$\texttt{exc\_s} in \texttt{as\_cpux}). So exactly one write
+happens per store, and a misaligned store (cause 6) writes nothing.
+\texttt{as\_dmem\_front} moves the store data to its byte lanes and sets
+the byte enable (Table~\ref{tab:asDmemStore}); only bytes with byte enable\,=\,1
+are written, all others keep their value.
+
+\begin{table}[H]
+\caption{D-Mem0 Store Byte Enables (\texttt{opcode\_i}\,=\,\texttt{0100011})}
+\label{tab:asDmemStore}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Instruction & \texttt{func3} & Lane select & Byte enable / data placement \\
+  \hline
+  \hline
+  \texttt{SB} & 000 & \texttt{addr[2:0]} = $n$ & bit $n$ set; \texttt{rs2[7:0]} $\rightarrow$ byte $n$ \\
+  \hline
+  \texttt{SH} & 001 & \texttt{addr[2:1]} = $n$ & bits $2n$, $2n{+}1$; \texttt{rs2[15:0]} $\rightarrow$ halfword $n$ \\
+  \hline
+  \texttt{SW} & 010 & \texttt{addr[2]} = $n$   & \texttt{8'h0F} ($n$\,=\,0) or \texttt{8'hF0} ($n$\,=\,1);
+                       \texttt{rs2[31:0]} $\rightarrow$ word $n$ \\
+  \hline
+  \texttt{SD} & 011 & --                       & \texttt{8'hFF}; \texttt{rs2[63:0]} \\
+  \hline
+  reserved & 100--111 & -- & \texttt{8'hFF}; \texttt{rs2[63:0]} is written to the whole
+                       doubleword \texttt{addr[12:3]}. The decoder does \emph{not} trap these
+                       encodings; the CPU checks alignment by \texttt{func3[1:0]} only
+                       (100: none, 101: 2, 110: 4, 111: 8 bytes). See DMEM-02. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Read (load).}
+\texttt{as\_dmem\_core} reads the addressed 64-bit word at \emph{every} rising
+edge of \texttt{clk\_i} into its output register (the read enable is not used
+by the array). The CPU presents the load address in \texttt{EXEC\_ST}; the word
+is in the register at the start of \texttt{EXECLD\_ST}, where the CPU takes the
+data. \texttt{as\_dmem\_back} then selects and extends the requested part
+combinationally (Table~\ref{tab:asDmemLoad}). This needs the address,
+\texttt{opcode\_i} and \texttt{func3\_i} to be unchanged from \texttt{EXEC\_ST}
+to \texttt{EXECLD\_ST}, which holds because the instruction register and the
+source register do not change between the two states.
+
+\begin{table}[H]
+\caption{D-Mem0 Load Extension (\texttt{opcode\_i}\,=\,\texttt{0000011}, read: WE\,=\,0)}
+\label{tab:asDmemLoad}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Instruction & \texttt{func3} & Lane select & Result \texttt{data\_o[63:0]} \\
+  \hline
+  \hline
+  \texttt{LB}  & 000 & \texttt{addr[2:0]} & byte, sign-extended \\
+  \hline
+  \texttt{LH}  & 001 & \texttt{addr[2:1]} & halfword, sign-extended \\
+  \hline
+  \texttt{LW}  & 010 & \texttt{addr[2]}   & word, sign-extended \\
+  \hline
+  \texttt{LD}  & 011 & --                 & doubleword \\
+  \hline
+  \texttt{LBU} & 100 & \texttt{addr[2:0]} & byte, zero-extended \\
+  \hline
+  \texttt{LHU} & 101 & \texttt{addr[2:1]} & halfword, zero-extended \\
+  \hline
+  \texttt{LWU} & 110 & \texttt{addr[2]}   & word, zero-extended \\
+  \hline
+  reserved    & 111 & --                 & full doubleword, like \texttt{LD}; not trapped by the
+                       decoder (DMEM-02) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Alignment.}
+D-Mem0 does not check alignment; it ignores the address bits below the access
+size (e.g.\ \texttt{SH} uses \texttt{addr[2:1]} and ignores \texttt{addr[0]}).
+Misaligned accesses never reach it: the CPU raises a load (cause 4) or store
+(cause 6) address-misaligned exception and suppresses the access
+(Table~\ref{tab:asTrapCause}).
+
+\paragraph{Read during write.}
+A read in the same cycle as a write to the same word returns the \emph{old}
+value. This case does not occur in normal operation: a store does not read,
+and the next load is at least three clock cycles later.
+
+\paragraph{After reset.}
+Neither the array nor the read register is reset; the contents are undefined
+after power-up and are kept over a reset of \texttt{rst\_i}. Software must
+initialise \texttt{.data}/\texttt{.bss} itself.
+
+%-----------------------------------------------------------------------------
+\subsection{Structural Overview}
+
+\begin{table}[H]
+\caption{D-Mem0 Module Hierarchy}
+\label{tab:asDmemHier}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Module (file) & Instance & Function \\
+  \hline
+  \hline
+  \texttt{as\_dmem\_top} (\texttt{asDMemTop.sv}) & \texttt{DMem} & Top; Wishbone slave port \\
+  \hline
+  \quad \texttt{as\_slave\_bpi} (\texttt{asSBpi.sv}) & \texttt{sDmemBpi} & Wishbone to kernel strobes (combinational) \\
+  \hline
+  \quad \texttt{as\_dmem} (\texttt{asDMem.sv}) & \texttt{dmem} & Kernel \\
+  \hline
+  \quad\quad \texttt{as\_dmem\_front} (\texttt{asDMemFront.sv}) & \texttt{dMemStore} & Store lane placement and byte enable (combinational) \\
+  \hline
+  \quad\quad \texttt{as\_dmem\_core} (\texttt{asDMemCore.sv}) & \texttt{asDMem} & 1024 $\times$ 64\,bit array, byte-write, registered read \\
+  \hline
+  \quad\quad \texttt{as\_dmem\_back} (\texttt{asDMemBack.sv}) & \texttt{dMemLoad} & Load lane select and extension (combinational) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Silicon implementation.}
+In XH018 the array \texttt{as\_dmem\_core} is replaced by one SPRAMBLP macro
+1024 $\times$ 64 with a bit write mask (Section~\ref{subsec:sramSelectionA}).
+The byte enable maps to the active-low mask as
+\texttt{WEn[8i+7:8i]} = \texttt{\{8\{\textasciitilde byteEn[i]\}\}}.
+The macro also reads synchronously, so the timing of
+Section~\ref{subsec:dmemfunc01} is unchanged. The wrapper is open item TECH-01.
+
+%-----------------------------------------------------------------------------
+\subsection{Verification}
+
+The load/store behaviour is covered by the CPU-level tests of
+\texttt{RV\_NoPipeline}: the cocotb programs \texttt{instr01loadbyte} to
+\texttt{instr05loadhalfu} and the ISS scoreboard (\texttt{cocotb/iss.py}), and
+the xsim regression (Section~\ref{sec:simtest01}). There is no stand-alone
+testbench for \texttt{ip\_dmem} (\texttt{ip\_dmem/tb} is empty).
+
+%-----------------------------------------------------------------------------
+\subsection{Open Items}
+
+\begin{table}[H]
+\caption{D-Mem0 Open Items}
+\label{tab:asDmemOpen}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  ID & Item \\
+  \hline
+  \hline
+  DMEM-01 & \texttt{asDMem.sv} declares an unused array \texttt{ram\_s} (dead code); remove it. \\
+  \hline
+  DMEM-02 & \textbf{Reserved load/store encodings are not illegal.}
+            \texttt{as\_instr\_decode} does not check \texttt{func3} for \texttt{OP\_LOAD}
+            and \texttt{OP\_STORE}, so \texttt{func3}\,=\,111 (load) and 100--111 (store)
+            execute as described in Tables~\ref{tab:asDmemStore} and \ref{tab:asDmemLoad}
+            instead of raising cause 2. Proposed fix: add \texttt{func3} cases with
+            \texttt{default: trap\_illegal\_instr\_o = 1} in the shared decoder (affects
+            both variants). \\
+  \hline
+  DMEM-03 & No unit testbench for \texttt{ip\_dmem}; for formal verification the
+            store/load tables above are the reference. \\
+  \hline
+\end{tabularx}
+\end{table}

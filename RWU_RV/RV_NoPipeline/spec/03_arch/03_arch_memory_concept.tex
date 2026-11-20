@@ -71,9 +71,11 @@ blocks and no cache.
     I-Mem is read-only during normal CPU execution.
 
   \item \textbf{Data Memory (D-Mem, 8\,KB):}
-    A single-port synchronous SRAM with a Wishbone~B3 slave interface.
-    Supports byte, halfword, word, and doubleword accesses controlled by the
-    Wishbone \texttt{SEL} byte-enable signal.
+    A single-port synchronous SRAM with a Wishbone~B4 Classic slave interface.
+    Supports byte, halfword, word, and doubleword accesses. The access size
+    comes from side-band signals (\texttt{opcode}, \texttt{func3} of the
+    current instruction), not from Wishbone \texttt{SEL}
+    (Section~\ref{sec:dmemfunc01}).
     Holds \texttt{.data}, \texttt{.bss}, stack, and heap.
     Address range: \texttt{0x0000\_0000}--\texttt{0x0000\_1FFF}
     (8\,KB, mapped at base address 0).

@@ -308,6 +308,10 @@
 \subsection{Registers}
 \input{\TEXTimem 05_imem_text10}
 
+\section{Data Memory (D-Mem)}
+\label{sec:dmemfunc01}
+\input{\TEXTdmem 05_dmem_all}
+
 % UART
 \section{UART}
 \input{\TEXTuart 05_uart_all}
@@ -437,7 +441,8 @@ drives \texttt{STB}\,=\,\texttt{CYC}\,=\,1 permanently and does not evaluate
 \texttt{ACK}; the CPU FSM has a fixed timing. An access to the QSPI0 region
 (no slave, \texttt{wdbAckQspi\_s}\,=\,0) or to an address outside all regions
 therefore completes normally: a read returns 0, a write has no effect.
-No bus error or access-fault exception is raised (open item MAP-01).
+No bus error or access-fault exception is raised. This is accepted for
+Variant~A (zero-wait-state rule, Section~\ref{subsec:asMasterBpi}).
 
 Tables~\ref{tab:gpiooffsets}--\ref{tab:uartoffsets} repeat the register
 offsets of every peripheral (from its own base address, see
