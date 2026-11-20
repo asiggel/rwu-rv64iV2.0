@@ -98,6 +98,16 @@ set(SOURCES_SV
 
     # Pipeline CPU RTL with EX/MEM + MEM/WB forwarding
     ${IP_ROOT}/ip_trapcsr/src/cc_trap_csr.sv
+    ${PROJECT_ROOT}/src/cc_fetch_unit.sv
+    ${PROJECT_ROOT}/src/cc_id_unit.sv
+    ${PROJECT_ROOT}/src/cc_ex_unit.sv
+    ${PROJECT_ROOT}/src/cc_mem_unit.sv
+    ${PROJECT_ROOT}/src/cc_wb_unit.sv
+    ${PROJECT_ROOT}/src/cc_hazard_unit.sv
+    ${PROJECT_ROOT}/src/cc_if_id_reg.sv
+    ${PROJECT_ROOT}/src/cc_id_ex_reg.sv
+    ${PROJECT_ROOT}/src/cc_ex_mem_reg.sv
+    ${PROJECT_ROOT}/src/cc_mem_wb_reg.sv
     ${PROJECT_ROOT}/src/cc_cpupipefwd.sv
     ${PROJECT_ROOT}/src/asTopMem.sv
 

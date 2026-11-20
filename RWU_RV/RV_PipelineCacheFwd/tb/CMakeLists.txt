@@ -30,6 +30,16 @@ set(SOURCES_SV
     ${NP_ROOT}/src/asInstrDecode.sv
     ${IP_ROOT}/ip_jtag/src/scan_cell.sv
     ${IP_ROOT}/ip_trapcsr/src/cc_trap_csr.sv
+    ${PC_ROOT}/src/cc_fetch_unit.sv
+    ${PC_ROOT}/src/cc_id_unit.sv
+    ${PC_ROOT}/src/cc_ex_unit.sv
+    ${PC_ROOT}/src/cc_mem_unit.sv
+    ${PC_ROOT}/src/cc_wb_unit.sv
+    ${PC_ROOT}/src/cc_hazard_unit.sv
+    ${PC_ROOT}/src/cc_if_id_reg.sv
+    ${PC_ROOT}/src/cc_id_ex_reg.sv
+    ${PC_ROOT}/src/cc_ex_mem_reg.sv
+    ${PC_ROOT}/src/cc_mem_wb_reg.sv
     ${PC_ROOT}/src/cc_cpupipefwd.sv
     ${TB_DIR}/${TB_TOP}.sv
 )

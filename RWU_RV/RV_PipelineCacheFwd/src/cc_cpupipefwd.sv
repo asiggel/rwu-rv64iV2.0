@@ -35,6 +35,18 @@
 //
 // Interface, cache handling, branch:  identical to cc_cpupipe.
 //
+// Submodules:
+//   cc_fetch_unit   IF stage: PC, I-cache handshake, instruction buffer
+//   cc_id_unit      ID stage: control decoder, immediate
+//   cc_ex_unit      EX stage: operand muxes, ALUs, branch target, store data
+//   cc_mem_unit     MEM stage: D-cache request, read-data / error buffer
+//   cc_wb_unit      WB stage: result mux, commit, trap/mret decision
+//   cc_if_id_reg, cc_id_ex_reg, cc_ex_mem_reg, cc_mem_wb_reg
+//                   the four pipeline registers
+//   cc_hazard_unit  hazard detection, stall/flush generation, forwarding
+// The *_r names of their register outputs are kept here so testbench
+// hierarchy paths (PC_r, if_id_instr_r, mem_wb_pc_r, ...) stay valid.
+//
 // Traps / IRQ (cc_trap_csr holds all M-mode CSRs):
 //   Exceptions are detected up to EX/MEM and carried as flags to WB, where
 //   the trap is taken with mepc = PC of the faulting instruction. A load or
@@ -71,57 +83,44 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
     input  logic                           irq_m_timer_i   // CLINT mtip -> mip.MTIP
 );
 
-  localparam int XLEN = reg_width;
+  // ─── 1. ALL signal declarations ───────────────────────────────────────────
 
-  // ─── 1. typedefs / localparams ────────────────────────────────────────────
-  localparam logic [instr_width-1:0] NOP_INSTR = 32'h00000013;
-
-  // ─── 2. ALL signal declarations ───────────────────────────────────────────
-
-  // ── Stall / flush ──────────────────────────────────────────────────────────
-  logic icache_stall_s;   // IC has no instruction ready
+  // ── Stall / flush (cc_hazard_unit) ─────────────────────────────────────────
   logic dcache_stall_s;   // DC load is waiting for rvalid
-  logic global_stall_s;   // = icache_stall | dcache_stall  – freezes all stages
+  logic global_stall_s;   // icache | dcache stall – freezes all stages
   logic data_stall_s;     // load-use or CSR hazard: freezes IF+ID, bubbles ID→EX
-  logic flush_s;          // branch taken (EX) or trap/mret (WB)
+  logic flush_s;          // branch taken (EX) or trap/mret (WB): IF, ID, EX
+  logic flush_back_s;     // trap/mret (WB) only: MEM, WB, dc_req
 
-  // ── PC / Fetch ─────────────────────────────────────────────────────────────
+  // ── IF stage (cc_fetch_unit outputs) ──────────────────────────────────────
   logic [iaddr_width-1:0] PC_r;
   logic [iaddr_width-1:0] fetch_pc_r;
-  logic                   fetch_in_flight_r;
-  logic                   discard_ic_r;
-  logic                   start_fetch_s;
-
-  // ── Instruction buffer ─────────────────────────────────────────────────────
-  logic [31:0]            ibuf_instr_r;
-  logic [63:0]            ibuf_pc_r;
+  logic [instr_width-1:0] ibuf_instr_r;
+  logic [iaddr_width-1:0] ibuf_pc_r;
   logic                   ibuf_valid_r;
   logic                   ibuf_fault_r;   // buffered fetch was an AXI4/I-cache error (ic_err), not a real instruction
   logic                   if_id_advance_s;
 
-  // ── IF/ID pipeline register ────────────────────────────────────────────────
+  // ── IF/ID pipeline register (cc_if_id_reg outputs) ─────────────────────────
   logic [instr_width-1:0] if_id_instr_r;
   logic [iaddr_width-1:0] if_id_pc_r;
   logic                   if_id_valid_r;
   logic                   if_id_fault_r;  // this slot is a synthetic NOP standing in for an I-cache fault
 
-  // ── ID stage ───────────────────────────────────────────────────────────────
+  // ── ID stage (cc_id_unit outputs) ──────────────────────────────────────────
   logic                   id_regWr_s;
   logic                   id_dMemRd_s;
   logic                   id_dMemWr_s;
   logic                   id_aluSrcB_s;
   mux_a_t                 id_aluSrcA_s;
   result_src_t            id_resultSrc_s;
-  imm_src_t               id_immSrc_s;
   alu_op_t                id_aluOp_s;
   br_op_t                 id_brOp_s;
   logic                   id_jump_s;
   logic                   id_trap_illegal_s;
-  logic [reg_width-1:0]   id_regA_s;
-  logic [reg_width-1:0]   id_regB_s;
   logic [reg_width-1:0]   id_immExt_s;
 
-  // ── ID/EX pipeline register ────────────────────────────────────────────────
+  // ── ID/EX pipeline register (cc_id_ex_reg outputs) ──────────────────────────
   logic [instr_width-1:0] id_ex_instr_r;
   logic [iaddr_width-1:0] id_ex_pc_r;
   logic                   id_ex_valid_r;
@@ -140,13 +139,9 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
   logic [reg_width-1:0]   id_ex_regB_r;
   logic [reg_width-1:0]   id_ex_immExt_r;
 
-  // ── EX stage ───────────────────────────────────────────────────────────────
-  logic [reg_width-1:0]   ex_srcA_s;
-  logic [reg_width-1:0]   ex_srcB_s;
+  // ── EX stage (cc_ex_unit outputs, cc_trap_csr read port) ───────────────────
   logic [reg_width-1:0]   ex_aluRes_s;
   logic                   ex_take_s;
-  logic [iaddr_width-1:0] ex_PCorRS1_s;
-  logic [iaddr_width-1:0] ex_PCbr_s;
   logic [reg_width-1:0]   ex_csr_rdata_s;
   logic [reg_width-1:0]   ex_csr_wdata_s;
   logic [63:0]            ex_dc_wdata_s;
@@ -157,7 +152,7 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
   logic                   ex_misal_mem_s;   // misaligned load/store address
   logic                   ex_sys_illegal_s; // illegal SYSTEM instruction (cc_trap_csr)
 
-  // ── EX/MEM pipeline register ───────────────────────────────────────────────
+  // ── EX/MEM pipeline register (cc_ex_mem_reg outputs) ───────────────────────
   logic [instr_width-1:0] ex_mem_instr_r;
   logic [iaddr_width-1:0] ex_mem_pc_r;
   logic                   ex_mem_valid_r;
@@ -174,13 +169,12 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
   logic [63:0]            ex_mem_dc_wdata_r;
   logic [7:0]             ex_mem_dc_wstrb_r;
 
-  // ── MEM stage ──────────────────────────────────────────────────────────────
-  logic                   dc_req_sent_r;
+  // ── MEM stage (cc_mem_unit outputs) ────────────────────────────────────────
   logic [reg_width-1:0]   dc_rdata_buf_r;
   logic                   dc_rdata_buf_valid_r;
   logic                   dc_err_buf_r;    // dc_err arrived while global_stall_s was still held by another cause
 
-  // ── MEM/WB pipeline register ───────────────────────────────────────────────
+  // ── MEM/WB pipeline register (cc_mem_wb_reg outputs) ───────────────────────
   logic [instr_width-1:0] mem_wb_instr_r;
   logic [iaddr_width-1:0] mem_wb_pc_r;
   logic                   mem_wb_valid_r;
@@ -195,23 +189,14 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
   logic [reg_width-1:0]   mem_wb_csr_rdata_r;
   logic [reg_width-1:0]   mem_wb_csr_wdata_r;
 
-  // ── WB stage ───────────────────────────────────────────────────────────────
+  // ── WB stage (cc_wb_unit outputs) ──────────────────────────────────────────
   logic [reg_width-1:0]   wb_result_s;
   logic                   wb_regWr_final_s;
   logic                   wb_commit_s;
-  logic                   wb_committed_r;
   logic                   wb_trap_taken_s;
   logic                   wb_exc_s;
   logic                   wb_irq_take_s;
   logic                   wb_mret_s;
-  logic                   wb_is_mret_s;
-  logic                   wb_is_ecall_s;
-  logic                   wb_is_ebreak_s;
-  logic                   wb_is_mem_s;
-  logic                   wb_trap_illegal_s;
-  logic                   wb_trap_misaligned_s;
-  logic                   wb_trap_icfault_s;
-  logic                   wb_trap_dcfault_s;
   logic [3:0]             wb_exc_cause_s;
   logic [63:0]            wb_exc_tval_s;
 
@@ -225,662 +210,327 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
   logic [63:0] trap_vec_s;
   logic [63:0] mepc_s;
 
-  logic        rst_deasserted_r;
 
-  // ── Hazard helpers ─────────────────────────────────────────────────────────
-  logic [4:0]  id_rs1_s, id_rs2_s;
-  logic [4:0]  ex_rd_s, mem_rd_s, wb_rd_s;
-  logic        id_is_csr_s, ex_is_csr_s, mem_is_csr_s, wb_is_csr_s;
-
-  // ── Forwarding ─────────────────────────────────────────────────────────────
-  // ex_rs1_s / ex_rs2_s : source register addresses seen by the EX stage.
-  // fwd_srcA_s / fwd_srcB_s : forwarded operand values fed to the EX ALU.
-  // ex_mem_result_s     : non-load result produced by the MEM-stage instruction;
-  //                       used for the EX/MEM → EX forwarding path.
-  logic [4:0]           ex_rs1_s;
-  logic [4:0]           ex_rs2_s;
+  // ── Hazard unit outputs ────────────────────────────────────────────────────
+  logic                 wb_is_csr_s;
   logic [reg_width-1:0] fwd_srcA_s;
   logic [reg_width-1:0] fwd_srcB_s;
-  logic [reg_width-1:0] ex_mem_result_s;
 
   // ── Scan chain ─────────────────────────────────────────────────────────────
   logic and_in01_s, sc01_01_s, sc01_02_s, sc01_03_s;
   logic and_in02_s, and_out_s;
   logic gated_clk_s, clk_mux_s;
 
-  // ─── 3. assign statements ─────────────────────────────────────────────────
+  // ─── 2. assign statements ─────────────────────────────────────────────────
 
   assign icpu_if.ic_flush = 1'b0;
   assign dcpu_if.dc_flush = 1'b0;
 
-  // ── Stall / flush ──────────────────────────────────────────────────────────
-  assign global_stall_s = icache_stall_s | dcache_stall_s;
-
-  // Both stalls release on rvalid (success) or err (AXI4 fault, see the
-  // ibuf/if_id/mem_wb fault-flag threading below) -- an ic_err/dc_err pulse
-  // must unblock the pipeline exactly like a normal completion, or a cache
-  // AXI4 error would hang the CPU forever instead of trapping.
-  assign icache_stall_s = !ibuf_valid_r && !icpu_if.ic_rvalid && !icpu_if.ic_err;
-
-  // A misaligned load sends no dc_req, so it must not wait for rvalid.
-  assign dcache_stall_s = ex_mem_valid_r && ex_mem_dMemRd_r && !ex_mem_trap_misaligned_r
-                          && !dcpu_if.dc_rvalid && !dc_rdata_buf_valid_r
-                          && !dcpu_if.dc_err && !dc_err_buf_r;
-
-  assign start_fetch_s =
-    (rst_deasserted_r && !fetch_in_flight_r && !ibuf_valid_r && !flush_s)
-    ||
-    (rst_deasserted_r && icpu_if.ic_rvalid && !discard_ic_r && !ibuf_valid_r &&
-     !data_stall_s && !dcache_stall_s && !flush_s);
-
-  assign icpu_if.ic_req  = start_fetch_s;
-  assign icpu_if.ic_addr = PC_r;
-
-  assign if_id_advance_s = (ibuf_valid_r ||
-                             ((icpu_if.ic_rvalid || icpu_if.ic_err) && !discard_ic_r))
-                           && !data_stall_s && !dcache_stall_s;
-
-  // A branch to a misaligned target traps in WB instead of redirecting.
-  assign ex_branch_taken_s = id_ex_valid_r && ex_take_s && !ex_misal_pc_s && !global_stall_s;
-  assign flush_s           = ex_branch_taken_s | wb_trap_taken_s | wb_mret_s;
-
-  // ── RAW hazard / forwarding register addresses ─────────────────────────────
-  assign id_rs1_s = if_id_instr_r[19:15];
-  assign id_rs2_s = if_id_instr_r[24:20];
-  assign ex_rd_s  = id_ex_instr_r[11:7];   // destination in EX  (for load-use check)
-  assign mem_rd_s = ex_mem_instr_r[11:7];  // destination in MEM (EX/MEM → EX forward)
-  assign wb_rd_s  = mem_wb_instr_r[11:7];  // destination in WB  (MEM/WB → EX forward)
-  assign ex_rs1_s = id_ex_instr_r[19:15];  // rs1 seen by EX
-  assign ex_rs2_s = id_ex_instr_r[24:20];  // rs2 seen by EX
-
-  // CSR instruction predicates (opcode 1110011, func3 ≠ 000)
-  assign id_is_csr_s  = if_id_valid_r  && (if_id_instr_r[6:0] == 7'b1110011) && (if_id_instr_r[14:12] != 3'b000);
-  assign ex_is_csr_s  = id_ex_valid_r  && (id_ex_instr_r[6:0] == 7'b1110011) && (id_ex_instr_r[14:12] != 3'b000);
-  assign mem_is_csr_s = ex_mem_valid_r && (ex_mem_instr_r[6:0] == 7'b1110011) && (ex_mem_instr_r[14:12] != 3'b000);
-  assign wb_is_csr_s  = mem_wb_valid_r && (mem_wb_instr_r[6:0] == 7'b1110011) && (mem_wb_instr_r[14:12] != 3'b000);
-
-  // ── DCache interface ───────────────────────────────────────────────────────
-  assign dcpu_if.dc_addr  = ex_mem_aluRes_r;
-  assign dcpu_if.dc_wr    = ex_mem_dMemWr_r;
-  assign dcpu_if.dc_size  = ex_mem_instr_r[14:12];
-  assign dcpu_if.dc_wdata = ex_mem_dc_wdata_r;
-  assign dcpu_if.dc_wstrb = ex_mem_dc_wstrb_r;
-
-  // Precise traps: no memory access for a misaligned load/store, and none
-  // for the (younger) MEM instruction while WB traps or returns.
-  assign dcpu_if.dc_req = ex_mem_valid_r &&
-                          (ex_mem_dMemRd_r || ex_mem_dMemWr_r) &&
-                          !ex_mem_trap_misaligned_r &&
-                          !wb_trap_taken_s && !wb_mret_s &&
-                          !dc_req_sent_r;
-
-  // ── WB outputs ────────────────────────────────────────────────────────────
   assign ir_o = mem_wb_instr_r;
 
-  assign wb_is_mret_s = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
-                        (mem_wb_instr_r[14:12] == 3'b000)     &&
-                        (mem_wb_instr_r[31:20] == 12'h302);
-  assign wb_is_ecall_s  = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
-                          (mem_wb_instr_r[14:12] == 3'b000)     &&
-                          (mem_wb_instr_r[31:20] == 12'h000);
-  assign wb_is_ebreak_s = (mem_wb_instr_r[6:0]  == 7'b1110011) &&
-                          (mem_wb_instr_r[14:12] == 3'b000)     &&
-                          (mem_wb_instr_r[31:20] == 12'h001);
+  // ─── 3. Module instantiations ──────────────────────────────────────────────
 
-  assign wb_is_mem_s = (mem_wb_instr_r[6:0] == 7'b0000011) || (mem_wb_instr_r[6:0] == 7'b0100011);
+  cc_fetch_unit fetch (
+    .clk_i          (clk_i),
+    .rst_i          (rst_i),
+    .flush_i        (flush_s),
+    .data_stall_i   (data_stall_s),
+    .dcache_stall_i (dcache_stall_s),
+    .trap_taken_i   (wb_trap_taken_s),
+    .trap_vec_i     (trap_vec_s),
+    .mret_i         (wb_mret_s),
+    .mepc_i         (mepc_s),
+    .branch_taken_i (ex_branch_taken_s),
+    .branch_target_i(ex_target_s),
+    .ic_req_o       (icpu_if.ic_req),
+    .ic_addr_o      (icpu_if.ic_addr),
+    .ic_rvalid_i    (icpu_if.ic_rvalid),
+    .ic_err_i       (icpu_if.ic_err),
+    .ic_rdata_i     (icpu_if.ic_rdata),
+    .pc_o           (PC_r),
+    .fetch_pc_o     (fetch_pc_r),
+    .ibuf_valid_o   (ibuf_valid_r),
+    .ibuf_instr_o   (ibuf_instr_r),
+    .ibuf_pc_o      (ibuf_pc_r),
+    .ibuf_fault_o   (ibuf_fault_r),
+    .if_id_advance_o(if_id_advance_s)
+  );
 
-  assign wb_commit_s          = mem_wb_valid_r && !wb_committed_r;
-  assign wb_trap_illegal_s    = mem_wb_trap_illegal_r;
-  assign wb_trap_misaligned_s = mem_wb_trap_misaligned_r;
-  assign wb_trap_icfault_s    = mem_wb_trap_icfault_r;
-  assign wb_trap_dcfault_s    = mem_wb_trap_dcfault_r;
+  cc_if_id_reg if_id (
+    .clk_i       (clk_i),
+    .rst_i       (rst_i),
+    .flush_i     (flush_s),
+    .advance_i   (if_id_advance_s),
+    .ibuf_valid_i(ibuf_valid_r),
+    .ibuf_instr_i(ibuf_instr_r),
+    .ibuf_pc_i   (ibuf_pc_r),
+    .ibuf_fault_i(ibuf_fault_r),
+    .ic_rdata_i  (icpu_if.ic_rdata),
+    .ic_err_i    (icpu_if.ic_err),
+    .fetch_pc_i  (fetch_pc_r),
+    .instr_o     (if_id_instr_r),
+    .pc_o        (if_id_pc_r),
+    .valid_o     (if_id_valid_r),
+    .fault_o     (if_id_fault_r)
+  );
 
-  // ECALL/EBREAK need no early-redirect trick here (unlike RV_NoPipeline):
-  // this pipeline's I-cache uses a proper req/rvalid handshake with explicit
-  // fetch_in_flight_r/discard_ic_r bookkeeping, so the same commit-stage
-  // flush_s that already handles illegal/misaligned traps is sufficient.
-  // The same holds for the I-cache/D-cache AXI4 fault traps below: they are
-  // detected synchronously (icache_stall_s/dcache_stall_s release on ic_err/
-  // dc_err exactly like a normal completion), so no early redirect is needed.
-  assign wb_exc_s        = wb_commit_s &&
-                           (wb_trap_illegal_s || wb_trap_misaligned_s ||
-                            wb_trap_icfault_s || wb_trap_dcfault_s ||
-                            wb_is_ecall_s || wb_is_ebreak_s);
-  // A load/store in WB has already accessed memory in MEM: not interruptible.
-  assign wb_irq_take_s   = wb_commit_s && irq_pending_s && !wb_is_mem_s;
-  assign wb_trap_taken_s = wb_exc_s || wb_irq_take_s;
-  assign wb_mret_s       = wb_commit_s && wb_is_mret_s && !wb_trap_taken_s;
+  cc_id_ex_reg id_ex (
+    .clk_i         (clk_i),
+    .rst_i         (rst_i),
+    .flush_i       (flush_s),
+    .global_stall_i(global_stall_s),
+    .data_stall_i  (data_stall_s),
+    .if_id_valid_i (if_id_valid_r),
+    .if_id_instr_i (if_id_instr_r),
+    .if_id_pc_i    (if_id_pc_r),
+    .if_id_fault_i (if_id_fault_r),
+    .regWr_i       (id_regWr_s),
+    .dMemRd_i      (id_dMemRd_s),
+    .dMemWr_i      (id_dMemWr_s),
+    .aluSrcB_i     (id_aluSrcB_s),
+    .aluSrcA_i     (id_aluSrcA_s),
+    .resultSrc_i   (id_resultSrc_s),
+    .aluOp_i       (id_aluOp_s),
+    .brOp_i        (id_brOp_s),
+    .jump_i        (id_jump_s),
+    .trap_illegal_i(id_trap_illegal_s),
+    .regA_i        (rf_rdata1_s),
+    .regB_i        (rf_rdata2_s),
+    .immExt_i      (id_immExt_s),
+    .instr_o       (id_ex_instr_r),
+    .pc_o          (id_ex_pc_r),
+    .valid_o       (id_ex_valid_r),
+    .regWr_o       (id_ex_regWr_r),
+    .dMemRd_o      (id_ex_dMemRd_r),
+    .dMemWr_o      (id_ex_dMemWr_r),
+    .aluSrcB_o     (id_ex_aluSrcB_r),
+    .aluSrcA_o     (id_ex_aluSrcA_r),
+    .resultSrc_o   (id_ex_resultSrc_r),
+    .aluOp_o       (id_ex_aluOp_r),
+    .brOp_o        (id_ex_brOp_r),
+    .jump_o        (id_ex_jump_r),
+    .trap_illegal_o(id_ex_trap_illegal_r),
+    .trap_icfault_o(id_ex_trap_icfault_r),
+    .regA_o        (id_ex_regA_r),
+    .regB_o        (id_ex_regB_r),
+    .immExt_o      (id_ex_immExt_r)
+  );
 
-  assign wb_regWr_final_s = mem_wb_regWr_r && wb_commit_s && !wb_trap_taken_s;
-  assign csr_we_s         = wb_is_csr_s && wb_commit_s && !wb_trap_taken_s;
-  assign instret_s        = wb_commit_s && !wb_trap_taken_s;
+  cc_ex_mem_reg ex_mem (
+    .clk_i               (clk_i),
+    .rst_i               (rst_i),
+    .flush_i             (flush_back_s),
+    .global_stall_i      (global_stall_s),
+    .id_ex_valid_i       (id_ex_valid_r),
+    .id_ex_instr_i       (id_ex_instr_r),
+    .id_ex_pc_i          (id_ex_pc_r),
+    .id_ex_regWr_i       (id_ex_regWr_r),
+    .id_ex_dMemRd_i      (id_ex_dMemRd_r),
+    .id_ex_dMemWr_i      (id_ex_dMemWr_r),
+    .id_ex_resultSrc_i   (id_ex_resultSrc_r),
+    .id_ex_trap_illegal_i(id_ex_trap_illegal_r),
+    .id_ex_trap_icfault_i(id_ex_trap_icfault_r),
+    .sys_illegal_i       (ex_sys_illegal_s),
+    .misal_mem_i         (ex_misal_mem_s),
+    .misal_pc_i          (ex_misal_pc_s),
+    .target_i            (ex_target_s),
+    .aluRes_i            (ex_aluRes_s),
+    .csr_rdata_i         (ex_csr_rdata_s),
+    .csr_wdata_i         (ex_csr_wdata_s),
+    .dc_wdata_i          (ex_dc_wdata_s),
+    .dc_wstrb_i          (ex_dc_wstrb_s),
+    .instr_o             (ex_mem_instr_r),
+    .pc_o                (ex_mem_pc_r),
+    .valid_o             (ex_mem_valid_r),
+    .regWr_o             (ex_mem_regWr_r),
+    .dMemRd_o            (ex_mem_dMemRd_r),
+    .dMemWr_o            (ex_mem_dMemWr_r),
+    .resultSrc_o         (ex_mem_resultSrc_r),
+    .trap_illegal_o      (ex_mem_trap_illegal_r),
+    .trap_icfault_o      (ex_mem_trap_icfault_r),
+    .trap_misaligned_o   (ex_mem_trap_misaligned_r),
+    .aluRes_o            (ex_mem_aluRes_r),
+    .csr_rdata_o         (ex_mem_csr_rdata_r),
+    .csr_wdata_o         (ex_mem_csr_wdata_r),
+    .dc_wdata_o          (ex_mem_dc_wdata_r),
+    .dc_wstrb_o          (ex_mem_dc_wstrb_r)
+  );
 
-  // ── ID/EX: register-file read outputs ─────────────────────────────────────
-  assign id_regA_s = rf_rdata1_s;
-  assign id_regB_s = rf_rdata2_s;
+  cc_mem_wb_reg mem_wb (
+    .clk_i                   (clk_i),
+    .rst_i                   (rst_i),
+    .flush_i                 (flush_back_s),
+    .global_stall_i          (global_stall_s),
+    .ex_mem_valid_i          (ex_mem_valid_r),
+    .ex_mem_instr_i          (ex_mem_instr_r),
+    .ex_mem_pc_i             (ex_mem_pc_r),
+    .ex_mem_regWr_i          (ex_mem_regWr_r),
+    .ex_mem_dMemRd_i         (ex_mem_dMemRd_r),
+    .ex_mem_resultSrc_i      (ex_mem_resultSrc_r),
+    .ex_mem_trap_illegal_i   (ex_mem_trap_illegal_r),
+    .ex_mem_trap_icfault_i   (ex_mem_trap_icfault_r),
+    .ex_mem_trap_misaligned_i(ex_mem_trap_misaligned_r),
+    .ex_mem_aluRes_i         (ex_mem_aluRes_r),
+    .ex_mem_csr_rdata_i      (ex_mem_csr_rdata_r),
+    .ex_mem_csr_wdata_i      (ex_mem_csr_wdata_r),
+    .dc_rdata_i              (dcpu_if.dc_rdata),
+    .dc_err_i                (dcpu_if.dc_err),
+    .dc_rdata_buf_i          (dc_rdata_buf_r),
+    .dc_rdata_buf_valid_i    (dc_rdata_buf_valid_r),
+    .dc_err_buf_i            (dc_err_buf_r),
+    .instr_o                 (mem_wb_instr_r),
+    .pc_o                    (mem_wb_pc_r),
+    .valid_o                 (mem_wb_valid_r),
+    .regWr_o                 (mem_wb_regWr_r),
+    .resultSrc_o             (mem_wb_resultSrc_r),
+    .trap_illegal_o          (mem_wb_trap_illegal_r),
+    .trap_icfault_o          (mem_wb_trap_icfault_r),
+    .trap_dcfault_o          (mem_wb_trap_dcfault_r),
+    .trap_misaligned_o       (mem_wb_trap_misaligned_r),
+    .aluRes_o                (mem_wb_aluRes_r),
+    .memData_o               (mem_wb_memData_r),
+    .csr_rdata_o             (mem_wb_csr_rdata_r),
+    .csr_wdata_o             (mem_wb_csr_wdata_r)
+  );
 
-  // ── EX: ALU source-B mux and branch-target base ────────────────────────────
-  // ex_srcB_s:    immediate (id_ex_aluSrcB_r = 1) or forwarded rs2 register.
-  // ex_PCorRS1_s: PC for JAL / branches; forwarded rs1 for JALR (jump = 1).
-  // Both use the forwarded operands computed in section 4 always_comb blocks;
-  // in concurrent SystemVerilog evaluation this ordering has no effect on
-  // correctness or simulation convergence.
-  assign ex_srcB_s    = id_ex_aluSrcB_r ? id_ex_immExt_r : fwd_srcB_s;
-  assign ex_PCorRS1_s = id_ex_jump_r    ? fwd_srcA_s     : id_ex_pc_r;
-  assign ex_PCbr_s    = ex_PCorRS1_s    + id_ex_immExt_r;
-  // JALR clears bit 0 of its target; with IALIGN = 32 bit 1 must then be 0.
-  assign ex_target_s   = id_ex_jump_r ? {ex_PCbr_s[iaddr_width-1:1], 1'b0} : ex_PCbr_s;
-  assign ex_misal_pc_s = ex_take_s && (ex_target_s[1:0] != 2'b00);
+  cc_id_unit id (
+    .instr_i       (if_id_instr_r),
+    .regWr_o       (id_regWr_s),
+    .dMemRd_o      (id_dMemRd_s),
+    .dMemWr_o      (id_dMemWr_s),
+    .aluSrcB_o     (id_aluSrcB_s),
+    .aluSrcA_o     (id_aluSrcA_s),
+    .resultSrc_o   (id_resultSrc_s),
+    .aluOp_o       (id_aluOp_s),
+    .brOp_o        (id_brOp_s),
+    .jump_o        (id_jump_s),
+    .trap_illegal_o(id_trap_illegal_s),
+    .immExt_o      (id_immExt_s)
+  );
 
-  // ─── 4. always_comb blocks ────────────────────────────────────────────────
+  cc_ex_unit ex (
+    .instr_i    (id_ex_instr_r),
+    .pc_i       (id_ex_pc_r),
+    .dMemRd_i   (id_ex_dMemRd_r),
+    .dMemWr_i   (id_ex_dMemWr_r),
+    .aluSrcB_i  (id_ex_aluSrcB_r),
+    .aluSrcA_i  (id_ex_aluSrcA_r),
+    .aluOp_i    (id_ex_aluOp_r),
+    .brOp_i     (id_ex_brOp_r),
+    .jump_i     (id_ex_jump_r),
+    .immExt_i   (id_ex_immExt_r),
+    .rs1_i      (fwd_srcA_s),
+    .rs2_i      (fwd_srcB_s),
+    .aluRes_o   (ex_aluRes_s),
+    .take_o     (ex_take_s),
+    .target_o   (ex_target_s),
+    .misal_pc_o (ex_misal_pc_s),
+    .misal_mem_o(ex_misal_mem_s),
+    .csr_wdata_o(ex_csr_wdata_s),
+    .dc_wdata_o (ex_dc_wdata_s),
+    .dc_wstrb_o (ex_dc_wstrb_s)
+  );
 
-  // ── EX/MEM → EX forwarding: result produced by MEM-stage instruction ───────
-  // For loads (ex_mem_dMemRd_r = 1) the data is not yet available here; the
-  // load-use stall guarantees a dependent instruction is never in EX at the same
-  // time, so this path is only activated for non-load writes.
-  always_comb
-    case (ex_mem_resultSrc_r)
-      RES_PC4 : ex_mem_result_s = ex_mem_pc_r + 64'd4;
-      RES_CSR : ex_mem_result_s = ex_mem_csr_rdata_r;
-      default : ex_mem_result_s = ex_mem_aluRes_r;   // RES_ALU (most common)
-    endcase
+  cc_mem_unit mem (
+    .clk_i            (clk_i),
+    .rst_i            (rst_i),
+    .global_stall_i   (global_stall_s),
+    .flush_back_i     (flush_back_s),
+    .valid_i          (ex_mem_valid_r),
+    .dMemRd_i         (ex_mem_dMemRd_r),
+    .dMemWr_i         (ex_mem_dMemWr_r),
+    .trap_misaligned_i(ex_mem_trap_misaligned_r),
+    .funct3_i         (ex_mem_instr_r[14:12]),
+    .addr_i           (ex_mem_aluRes_r),
+    .wdata_i          (ex_mem_dc_wdata_r),
+    .wstrb_i          (ex_mem_dc_wstrb_r),
+    .dc_req_o         (dcpu_if.dc_req),
+    .dc_wr_o          (dcpu_if.dc_wr),
+    .dc_size_o        (dcpu_if.dc_size),
+    .dc_addr_o        (dcpu_if.dc_addr),
+    .dc_wdata_o       (dcpu_if.dc_wdata),
+    .dc_wstrb_o       (dcpu_if.dc_wstrb),
+    .dc_rvalid_i      (dcpu_if.dc_rvalid),
+    .dc_err_i         (dcpu_if.dc_err),
+    .dc_rdata_i       (dcpu_if.dc_rdata),
+    .rdata_buf_o      (dc_rdata_buf_r),
+    .rdata_buf_valid_o(dc_rdata_buf_valid_r),
+    .err_buf_o        (dc_err_buf_r)
+  );
 
-  // ── RAW hazard stall ───────────────────────────────────────────────────────
-  // With EX/MEM → EX and MEM/WB → EX forwarding and as_regfile WBR=1:
-  //
-  //  k=1 RAW  → EX/MEM → EX forwarding   (no stall)
-  //  k=2 RAW  → MEM/WB → EX forwarding   (no stall)
-  //  k=3 RAW  → as_regfile WBR bypass     (no stall)
-  //
-  //  Remaining stall sources:
-  //  1. Load-use: LOAD in EX; result not available until end of MEM stage.
-  //  2. CSR hazard: no forwarding path for CSR values; stall until WB is clear.
-  always_comb begin
-    data_stall_s = 1'b0;
-    if (if_id_valid_r) begin
-      if (id_ex_dMemRd_r && ex_rd_s != 5'b0 &&
-          (ex_rd_s == id_rs1_s || ex_rd_s == id_rs2_s))
-        data_stall_s = 1'b1;
-      if (id_is_csr_s && (ex_is_csr_s || mem_is_csr_s || wb_is_csr_s))
-        data_stall_s = 1'b1;
-    end
-  end
+  cc_wb_unit wb (
+    .clk_i            (clk_i),
+    .rst_i            (rst_i),
+    .global_stall_i   (global_stall_s),
+    .irq_pending_i    (irq_pending_s),
+    .is_csr_i         (wb_is_csr_s),
+    .valid_i          (mem_wb_valid_r),
+    .instr_i          (mem_wb_instr_r),
+    .pc_i             (mem_wb_pc_r),
+    .regWr_i          (mem_wb_regWr_r),
+    .resultSrc_i      (mem_wb_resultSrc_r),
+    .trap_illegal_i   (mem_wb_trap_illegal_r),
+    .trap_icfault_i   (mem_wb_trap_icfault_r),
+    .trap_dcfault_i   (mem_wb_trap_dcfault_r),
+    .trap_misaligned_i(mem_wb_trap_misaligned_r),
+    .aluRes_i         (mem_wb_aluRes_r),
+    .memData_i        (mem_wb_memData_r),
+    .csr_rdata_i      (mem_wb_csr_rdata_r),
+    .result_o         (wb_result_s),
+    .regWr_o          (wb_regWr_final_s),
+    .csr_we_o         (csr_we_s),
+    .instret_o        (instret_s),
+    .commit_o         (wb_commit_s),
+    .exc_o            (wb_exc_s),
+    .exc_cause_o      (wb_exc_cause_s),
+    .exc_tval_o       (wb_exc_tval_s),
+    .irq_take_o       (wb_irq_take_s),
+    .trap_taken_o     (wb_trap_taken_s),
+    .mret_o           (wb_mret_s)
+  );
 
-  // ── Forwarding mux for rs1 (EX stage srcA) ────────────────────────────────
-  // Priority 1 (EX/MEM → EX): instruction in MEM writes rd that EX reads as rs1.
-  //   Exclude loads (data not ready) — load-use stall prevents this case anyway.
-  // Priority 2 (MEM/WB → EX): instruction in WB writes rd that EX reads as rs1.
-  //   wb_result_s already selects ALU / load data / PC+4 / CSR.
-  // Default: use the register-file value captured in id_ex_regA_r at the ID stage.
-  always_comb begin
-    fwd_srcA_s = id_ex_regA_r;
-    if (ex_mem_regWr_r && !ex_mem_dMemRd_r &&
-        mem_rd_s != 5'b0 && mem_rd_s == ex_rs1_s)
-      fwd_srcA_s = ex_mem_result_s;
-    else if (mem_wb_regWr_r &&
-             wb_rd_s != 5'b0 && wb_rd_s == ex_rs1_s)
-      fwd_srcA_s = wb_result_s;
-  end
-
-  // ── Forwarding mux for rs2 (EX stage srcB register path) ──────────────────
-  // Immediate operands (id_ex_aluSrcB_r = 1) pass through unchanged;
-  // forwarding replaces only the register-read path (id_ex_aluSrcB_r = 0).
-  always_comb begin
-    fwd_srcB_s = id_ex_regB_r;
-    if (ex_mem_regWr_r && !ex_mem_dMemRd_r &&
-        mem_rd_s != 5'b0 && mem_rd_s == ex_rs2_s)
-      fwd_srcB_s = ex_mem_result_s;
-    else if (mem_wb_regWr_r &&
-             wb_rd_s != 5'b0 && wb_rd_s == ex_rs2_s)
-      fwd_srcB_s = wb_result_s;
-  end
-
-  // ── EX: ALU source-A mux ──────────────────────────────────────────────────
-  // SRC_REGA uses the forwarded value; PC-relative and zero-source paths are
-  // register-independent and need no forwarding.
-  always_comb
-    case (id_ex_aluSrcA_r)
-      SRC_REGA : ex_srcA_s = fwd_srcA_s;
-      SRC_PC   : ex_srcA_s = id_ex_pc_r;
-      SRC_ZERO : ex_srcA_s = {XLEN{1'b0}};
-      default  : ex_srcA_s = fwd_srcA_s;
-    endcase
-
-  // ── ID: immediate extension ───────────────────────────────────────────────
-  always_comb
-    case (id_immSrc_s)
-      IMM_I   : id_immExt_s = {{(XLEN-12){if_id_instr_r[31]}},
-                               if_id_instr_r[31:20]};
-      IMM_S   : id_immExt_s = {{(XLEN-12){if_id_instr_r[31]}},
-                               if_id_instr_r[31:25], if_id_instr_r[11:7]};
-      IMM_B   : id_immExt_s = {{(XLEN-12){if_id_instr_r[31]}},
-                               if_id_instr_r[7], if_id_instr_r[30:25],
-                               if_id_instr_r[11:8], 1'b0};
-      IMM_J   : id_immExt_s = {{(XLEN-20){if_id_instr_r[31]}},
-                               if_id_instr_r[19:12], if_id_instr_r[20],
-                               if_id_instr_r[30:21], 1'b0};
-      IMM_U   : id_immExt_s = {{(XLEN-32){if_id_instr_r[31]}},
-                               if_id_instr_r[31:12], 12'b0};
-      default : id_immExt_s = {XLEN{1'b0}};
-    endcase
-
-  // ── EX: misaligned load/store (funct3[1:0] = access size B, H, W, D) ────────
-  always_comb begin
-    ex_misal_mem_s = 1'b0;
-    if (id_ex_dMemRd_r || id_ex_dMemWr_r)
-      case (id_ex_instr_r[13:12])
-        2'b01:   ex_misal_mem_s = ex_aluRes_s[0];
-        2'b10:   ex_misal_mem_s = (ex_aluRes_s[1:0] != 2'b00);
-        2'b11:   ex_misal_mem_s = (ex_aluRes_s[2:0] != 3'b000);
-        default: ex_misal_mem_s = 1'b0;
-      endcase
-  end
-
-  // ── EX: CSR write value ───────────────────────────────────────────────────
-  // func3[2]=1: immediate variant (CSRRWI/CSRRSI/CSRRCI) – uimm5 from instr[19:15]
-  // func3[2]=0: register variant (CSRRW/CSRRS/CSRRC)    – forwarded rs1
-  always_comb begin
-    if (id_ex_instr_r[14])
-      ex_csr_wdata_s = {{(XLEN-5){1'b0}}, id_ex_instr_r[19:15]};
-    else
-      ex_csr_wdata_s = fwd_srcA_s;
-  end
-
-  // ── EX: store byte-enable and write data ──────────────────────────────────
-  // fwd_srcB_s carries the forwarded store-data (rs2).
-  // The store address in ex_aluRes_s is already forwarded via ex_srcA_s.
-  always_comb begin
-    ex_dc_wdata_s = fwd_srcB_s;
-    ex_dc_wstrb_s = 8'hFF;
-    if (id_ex_dMemWr_r)
-      case (id_ex_instr_r[14:12])
-        3'b000: begin
-          ex_dc_wdata_s = {8{fwd_srcB_s[7:0]}};
-          ex_dc_wstrb_s = 8'h01 << ex_aluRes_s[2:0];
-        end
-        3'b001: begin
-          ex_dc_wdata_s = {4{fwd_srcB_s[15:0]}};
-          ex_dc_wstrb_s = 8'h03 << {ex_aluRes_s[2:1], 1'b0};
-        end
-        3'b010: begin
-          ex_dc_wdata_s = {2{fwd_srcB_s[31:0]}};
-          ex_dc_wstrb_s = 8'h0F << {ex_aluRes_s[2], 2'b0};
-        end
-        default:;
-      endcase
-  end
-
-  // ── WB: result mux ────────────────────────────────────────────────────────
-  always_comb
-    case (mem_wb_resultSrc_r)
-      RES_ALU : wb_result_s = mem_wb_aluRes_r;
-      RES_MEM : wb_result_s = mem_wb_memData_r;
-      RES_PC4 : wb_result_s = mem_wb_pc_r + 64'd4;
-      RES_CSR : wb_result_s = mem_wb_csr_rdata_r;
-      default : wb_result_s = {XLEN{1'b0}};
-    endcase
-
-  // ── WB: exception cause and mtval ─────────────────────────────────────────
-  // For a misaligned branch/jump, mem_wb_aluRes_r holds the target (see the
-  // EX/MEM register); for loads/stores it is the access address.
-  always_comb begin
-    wb_exc_cause_s = 4'd0;
-    wb_exc_tval_s  = 64'h0;
-    if (wb_trap_icfault_s) begin
-      wb_exc_cause_s = 4'd1;                 // instruction access fault
-      wb_exc_tval_s  = mem_wb_pc_r;
-    end else if (wb_trap_illegal_s) begin
-      wb_exc_cause_s = 4'd2;
-      wb_exc_tval_s  = {32'b0, mem_wb_instr_r};
-    end else if (wb_trap_misaligned_s) begin
-      if      (mem_wb_instr_r[6:0] == 7'b0000011) wb_exc_cause_s = 4'd4;
-      else if (mem_wb_instr_r[6:0] == 7'b0100011) wb_exc_cause_s = 4'd6;
-      else                                         wb_exc_cause_s = 4'd0;
-      wb_exc_tval_s  = mem_wb_aluRes_r;
-    end else if (wb_trap_dcfault_s) begin
-      wb_exc_cause_s = 4'd5;                 // load access fault
-      wb_exc_tval_s  = mem_wb_aluRes_r;
-    end else if (wb_is_ecall_s)
-      wb_exc_cause_s = 4'd11;
-    else if (wb_is_ebreak_s)
-      wb_exc_cause_s = 4'd3;
-  end
-
-  // ─── 5. always_ff blocks ──────────────────────────────────────────────────
-
-  // ── PC register ───────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      PC_r <= 64'h0;
-    else begin
-      if      (wb_trap_taken_s)   PC_r <= trap_vec_s;
-      else if (wb_mret_s)         PC_r <= mepc_s;
-      else if (ex_branch_taken_s) PC_r <= ex_target_s;
-      else if (start_fetch_s)     PC_r <= PC_r + 64'd4;
-    end
-  end
-
-  // ── PC latched at ic_req ───────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)              fetch_pc_r <= 64'h0;
-    else if (start_fetch_s) fetch_pc_r <= PC_r;
-  end
-
-  // ── Fetch in-flight ────────────────────────────────────────────────────────
-  // A flush does not end an outstanding fetch: the I-cache accepts ic_req only
-  // in IDLE_ST, so a new request issued while the old miss is still being
-  // filled would be ignored, and the old (discarded) response would then be
-  // taken as the end of the new fetch -- the first instruction at the trap
-  // vector / mret target was lost. The new fetch starts after the discarded
-  // response instead.
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      fetch_in_flight_r <= 1'b0;
-    else begin
-      if      (start_fetch_s)       fetch_in_flight_r <= 1'b1;
-      else if (icpu_if.ic_rvalid || icpu_if.ic_err)
-                                     fetch_in_flight_r <= 1'b0;
-    end
-  end
-
-  // ── Discard flag ──────────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      discard_ic_r <= 1'b0;
-    else begin
-      if      (flush_s && fetch_in_flight_r &&
-                !icpu_if.ic_rvalid && !icpu_if.ic_err)              discard_ic_r <= 1'b1;
-      else if ((icpu_if.ic_rvalid || icpu_if.ic_err) && discard_ic_r) discard_ic_r <= 1'b0;
-    end
-  end
-
-  // ── Instruction buffer ─────────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      ibuf_valid_r <= 1'b0;
-      ibuf_instr_r <= 32'h00000013;
-      ibuf_pc_r    <= 64'h0;
-      ibuf_fault_r <= 1'b0;
-    end else begin
-      if (flush_s) begin
-        ibuf_valid_r <= 1'b0;
-      end else if (icpu_if.ic_rvalid && !discard_ic_r &&
-                   (data_stall_s || dcache_stall_s)) begin
-        ibuf_instr_r <= icpu_if.ic_rdata;
-        ibuf_pc_r    <= fetch_pc_r;
-        ibuf_fault_r <= 1'b0;
-        ibuf_valid_r <= 1'b1;
-      end else if (icpu_if.ic_err && !discard_ic_r &&
-                   (data_stall_s || dcache_stall_s)) begin
-        // Downstream is stalled: buffer the fault (as a NOP placeholder)
-        // exactly like a successful fetch, so it is not lost.
-        ibuf_instr_r <= NOP_INSTR;
-        ibuf_pc_r    <= fetch_pc_r;
-        ibuf_fault_r <= 1'b1;
-        ibuf_valid_r <= 1'b1;
-      end else if (ibuf_valid_r && if_id_advance_s) begin
-        ibuf_valid_r <= 1'b0;
-      end
-    end
-  end
-
-  // ── IF/ID pipeline register ────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      if_id_instr_r <= 32'h00000013;
-      if_id_pc_r    <= 64'h0;
-      if_id_valid_r <= 1'b0;
-      if_id_fault_r <= 1'b0;
-    end else begin
-      if (flush_s) begin
-        if_id_instr_r <= 32'h00000013;
-        if_id_valid_r <= 1'b0;
-        if_id_fault_r <= 1'b0;
-      end else if (if_id_advance_s) begin
-        if_id_valid_r <= 1'b1;
-        if (ibuf_valid_r) begin
-          if_id_instr_r <= ibuf_instr_r;
-          if_id_pc_r    <= ibuf_pc_r;
-          if_id_fault_r <= ibuf_fault_r;
-        end else begin
-          if_id_instr_r <= icpu_if.ic_err ? NOP_INSTR : icpu_if.ic_rdata;
-          if_id_pc_r    <= fetch_pc_r;
-          if_id_fault_r <= icpu_if.ic_err;
-        end
-      end
-    end
-  end
-
-  // ── ID/EX pipeline register ────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      id_ex_valid_r        <= 1'b0;
-      id_ex_instr_r        <= NOP_INSTR;
-      id_ex_pc_r           <= 64'h0;
-      id_ex_regWr_r        <= 1'b0;
-      id_ex_dMemRd_r       <= 1'b0;
-      id_ex_dMemWr_r       <= 1'b0;
-      id_ex_aluSrcB_r      <= 1'b0;
-      id_ex_aluSrcA_r      <= SRC_REGA;
-      id_ex_resultSrc_r    <= RES_ALU;
-      id_ex_aluOp_r        <= ALU_ADD;
-      id_ex_brOp_r         <= BR_NONE;
-      id_ex_jump_r         <= 1'b0;
-      id_ex_trap_illegal_r <= 1'b0;
-      id_ex_trap_icfault_r <= 1'b0;
-      id_ex_regA_r         <= {XLEN{1'b0}};
-      id_ex_regB_r         <= {XLEN{1'b0}};
-      id_ex_immExt_r       <= {XLEN{1'b0}};
-    end else if (flush_s) begin
-      // flush_s (branch/trap/mret redirect) must squash regardless of
-      // global_stall_s: a routine 1-cycle icache-hit lookup stall can
-      // coincide with the exact cycle a trap/mret retires in WB. Gating
-      // this squash behind !global_stall_s (as before) let stale,
-      // wrong-path instructions already latched here survive the flush
-      // and get committed once the stall cleared.
-      id_ex_valid_r        <= 1'b0;
-      id_ex_instr_r        <= NOP_INSTR;
-      id_ex_regWr_r        <= 1'b0;
-      id_ex_dMemRd_r       <= 1'b0;
-      id_ex_dMemWr_r       <= 1'b0;
-      id_ex_aluSrcB_r      <= 1'b0;
-      id_ex_aluSrcA_r      <= SRC_REGA;
-      id_ex_resultSrc_r    <= RES_ALU;
-      id_ex_aluOp_r        <= ALU_ADD;
-      id_ex_brOp_r         <= BR_NONE;
-      id_ex_jump_r         <= 1'b0;
-      id_ex_trap_illegal_r <= 1'b0;
-      id_ex_trap_icfault_r <= 1'b0;
-      id_ex_regA_r         <= {XLEN{1'b0}};
-      id_ex_regB_r         <= {XLEN{1'b0}};
-      id_ex_immExt_r       <= {XLEN{1'b0}};
-    end else if (!global_stall_s) begin
-      if (data_stall_s) begin
-        id_ex_valid_r        <= 1'b0;
-        id_ex_instr_r        <= NOP_INSTR;
-        id_ex_regWr_r        <= 1'b0;
-        id_ex_dMemRd_r       <= 1'b0;
-        id_ex_dMemWr_r       <= 1'b0;
-        id_ex_aluSrcB_r      <= 1'b0;
-        id_ex_aluSrcA_r      <= SRC_REGA;
-        id_ex_resultSrc_r    <= RES_ALU;
-        id_ex_aluOp_r        <= ALU_ADD;
-        id_ex_brOp_r         <= BR_NONE;
-        id_ex_jump_r         <= 1'b0;
-        id_ex_trap_illegal_r <= 1'b0;
-        id_ex_trap_icfault_r <= 1'b0;
-        id_ex_regA_r         <= {XLEN{1'b0}};
-        id_ex_regB_r         <= {XLEN{1'b0}};
-        id_ex_immExt_r       <= {XLEN{1'b0}};
-      end else begin
-        id_ex_valid_r        <= if_id_valid_r;
-        id_ex_instr_r        <= if_id_instr_r;
-        id_ex_pc_r           <= if_id_pc_r;
-        id_ex_regWr_r        <= id_regWr_s  & if_id_valid_r;
-        id_ex_dMemRd_r       <= id_dMemRd_s & if_id_valid_r;
-        id_ex_dMemWr_r       <= id_dMemWr_s & if_id_valid_r;
-        id_ex_aluSrcB_r      <= id_aluSrcB_s;
-        id_ex_aluSrcA_r      <= id_aluSrcA_s;
-        id_ex_resultSrc_r    <= id_resultSrc_s;
-        id_ex_aluOp_r        <= id_aluOp_s;
-        id_ex_brOp_r         <= id_brOp_s;
-        id_ex_jump_r         <= id_jump_s;
-        id_ex_trap_illegal_r <= id_trap_illegal_s & if_id_valid_r;
-        id_ex_trap_icfault_r <= if_id_fault_r & if_id_valid_r;
-        id_ex_regA_r         <= id_regA_s;
-        id_ex_regB_r         <= id_regB_s;
-        id_ex_immExt_r       <= id_immExt_s;
-      end
-    end
-  end
-
-  // ── EX/MEM pipeline register ───────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      ex_mem_valid_r        <= 1'b0;
-      ex_mem_instr_r        <= NOP_INSTR;
-      ex_mem_pc_r           <= 64'h0;
-      ex_mem_regWr_r        <= 1'b0;
-      ex_mem_dMemRd_r       <= 1'b0;
-      ex_mem_dMemWr_r       <= 1'b0;
-      ex_mem_resultSrc_r    <= RES_ALU;
-      ex_mem_trap_illegal_r <= 1'b0;
-      ex_mem_trap_icfault_r <= 1'b0;
-      ex_mem_trap_misaligned_r <= 1'b0;
-      ex_mem_aluRes_r       <= {XLEN{1'b0}};
-      ex_mem_csr_rdata_r    <= 64'h0;
-      ex_mem_csr_wdata_r    <= 64'h0;
-      ex_mem_dc_wdata_r     <= 64'h0;
-      ex_mem_dc_wstrb_r     <= 8'h0;
-    end else if (wb_trap_taken_s || wb_mret_s) begin
-      // WB-stage event: kill speculative instructions in EX, regardless of
-      // global_stall_s (see id_ex_r comment above for why this squash must
-      // not be gated behind the stall check).
-      // ex_branch_taken_s is NOT included: the branch/JAL in EX must reach
-      // WB to commit its rd write (e.g. jal x30 writes the return address).
-      ex_mem_valid_r        <= 1'b0;
-      ex_mem_regWr_r        <= 1'b0;
-      ex_mem_dMemRd_r       <= 1'b0;
-      ex_mem_dMemWr_r       <= 1'b0;
-      ex_mem_trap_illegal_r <= 1'b0;
-      ex_mem_trap_icfault_r <= 1'b0;
-      ex_mem_trap_misaligned_r <= 1'b0;
-    end else if (!global_stall_s) begin
-      ex_mem_valid_r        <= id_ex_valid_r;
-      ex_mem_instr_r        <= id_ex_instr_r;
-      ex_mem_pc_r           <= id_ex_pc_r;
-      ex_mem_regWr_r        <= id_ex_regWr_r;
-      ex_mem_dMemRd_r       <= id_ex_dMemRd_r;
-      ex_mem_dMemWr_r       <= id_ex_dMemWr_r;
-      ex_mem_resultSrc_r    <= id_ex_resultSrc_r;
-      ex_mem_trap_illegal_r <= id_ex_trap_illegal_r || (id_ex_valid_r && ex_sys_illegal_s);
-      ex_mem_trap_icfault_r <= id_ex_trap_icfault_r;
-      ex_mem_trap_misaligned_r <= id_ex_valid_r && (ex_misal_mem_s || ex_misal_pc_s);
-      // A branch/jump never uses its ALU result; for a misaligned target the
-      // slot carries the target to WB as mtval.
-      ex_mem_aluRes_r       <= ex_misal_pc_s ? ex_target_s : ex_aluRes_s;
-      ex_mem_csr_rdata_r    <= ex_csr_rdata_s;
-      ex_mem_csr_wdata_r    <= ex_csr_wdata_s;
-      ex_mem_dc_wdata_r     <= ex_dc_wdata_s;
-      ex_mem_dc_wstrb_r     <= ex_dc_wstrb_s;
-    end
-  end
-
-  // ── DCache request one-shot ────────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      dc_req_sent_r <= 1'b0;
-    else begin
-      if (!global_stall_s)     dc_req_sent_r <= 1'b0;
-      else if (dcpu_if.dc_req) dc_req_sent_r <= 1'b1;
-    end
-  end
-
-  // ── DCache read-data buffer ────────────────────────────────────────────────
-  // dc_err_buf_r mirrors dc_rdata_buf_r/valid_r: a dc_err pulse can arrive on
-  // a cycle where global_stall_s is still held by icache_stall_s (concurrent
-  // I-cache miss), so it must be latched the same way successful read data
-  // already is, or the 1-cycle error pulse would be missed entirely.
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      dc_rdata_buf_valid_r <= 1'b0;
-      dc_rdata_buf_r       <= {XLEN{1'b0}};
-      dc_err_buf_r         <= 1'b0;
-    end else begin
-      if (!global_stall_s) begin
-        dc_rdata_buf_valid_r <= 1'b0;
-        dc_err_buf_r         <= 1'b0;
-      end else if (dcpu_if.dc_rvalid && ex_mem_valid_r && ex_mem_dMemRd_r
-                   && !dc_rdata_buf_valid_r) begin
-        dc_rdata_buf_r       <= dcpu_if.dc_rdata;
-        dc_rdata_buf_valid_r <= 1'b1;
-      end else if (dcpu_if.dc_err && ex_mem_valid_r && ex_mem_dMemRd_r
-                   && !dc_rdata_buf_valid_r && !dc_err_buf_r) begin
-        dc_err_buf_r <= 1'b1;
-      end
-    end
-  end
-
-  // ── MEM/WB pipeline register ───────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      mem_wb_valid_r        <= 1'b0;
-      mem_wb_instr_r        <= NOP_INSTR;
-      mem_wb_pc_r           <= 64'h0;
-      mem_wb_regWr_r        <= 1'b0;
-      mem_wb_resultSrc_r    <= RES_ALU;
-      mem_wb_trap_illegal_r <= 1'b0;
-      mem_wb_trap_icfault_r <= 1'b0;
-      mem_wb_trap_dcfault_r <= 1'b0;
-      mem_wb_trap_misaligned_r <= 1'b0;
-      mem_wb_aluRes_r       <= {XLEN{1'b0}};
-      mem_wb_memData_r      <= {XLEN{1'b0}};
-      mem_wb_csr_rdata_r    <= 64'h0;
-      mem_wb_csr_wdata_r    <= 64'h0;
-    end else if (wb_trap_taken_s || wb_mret_s) begin
-      // The MEM instruction is younger than the trapping/returning one in WB:
-      // it must not move on into WB and commit.
-      mem_wb_valid_r        <= 1'b0;
-      mem_wb_regWr_r        <= 1'b0;
-      mem_wb_trap_illegal_r <= 1'b0;
-      mem_wb_trap_icfault_r <= 1'b0;
-      mem_wb_trap_dcfault_r <= 1'b0;
-      mem_wb_trap_misaligned_r <= 1'b0;
-    end else if (!global_stall_s) begin
-      mem_wb_valid_r        <= ex_mem_valid_r;
-      mem_wb_instr_r        <= ex_mem_instr_r;
-      mem_wb_pc_r           <= ex_mem_pc_r;
-      mem_wb_regWr_r        <= ex_mem_regWr_r;
-      mem_wb_resultSrc_r    <= ex_mem_resultSrc_r;
-      mem_wb_trap_illegal_r <= ex_mem_trap_illegal_r;
-      mem_wb_trap_icfault_r <= ex_mem_trap_icfault_r;
-      mem_wb_trap_dcfault_r <= ex_mem_valid_r && ex_mem_dMemRd_r &&
-                               (dc_err_buf_r || dcpu_if.dc_err);
-      mem_wb_trap_misaligned_r <= ex_mem_trap_misaligned_r;
-      mem_wb_aluRes_r       <= ex_mem_aluRes_r;
-      mem_wb_memData_r      <= dc_rdata_buf_valid_r ? dc_rdata_buf_r : dcpu_if.dc_rdata;
-      mem_wb_csr_rdata_r    <= ex_mem_csr_rdata_r;
-      mem_wb_csr_wdata_r    <= ex_mem_csr_wdata_r;
-    end
-  end
-
-  // ── WB one-shot commit guard ───────────────────────────────────────────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i)
-      wb_committed_r <= 1'b0;
-    else if (!global_stall_s)
-      wb_committed_r <= 1'b0;
-    else if (wb_commit_s)
-      wb_committed_r <= 1'b1;
-  end
-
-  // ── Post-reset enable (suppresses fetch while reset is asserted) ──────────
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) rst_deasserted_r <= 1'b0;
-    else        rst_deasserted_r <= 1'b1;
-  end
-
-  // ─── 6. Module instantiations ─────────────────────────────────────────────
+  cc_hazard_unit hazard (
+    .ibuf_valid_i            (ibuf_valid_r),
+    .ic_rvalid_i             (icpu_if.ic_rvalid),
+    .ic_err_i                (icpu_if.ic_err),
+    .if_id_valid_i           (if_id_valid_r),
+    .if_id_instr_i           (if_id_instr_r),
+    .id_ex_valid_i           (id_ex_valid_r),
+    .id_ex_instr_i           (id_ex_instr_r),
+    .id_ex_dMemRd_i          (id_ex_dMemRd_r),
+    .id_ex_regA_i            (id_ex_regA_r),
+    .id_ex_regB_i            (id_ex_regB_r),
+    .ex_take_i               (ex_take_s),
+    .ex_misal_pc_i           (ex_misal_pc_s),
+    .ex_mem_valid_i          (ex_mem_valid_r),
+    .ex_mem_instr_i          (ex_mem_instr_r),
+    .ex_mem_pc_i             (ex_mem_pc_r),
+    .ex_mem_regWr_i          (ex_mem_regWr_r),
+    .ex_mem_dMemRd_i         (ex_mem_dMemRd_r),
+    .ex_mem_trap_misaligned_i(ex_mem_trap_misaligned_r),
+    .ex_mem_resultSrc_i      (ex_mem_resultSrc_r),
+    .ex_mem_aluRes_i         (ex_mem_aluRes_r),
+    .ex_mem_csr_rdata_i      (ex_mem_csr_rdata_r),
+    .dc_rvalid_i             (dcpu_if.dc_rvalid),
+    .dc_err_i                (dcpu_if.dc_err),
+    .dc_rdata_buf_valid_i    (dc_rdata_buf_valid_r),
+    .dc_err_buf_i            (dc_err_buf_r),
+    .mem_wb_valid_i          (mem_wb_valid_r),
+    .mem_wb_instr_i          (mem_wb_instr_r),
+    .mem_wb_regWr_i          (mem_wb_regWr_r),
+    .wb_result_i             (wb_result_s),
+    .wb_trap_taken_i         (wb_trap_taken_s),
+    .wb_mret_i               (wb_mret_s),
+    .dcache_stall_o          (dcache_stall_s),
+    .global_stall_o          (global_stall_s),
+    .data_stall_o            (data_stall_s),
+    .branch_taken_o          (ex_branch_taken_s),
+    .flush_front_o           (flush_s),
+    .flush_back_o            (flush_back_s),
+    .wb_is_csr_o             (wb_is_csr_s),
+    .fwd_srcA_o              (fwd_srcA_s),
+    .fwd_srcB_o              (fwd_srcB_s)
+  );
 
   cc_trap_csr #(.HART_ID(HART_ID), .MTVEC_RST(64'h0000_0000_0000_7F00))
   trap_csr (
@@ -922,41 +572,6 @@ module cc_cpupipefwd #(parameter logic [63:0] HART_ID = 64'd0) (
     .wdata01_i (wb_result_s),
     .rdata01_o (rf_rdata1_s),
     .rdata02_o (rf_rdata2_s)
-  );
-
-  // Instruction decoder
-  as_instr_decode control (
-    .instr_opcode_i      (if_id_instr_r[6:0]),
-    .instr_func3_i       (if_id_instr_r[14:12]),
-    .instr_func7b5_i     (if_id_instr_r[30]),
-    .take_i              (1'b0),
-    .mux_resultSrc_o     (id_resultSrc_s),
-    .en_dMemWr_o         (id_dMemWr_s),
-    .en_dMemRd_o         (id_dMemRd_s),
-    .mux_aluSrcB_o       (id_aluSrcB_s),
-    .mux_aluSrcA_o       (id_aluSrcA_s),
-    .en_regWr_o          (id_regWr_s),
-    .mux_jump_o          (id_jump_s),
-    .sel_immSrc_o        (id_immSrc_s),
-    .alu_op_o            (id_aluOp_s),
-    .br_op_o             (id_brOp_s),
-    .trap_illegal_instr_o(id_trap_illegal_s)
-  );
-
-  // ALU (EX stage)
-  as_alu alua (
-    .data01_i   (ex_srcA_s),
-    .data02_i   (ex_srcB_s),
-    .alu_op_i   (id_ex_aluOp_r),
-    .aluResult_o(ex_aluRes_s)
-  );
-
-  // Branch ALU (EX stage)
-  as_alu_branch alub (
-    .data01_i(ex_srcA_s),
-    .data02_i(ex_srcB_s),
-    .br_op_i (id_ex_brOp_r),
-    .take_o  (ex_take_s)
   );
 
   // ── Scan chain ─────────────────────────────────────────────────────────────
