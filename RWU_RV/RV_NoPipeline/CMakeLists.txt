@@ -26,13 +26,13 @@ option(WAVES "Waveform-Viewer öffnen (nur Einzeltest, nicht für Regression)" O
 
 if(WAVES)
     set(SIM_TARGET "waves")
-    message(STATUS "WAVES=ON: Waveform GUI aktiv — nicht mit 'regression' kombinieren!")
+    message(STATUS "AS-TOP: WAVES=ON: Waveform GUI aktiv — nicht mit 'regression' kombinieren!")
 else()
     set(SIM_TARGET "simulate")
 endif()
 
-message(STATUS "SIMULATOR = ${SIMULATOR}")
-message(STATUS "SIM_TARGET = ${SIM_TARGET}")
+message(STATUS "AS-TOP: SIMULATOR = ${SIMULATOR}")
+message(STATUS "AS-TOP: SIM_TARGET = ${SIM_TARGET}")
 
 # -------------------------------------------------
 # Test-Liste
@@ -208,31 +208,31 @@ foreach(TEST ${ASM_TESTS})
     # ---------------- ASM ----------------
     add_custom_command(
         OUTPUT ${TEST_BUILD_DIR}/asm/rv64i.mem
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_BUILD_DIR}/asm
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TEST_BUILD_DIR}/asm   # generates the asm directory under build/instr38ld/
         COMMAND ${CMAKE_COMMAND}
-                -DASM_FILE=${PROJECT_ROOT}/rv64Sim/${TEST}.asm
-                -S ${PROJECT_ROOT}/rv64Sim
-                -B ${TEST_BUILD_DIR}/asm
+                -DASM_FILE=${PROJECT_ROOT}/rv64Sim/${TEST}.asm             # -D -> points to the assembler source file
+                -S ${PROJECT_ROOT}/rv64Sim                                 # -S -> shows where the source directory is, especially the CMakeLists.txt
+                -B ${TEST_BUILD_DIR}/asm                                   # -B -> generates the build files into build/instr38ld/asm
         COMMAND ${CMAKE_COMMAND}
-                --build ${TEST_BUILD_DIR}/asm --target mem
-        DEPENDS ${PROJECT_ROOT}/rv64Sim/${TEST}.asm
-        COMMENT "Assembling ${TEST}"
+                --build ${TEST_BUILD_DIR}/asm --target mem                 # starts the ./rv64Sim/CMakeLists.txt
+        DEPENDS ${PROJECT_ROOT}/rv64Sim/${TEST}.asm                        # builds the test by calling rv64Sim/CMakeLists.txt
+        COMMENT "AS-TOP: Assembling ${TEST}\n : ${CMAKE_COMMAND} -E make_directory ${TEST_BUILD_DIR}/asm\n : ${CMAKE_COMMAND} -DASM_FILE=${PROJECT_ROOT}/rv64Sim/${TEST}.asm\n -S ${PROJECT_ROOT}/rv64Sim -B ${TEST_BUILD_DIR}/asm\n : ${CMAKE_COMMAND} --build ${TEST_BUILD_DIR}/asm --target mem"
     )
 
     # ---------------- SIM ----------------
     add_custom_target(sim_${TEST}
         COMMAND ${CMAKE_COMMAND}
-                -DPROJECT_ROOT=${PROJECT_ROOT}
-                -DIP_ROOT=${IP_ROOT}
-                -DRV64_MEM=${TEST_BUILD_DIR}/asm/rv64i.mem
-                -DTB_FILE=${_TB_FILE}
-                -DSIMULATOR=${SIMULATOR}
-                ${_EXTRA_ARGS}
-                -S ${PROJECT_ROOT}/sim
-                -B ${TEST_BUILD_DIR}/sim
-        COMMAND ${CMAKE_COMMAND} --build ${TEST_BUILD_DIR}/sim --target ${SIM_TARGET}
+                -DPROJECT_ROOT=${PROJECT_ROOT}                                   # sets project root
+                -DIP_ROOT=${IP_ROOT}                                             # sets IP root
+                -DRV64_MEM=${TEST_BUILD_DIR}/asm/rv64i.mem                       # points to the generated rv64i.mem file
+                -DTB_FILE=${_TB_FILE}                                            # points to the test bench
+                -DSIMULATOR=${SIMULATOR}                                         # indicates the simulator
+                ${_EXTRA_ARGS}                                                   # specifies the test (instr38ld, ld, 38)
+                -S ${PROJECT_ROOT}/sim                                           # shows where the source directory is, especially the CMakeLists.txt
+                -B ${TEST_BUILD_DIR}/sim                                         # sets and prepares where to build it
+        COMMAND ${CMAKE_COMMAND} --build ${TEST_BUILD_DIR}/sim --target ${SIM_TARGET} # starts simulation by calling sim/CMakeLists.txt
         DEPENDS ${TEST_BUILD_DIR}/asm/rv64i.mem
-        COMMENT "Simulating ${TEST} [${SIMULATOR}]"
+        COMMENT "AS-TOP: Simulating ${TEST} [${SIMULATOR}]\n : ${CMAKE_COMMAND}\n -DPROJECT_ROOT=${PROJECT_ROOT}\n -DIP_ROOT=${IP_ROOT}\n -DRV64_MEM=${TEST_BUILD_DIR}/asm/rv64i.mem\n -DTB_FILE=${_TB_FILE}\n -DSIMULATOR=${SIMULATOR}\n ${_EXTRA_ARGS}\n -S ${PROJECT_ROOT}/sim\n -B ${TEST_BUILD_DIR}/sim\n : ${CMAKE_COMMAND} --build ${TEST_BUILD_DIR}/sim --target ${SIM_TARGET}"
     )
 
     add_dependencies(regression sim_${TEST})

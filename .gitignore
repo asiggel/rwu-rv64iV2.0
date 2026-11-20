@@ -136,3 +136,8 @@ build/
 # LibreOffice
 # =========================
 *#
+
+# =========================
+# Private / not for publication
+# =========================
+README_MASTER01.txt

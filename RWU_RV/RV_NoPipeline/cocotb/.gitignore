@@ -1,5 +1,8 @@
 venv/
 sim_build/
+sim_build_irq01/
+coverage_irq02.xml
+coverage_irq02.yml
 __pycache__/
 *.pyc
 results.xml

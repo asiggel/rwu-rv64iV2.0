@@ -37,7 +37,7 @@ add_custom_command(
             -o ${OBJ}
             ${ASM_FILE}
     DEPENDS ${ASM_FILE}
-    COMMENT "Assembling ${ASM_FILE}"
+    COMMENT "AS-rv64Sim: Assembling ${ASM_FILE}\n : ${AS}\n -march=rv64i_zicsr\n -mlittle-endian\n -g\n -o ${OBJ}\n ${ASM_FILE}"
 )
 
 # -------------------------------------------------
@@ -59,7 +59,7 @@ add_custom_command(
             -o ${ELF}
             ${OBJ}
     DEPENDS ${OBJ} ${ELF_EXTRA_DEPS}
-    COMMENT "Linking ELF"
+    COMMENT "AS-rv64Sim: Linking ELF\n : ${LD}\n -b elf64-littleriscv\n ${LD_EXTRA_ARGS}\n -o ${ELF}\n ${OBJ}"
 )
 
 # -------------------------------------------------
@@ -79,7 +79,7 @@ add_custom_command(
     COMMAND sed -i 's/\r//g' ${MEM}
     COMMAND sed -i '1d' ${MEM}
     DEPENDS ${ELF}
-    COMMENT "Generating Verilog MEM"
+    COMMENT "AS-rv64Sim: Generating Verilog MEM\n : ${OBJCOPY}\n -O verilog\n --verilog-data-width 4\n ${ELF}\n ${MEM}\n : sed -i 's/ /\\n/g' ${MEM}\n : sed -i 's/\r//g' ${MEM}\n : sed -i '1d' ${MEM}"
 )
 
 add_custom_target(mem ALL DEPENDS ${MEM})

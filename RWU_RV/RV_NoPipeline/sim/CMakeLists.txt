@@ -105,7 +105,7 @@ if(SIMULATOR STREQUAL "xsim")
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem
         COMMAND ${CMAKE_COMMAND} -E touch compile.stamp
         DEPENDS ${RV64_MEM}
-        COMMENT "Compiling SystemVerilog (xvlog)"
+        COMMENT "AS-sim: Compiling SystemVerilog (xvlog)"
     )
     add_custom_target(compile DEPENDS compile.stamp)
 
@@ -115,7 +115,7 @@ if(SIMULATOR STREQUAL "xsim")
         COMMAND xelab -debug all -top ${TB_TOP} -snapshot ${TB_TOP}_snapshot
         COMMAND ${CMAKE_COMMAND} -E touch elaborate.stamp
         DEPENDS compile.stamp
-        COMMENT "Elaborating (xelab)"
+        COMMENT "AS-sim: Elaborating (xelab)"
     )
     add_custom_target(elaborate DEPENDS elaborate.stamp)
 
@@ -132,14 +132,14 @@ if(SIMULATOR STREQUAL "xsim")
     add_custom_target(simulate
         COMMAND xsim ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${PROJECT_ROOT}/sim/xsim_cfg.tcl
         DEPENDS elaborate.stamp
-        COMMENT "Simulating (xsim)"
+        COMMENT "AS-sim: Simulating (xsim)"
     )
 
     # ---------------- Waves (Vivado GUI) ----------------
     add_custom_target(waves
         COMMAND xsim --gui ${TB_TOP}_snapshot ${_XSIM_PLUSARGS} --tclbatch ${PROJECT_ROOT}/sim/xsim_cfg2.tcl
         DEPENDS elaborate.stamp
-        COMMENT "Simulating with Vivado Waveform GUI (xsim --gui)"
+        COMMENT "AS-sim: Simulating with Vivado Waveform GUI (xsim --gui)"
     )
 
 # =================================================
@@ -171,7 +171,7 @@ elseif(SIMULATOR STREQUAL "verilator")
                 ${PROJECT_ROOT}/sim/tb_waivers.vlt
                 ${SOURCES_SV}
         DEPENDS ${RV64_MEM}
-        COMMENT "Verilating and building ${TB_TOP}"
+        COMMENT "AS-sim: Verilating and building ${TB_TOP}\n : verilator\n --cc\n --exe ${PROJECT_ROOT}/sim/sim_main.cpp\n --build\n --sv\n --timing\n -Wall\n -Wno-fatal\n -Wno-DECLFILENAME\n -Wno-PINCONNECTEMPTY\n -Wno-IMPORTSTAR\n --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir\n -DLOGIC_SV\n --trace-fst\n --top-module ${TB_TOP}\n ${PROJECT_ROOT}/sim/tb_waivers.vlt\n ${SOURCES_SV}"
     )
     add_custom_target(verilate DEPENDS ${VERILATOR_OUT})
 
@@ -192,7 +192,7 @@ elseif(SIMULATOR STREQUAL "verilator")
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem
         COMMAND ${CMAKE_COMMAND} -P ${RUN_SIM_SCRIPT}
         DEPENDS ${VERILATOR_OUT}
-        COMMENT "Running Verilator simulation"
+        COMMENT "AS-sim: Running Verilator simulation"
     )
 
     # ---------------- Waves (GTKWave) ----------------
@@ -202,7 +202,7 @@ elseif(SIMULATOR STREQUAL "verilator")
         COMMAND ${CMAKE_COMMAND} -P ${RUN_SIM_SCRIPT}
         COMMAND gtkwave dump.fst &
         DEPENDS ${VERILATOR_OUT}
-        COMMENT "Running Verilator simulation + GTKWave"
+        COMMENT "AS-sim: Running Verilator simulation + GTKWave\n : ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem\n : ${CMAKE_COMMAND} -P ${RUN_SIM_SCRIPT}\n : gtkwave dump.fst &"
     )
 
 else()

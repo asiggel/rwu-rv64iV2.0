@@ -543,7 +543,7 @@ module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
   //      - die restlichen csrxx Instruktionen einbauen  (done)
   //      - mehr IRQ-Quellen, Exceptions ud Traps        (done)
   //      - Assembler-Testprogramm schreiben             (done)
-  //      - External IRQ programmable: level, rising, falling edge
+  //      - External IRQ programmable: level, rising, falling edge (done)
 
   //--------------------------------------------
   // Cache interfaces – disabled, tied to 0
@@ -562,7 +562,10 @@ module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
   assign dcpu_if.dc_flush = 1'b0;
 
   //--------------------------------------------
-  // Test Scan Chain
+  // Test Scan Chain; for the ASIC: disconnect this chain, 
+  // remove all components and connect the dangling ends to the 
+  // automatically inserted scan-chain. Check: Is the ATPG tool 
+  // from Cadence replacing the correct clock muxes and clock gates? 
   //--------------------------------------------
   assign clk_mux_s = (sc01_shift_i == 1) ? tck_i : gated_clk_s; // Must be a real clock mux!
   assign gated_clk_s = clk_i && dr_cap_i;                       // Must be a real clock gate!
