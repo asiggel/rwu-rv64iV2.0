@@ -9,6 +9,7 @@ set(SOURCES_SV
     ${RV_ROOT}/src/as_pack.sv
     ${RV_ROOT}/src/asSBpi.sv
     ${PROJECT_ROOT}/../ip_fifo/src/as_fifo.sv
+    ${PROJECT_ROOT}/../ip_irqper/src/as_irq_peripheral.sv
     ${PROJECT_ROOT}/src/as_qspi.sv
     ${PROJECT_ROOT}/src/asQspiTop.sv
     ${PROJECT_ROOT}/tb/${TB_TOP}.sv

@@ -98,7 +98,7 @@ The standard features of a QSPI peripheral are described in its functional descr
   \hline
   yes & Double Data Rate (DDR)     & DDR bit in CTRL register \\
   \hline
-  yes & Interrupt Generation       & 7 interrupt sources, maskable via IMSC \\
+  yes & Interrupt Generation       & 5 interrupt sources, maskable via IMSC \\
   \hline
   yes & FIFO Flush                 & TX\_FLUSH and RX\_FLUSH bits in CTRL register \\
   \hline
@@ -220,7 +220,7 @@ The QSPI controller exposes two independent bus interfaces:
 \subsubsection{Related Sections of this Spec}
 \begin{itemize}
   \item QSPI functional description starting with Section \ref{subsec:qspifunc01}.
-  \item Interrupt and DMA Concept Section ``Architecture Concepts''
+  \item Interrupt Concept, Section~\ref{sec:archirq} (Architecture Concepts); QSPI0 follows the case ``different IRQs'' (Section~\ref{subsubsec:archirqdiff}) with its own RTL implementation.
   \item Peripheral Architecture Concept Section ``Architecture Concepts''
   \begin{itemize}
     \item Slave WB (Wishbone) BPI Section ``Architecture Concepts''
@@ -228,9 +228,9 @@ The QSPI controller exposes two independent bus interfaces:
     \item Peripheral ID Registers Section ``Architecture Concepts''
     \item Peripheral Clocking Concept Section ``Architecture Concepts''
     \item Clock Control Registers Section ``Architecture Concepts''
-    \item Horizontal Interrupt and DMA Register Structure Section ``Architecture Concepts''
-    \item Basic Interrupt and DMA Register Set Section ``Architecture Concepts''
-    \item Interrupt Source Combining Register Set Section ``Architecture Concepts''
+    \item Interrupt Register Structure, Section~\ref{subsec:archirqstruct}
+    \item Interrupt Flow, Section~\ref{subsec:archirqflow}
+    \item Interrupt Register Description, Section~\ref{subsec:archirqregs}
     \item Synchronization Block Section ``Architecture Concepts''
     \item Standardized Flip-Flop based FIFO Section ``Architecture Concepts''
     \item TX-FIFO Registers Section ``Architecture Concepts''
@@ -247,18 +247,26 @@ The QSPI controller exposes two independent bus interfaces:
 \label{tab:qspihistory02}
 %\begin{table}[ht]
 \centering
-\begin{tabularx}{\textwidth}{|X |X |X |}
+\begin{tabularx}{\textwidth}{|>{\hsize=.6\hsize}X |>{\hsize=1.0\hsize}X |>{\raggedright\arraybackslash\hsize=1.4\hsize}X |}
   \hline
   \multicolumn{3}{|l|}{History} \\
   \hline
-  \multicolumn{1}{|l}{Target Spec.} & \multicolumn{1}{l}{Current version : 1.0, 2026-02-17} & \multicolumn{1}{l|}{Author: A. Siggelkow}\\
-  \multicolumn{1}{|l}{ } & \multicolumn{1}{l}{Previous version : 0.0, 2020-10-12} & \multicolumn{1}{l|}{ }\\
+  \multicolumn{1}{|l}{Target Spec.} & \multicolumn{1}{l}{Current version : 1.2, 2026-11-20} & \multicolumn{1}{l|}{Author: A. Siggelkow}\\
+  \multicolumn{1}{|l}{ } & \multicolumn{1}{l}{Previous version : 1.1, 2026-11-18} & \multicolumn{1}{l|}{ }\\
   \hline
   \hline
   Paragraph (in previous version) & Paragraph (in current version) / date & Subjects (major changes since last revision) \\
   \hline
   \hline
-  \multicolumn{3}{|l|}{Current Chapter Version: C0.1; Date: 2026-02-17} \\
+  \multicolumn{3}{|l|}{Current Chapter Version: C0.3; Date: 2026-11-20} \\
+  \hline
+  \ref{sec:qspifunc01} & \ref{sec:qspifunc01} / 2026-11-20 & Reset values = RTL (CTRL, CMD, LEN, DUMMY, CLKDIV, FIFOSTAT); RIS.TH after reset; reserved bits read 0 (RTL fix); STATUS.ER cleared on next start (RTL fix); STATUS.TI clear documented (AS, Claude) \\
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.2; Date: 2026-11-18} \\
+  \hline
+  \ref{sec:qspifunc01} & \ref{sec:qspifunc01} / 2026-11-18 & Interrupt registers implemented by shared block as\_irq\_\allowbreak peripheral; set wins over clear (was: clear wins); IMSC reset value corrected to 0; 5 interrupt sources (was: 7) (AS, Claude) \\
+  \hline
+  \multicolumn{3}{|l|}{Chapter Version: C0.1; Date: 2026-02-17} \\
   \hline
   \ref{sec:qspifunc01} & \ref{sec:qspifunc01} / 2026-02-17 & First draft (AS) \\
   \hline
@@ -428,6 +436,11 @@ completes before IDLE.
     \texttt{tx\_flag = 0} (RX direction)
   \item Timeout: internal counter reaches zero while kernel is active
 \end{itemize}
+The error latch (\texttt{stat\_error\_o}) is cleared when the next transfer
+starts, i.e.\ when \texttt{start\_i} is 1 in IDLE. A new error in a later transfer
+therefore gives a new rising edge and sets RIS.ER again. The timeout flag
+(\texttt{stat\_timeout\_o}) is cleared when the FSM returns to IDLE.
+Neither is cleared by ICR; ICR only clears the RIS bits.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Functional Overview: Kernel State Machine
@@ -875,9 +888,9 @@ Table \ref{tab:asQspiPer04a}, \ref{tab:asQspiPer04ab}  shows the input and outpu
   \hline
   \texttt{stat\_done\_o}    & out & 1  & FSM is in DONE state. High for exactly one clock cycle. \\
   \hline
-  \texttt{stat\_error\_o}   & out & 1  & Error latched. Remains until ICR clear. \\
+  \texttt{stat\_error\_o}   & out & 1  & Error latched. Cleared when the next transfer starts (\texttt{start\_i} in IDLE). \\
   \hline
-  \texttt{stat\_timeout\_o} & out & 1  & Timeout occurred. Remains until ICR clear. \\
+  \texttt{stat\_timeout\_o} & out & 1  & Timeout occurred. Cleared when the FSM returns to IDLE. \\
   \hline
   \texttt{xip\_active\_o}   & out & 1  & XIP mode is active. \\
   \hline
@@ -1218,17 +1231,17 @@ In the following the registers of a QSPI peripheral are listed and described. So
   \hline\hline
   0x00 (0)   & ID        & \footnotesize{0x00000000\_00000010} & r   & Peripheral identification register \\
   \hline
-  0x08 (8)   & CTRL      & \footnotesize{0x00000000\_00000000} & rw  & Control register (START, FLUSH, mode bits) \\
+  0x08 (8)   & CTRL      & \footnotesize{0x00000000\_00000010} & rw  & Control register (START, FLUSH, mode bits) \\
   \hline
-  0x10 (16)  & CMD       & \footnotesize{0x00000000\_00000000} & rw  & SPI opcode \\
+  0x10 (16)  & CMD       & \footnotesize{0x00000000\_0000006B} & rw  & SPI opcode \\
   \hline
   0x18 (24)  & ADDR      & \footnotesize{0x00000000\_00000000} & rw  & Flash target address \\
   \hline
-  0x20 (32)  & LEN       & \footnotesize{0x00000000\_00000000} & rw  & Transfer length in bytes \\
+  0x20 (32)  & LEN       & \footnotesize{0x00000000\_00000008} & rw  & Transfer length in bytes \\
   \hline
-  0x28 (40)  & DUMMY   &  \footnotesize{0x00000000\_00000000} & rw  & Dummy cycles \\
+  0x28 (40)  & DUMMY     & \footnotesize{0x00000000\_00000008} & rw  & Dummy cycles \\
   \hline
-  0x30 (48)  & CLKDIV    & \footnotesize{0x00000000\_00000000} & rw  & SCK clock divider \\
+  0x30 (48)  & CLKDIV    & \footnotesize{0x00000000\_00000004} & rw  & SCK clock divider \\
   \hline
   0x38 (56)  & TIMEOUT   & \footnotesize{0x00000000\_00000000} & rw  & Timeout threshold \\
   \hline
@@ -1236,7 +1249,7 @@ In the following the registers of a QSPI peripheral are listed and described. So
   \hline
   0x48 (72)  & RIS       & \footnotesize{0x00000000\_00000000} & rh  & Raw Interrupt Status Register \\
   \hline
-  0x50 (80)  & IMSC      & \footnotesize{0xFFFFFFFF\_FFFFFFFF} & rw  & Interrupt Mask Control Register \\
+  0x50 (80)  & IMSC      & \footnotesize{0x00000000\_00000000} & rw  & Interrupt Mask Control Register \\
   \hline
   0x58 (88)  & MIS       & \footnotesize{0x00000000\_00000000} & rh  & Masked Interrupt Status (= RIS \& IMSC) \\
   \hline
@@ -1246,7 +1259,7 @@ In the following the registers of a QSPI peripheral are listed and described. So
   \hline
   0x70 (112) & TXDATA    & \footnotesize{0x00000000\_00000000} & w   & TX FIFO push \\
   \hline
-  0x78 (120) & FIFOSTAT  & \footnotesize{0x00000000\_00000000} & rh  & FIFO fill levels and flags \\
+  0x78 (120) & FIFOSTAT  & \footnotesize{0x00000000\_00000100} & rh  & FIFO fill levels and flags \\
   \hline
   0x80 (128) & XIPMODE   & \footnotesize{0x00000000\_000000A0} & rw  & XIP mode byte (Winbond default: 0xA0) \\
   \hline
@@ -1262,7 +1275,9 @@ In the following the registers of a QSPI peripheral are listed and described. So
 \begin{itemize}
   \item \textbf{r}  -- read-only; writes have no effect
   \item \textbf{w}  -- write-only; reads return 0
-  \item \textbf{rw} -- read/write; value is retained after reset
+  \item \textbf{rw} -- read/write; loaded with the reset value while \texttt{rst\_i} is active
+  \item Reserved bits (shown as 0) are not stored: writes are ignored, reads return 0.
+        Exception: IMSC stores all 64 bits (see IMSC).
   \item \textbf{rh} -- read-only; value is set by hardware
   \item \textbf{X0} -- read always returns 0; write-only access
 \end{itemize}
@@ -1297,7 +1312,7 @@ Main control register. Controls SPI mode, address length, clock polarity/phase,
 XIP, DDR, CS-hold, FIFO flush, and transfer start.
 All configuration bits must be set before asserting START.
 
-\asregkopf{Control register}{$0000000000000000_H$}
+\asregkopf{Control register}{$0000000000000010_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1322,7 +1337,7 @@ All configuration bits must be set before asserting START.
            \hline
            DD &  5 & rw & DDR. Enable double data rate. \\
            \hline
-           QU &  4 & rw & QUAD. Enable quad-wire data (1-1-4 / 1-4-4). Overrides DUAL. \\
+           QU &  4 & rw & QUAD. Enable quad-wire data (1-1-4 / 1-4-4). Overrides DUAL. Reset 1, because the AXI4 cache refill (Quad Fast Read) can start before software configures QSPI0. \\
            \hline
            ST &  3 & w  & START. Write 1 to initiate a transfer when BUSY=0. Self-clearing. \\
            \hline
@@ -1335,7 +1350,7 @@ All configuration bits must be set before asserting START.
 
 \paragraph{\asqspiCmdRegExt} -:
 The SPI/QSPI command opcode to be sent in the CMD phase.
-\asregkopf{Command register}{$0000000000000000_H$}
+\asregkopf{Command register}{$000000000000006B_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1346,7 +1361,7 @@ The SPI/QSPI command opcode to be sent in the CMD phase.
                              {r&r&r&r&r&r&r&r&\multicolumn{8}{c|}{rw}}
 \asregdesc{- & 63:8 & r & Reserved \\
            \hline
-           OPCODE & 7:0 & rw & SPI command opcode. Sent MSB-first in single-wire CMD phase.}
+           OPCODE & 7:0 & rw & SPI command opcode. Sent MSB-first in single-wire CMD phase. Reset 0x6B (Quad Output Fast Read).}
 
 \paragraph{\asqspiAddrRegExt} -:
 Target byte address in the NOR-Flash device.
@@ -1365,7 +1380,7 @@ Target byte address in the NOR-Flash device.
 
 \paragraph{\asqspiLenRegExt} -:
 Transfer data length in bytes.
-\asregkopf{Length register}{$0000000000000000_H$}
+\asregkopf{Length register}{$0000000000000008_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1376,11 +1391,11 @@ Transfer data length in bytes.
                              {\multicolumn{16}{|c|}{rw}}
 \asregdesc{- & 63:16 & r & Reserved \\
            \hline
-           LEN & 15:0 & rw & Data transfer length in bytes. Must be $\geq 1$.}
+           LEN & 15:0 & rw & Data transfer length in bytes. Must be $\geq 1$. Reset 0x0008 (8 bytes = one 64-bit word).}
 
 \paragraph{\asqspiDummyRegExt} -:
 Number of dummy clock cycles between ADDR and DATA phases.
-\asregkopf{Dummy register}{$0000000000000000_H$}
+\asregkopf{Dummy register}{$0000000000000008_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1391,7 +1406,7 @@ Number of dummy clock cycles between ADDR and DATA phases.
                              {r&r&r&r&r&r&r&r&r&r&\multicolumn{6}{c|}{rw}}
 \asregdesc{- & 63:6 & r & Reserved \\
            \hline
-           DUMMY\_CYC & 5:0 & rw & Dummy cycle count. 0 = no dummy phase (ADDR directly followed by DATA). Maximum 63.}
+           DUMMY\_CYC & 5:0 & rw & Dummy cycle count. 0 = no dummy phase (ADDR directly followed by DATA). Maximum 63. Reset 8 (W25Q128JV, opcode 0x6B).}
 
 \paragraph{\asqspiClkdivRegExt} -:
 SCK clock divider. Determines the SPI clock frequency.
@@ -1399,7 +1414,7 @@ SCK clock divider. Determines the SPI clock frequency.
   f_{SCK} = \frac{f_{clk}}{2 \times (\text{CLKDIV} + 1)}
 \]
 Must not be changed while BUSY=1.
-\asregkopf{Clock divider register}{$0000000000000000_H$}
+\asregkopf{Clock divider register}{$0000000000000004_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1410,7 +1425,7 @@ Must not be changed while BUSY=1.
                              {\multicolumn{8}{|c|}{r}&\multicolumn{8}{c|}{rw}}
 \asregdesc{- & 63:8 & r & Reserved \\
            \hline
-           CLKDIV & 7:0 & rw & SCK divider. Reset 0x00 = $f_{clk}/2$ (maximum SCK).}
+           CLKDIV & 7:0 & rw & SCK divider. Reset 0x04 = $f_{clk}/10$. 0x00 = $f_{clk}/2$ (maximum SCK).}
 
 \paragraph{\asqspiTimeoutRegExt} -:
 Timeout threshold in kernel clock cycles. When the FSM is active and the
@@ -1461,7 +1476,8 @@ no pop occurs. Writing has no effect.
 
 \paragraph{\asqspiFifostatusRegExt} -:
 FIFO fill level and status flags. Read-only. Updated combinatorially.
-\asregkopf{FIFO status register}{$0000000000000000_H$}
+The reset value is the value read with both FIFOs empty: only TH is 1.
+\asregkopf{FIFO status register}{$0000000000000100_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
                              {\multicolumn{16}{|c|}{0}}
@@ -1484,7 +1500,7 @@ FIFO fill level and status flags. Read-only. Updated combinatorially.
            \hline
            TF & 9 & rh & TX FIFO full \\
            \hline
-           TH & 8 & rh & TX FIFO $<$ half full (level $<$ FIFO\_DEPTH/2) \\
+           TH & 8 & rh & TX FIFO $<$ half full (level $<$ FIFO\_DEPTH/2). 1 after reset (TX FIFO empty). \\
            \hline
            - & 7:5 & r & Reserved \\
            \hline
@@ -1526,9 +1542,9 @@ cleared via ICR.
                              {r&r&r&r&r&r&r&r&r&r&r&rh&rh&rh&rh&rh}
 \asregdesc{- & 63:5 & r & Reserved \\
            \hline
-           TI & 4 & rh & TIMEOUT. Timeout occurred; latched until ICR.TIMEOUT is written. \\
+           TI & 4 & rh & TIMEOUT. Timeout counter expired during the current transfer. Cleared when the FSM returns to IDLE, not by ICR. For a latched indication use RIS.TI. \\
            \hline
-           ER & 3 & rh & ERROR. Error latched; latched until ICR.ERROR is written. \\
+           ER & 3 & rh & ERROR. TX underflow or RX overflow in the DATA phase. Stays set after the transfer; cleared when the next transfer starts, not by ICR. \\
            \hline
            XI & 2 & rh & XIP\_ACTIVE. XIP mode is currently active. \\
            \hline
@@ -1542,7 +1558,8 @@ cleared via ICR.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection{Interrupt Registers}
 \label{subsub:IRQRegs}
-Interrupt sources are level-based and derived directly from kernel status.
+Interrupt sources are one-cycle event pulses, generated on the rising edge of a
+kernel or FIFO status signal (Table~\ref{tab:asqspispec_irqsrc}).
 
 \paragraph{Flow of Interrupt Requests} -:
 Figure \ref{fig:asqspi03} shows the flow of a single interrupt request, which comes from the Peripheral Kernel or from the FIFO Controller.
@@ -1613,6 +1630,14 @@ corresponding interrupt in the RIS via ICR.
 
 In QSPI: \[ MIS = RIS \& IMSC \] and then the external interrupt output is: \[ IRQ =|  MIS \]
 
+\paragraph{Implementation} -:
+RIS, IMSC, MIS, ICR and ISR are implemented by the shared block
+\texttt{as\_irq\_peripheral} (instance \texttt{u\_irq}, \texttt{irqs\_yes\_no}\,=\,0,
+five event pulses on \texttt{irq\_other\_i}), as in UART0. The structure, the interrupt
+flow and the generic register description are given in Section~\ref{sec:archirq}.
+ICR and ISR are write strobes and are not stored. If an event and an ICR write hit
+the same RIS bit in the same clock cycle, the bit stays set (set wins over clear).
+
 \paragraph{Interrupt Sources} -:
 \begin{table}[H]
 \caption{QSPI Interrupt Sources}
@@ -1641,6 +1666,10 @@ In QSPI: \[ MIS = RIS \& IMSC \] and then the external interrupt output is: \[ I
 Raw Interrupt Status Register. Read-only. Reflects latched interrupt conditions
 independent of masking. Set by hardware edge events or by ISR write. Cleared by
 ICR write. Writing has no effect (use ISR/ICR instead).
+The reset value is 0. In the first clock cycle after \texttt{rst\_i} is released,
+TH is set: the empty TX FIFO drives \texttt{tx\_half\_s} to 1 while its edge detector
+still holds the reset value 0. Software therefore clears RIS via ICR before it
+enables interrupts in IMSC.
 \asregkopf{Raw Interrupt Status Register}{$0000000000000000_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}
@@ -1664,9 +1693,9 @@ ICR write. Writing has no effect (use ISR/ICR instead).
 
 \paragraph{\asqspiIMSCRegExt} -:
 Interrupt Mask Control Register. Each bit enables (1) or disables (0) the
-corresponding interrupt source. Reset value \texttt{0xFFFFFFFFFFFFFFFF} means
-all interrupts are enabled after reset.
-\asregkopf{Interrupt Mask Control Register}{$FFFFFFFFFFFFFFFF_H$}
+corresponding interrupt source. Reset value \texttt{0x0000000000000000}: all
+interrupts are disabled after reset.
+\asregkopf{Interrupt Mask Control Register}{$0000000000000000_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{IMSC[63:48]}}
                              {\multicolumn{16}{|c|}{rw}}
                              {\multicolumn{16}{|c|}{IMSC[47:32]}}
@@ -1675,7 +1704,7 @@ all interrupts are enabled after reset.
                              {\multicolumn{16}{|c|}{rw}}
                              {0&0&0&0&0&0&0&0&0&0&0&TI&ER&TH&HA&DO}
                              {rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw&rw}
-\asregdesc{- & 63:5 & rw & Reserved (kept for forward compatibility; writes ignored by hardware) \\
+\asregdesc{- & 63:5 & rw & Reserved; stored and read back, but without effect (no RIS bit) \\
            \hline
            TI & 4 & rw & TIMEOUT mask. 1 = interrupt enabled. \\
            \hline
@@ -1715,7 +1744,8 @@ status as seen by the CPU. $\text{MIS} = \text{RIS} \;\&\; \text{IMSC}$.
 Interrupt Clear Register. Write-only. Writing 1 to a bit clears the corresponding
 RIS bit. Writing 0 has no effect. Reading returns 0. The interrupt should be
 cleared only after the condition has been handled (FIFO drained / refilled)
-to avoid re-triggering.
+to avoid re-triggering. If an event and an ICR write hit the same bit in the
+same clock cycle, the bit stays set (set wins over clear).
 \asregkopf{Interrupt Clear Register}{$0000000000000000_H$}
 \asregfourxsixteen{\multicolumn{16}{|c|}{0}}
                              {\multicolumn{16}{|c|}{r}}

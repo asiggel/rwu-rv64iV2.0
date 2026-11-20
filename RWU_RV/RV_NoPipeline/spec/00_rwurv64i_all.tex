@@ -46,6 +46,7 @@
 \subsection{Introduction}
 \input{\TEXTprod 02_product_text01}
 \input{\TEXTprod 02_product_bild01}
+\input{\TEXTprod 02_product_bild01b}
 \subsection{Key Features}
 \input{\TEXTprod 02_product_text03}
 \subsection{Functional Block Diagram}
@@ -117,7 +118,9 @@
 \input{\TEXTarch 03_arch_history_tab02}
 \input{\TEXTarch 03_arch_bus_concept}
 \section{Interrupt Concept}
+\label{sec:archirq}
 \input{\TEXTarch 03_arch_history_tab03}
+\input{\TEXTarch 03_arch_irq_concept}
 \section{Clock Concept}
 \input{\TEXTarch 03_arch_history_tab04}
 \input{\TEXTarch 03_arch_clock_concept}
@@ -619,7 +622,7 @@ it applies to.
   \hline
   \texttt{0x00} & \asqspiIDRegExt      & ro & Peripheral ID \\
   \hline
-  \texttt{0x08} & \asqspiCtrlRegExt    & rw & [11:4]\,=\,\texttt{qspi\_ctrl\_t} (addr\_len, cpol, cpha, dual, cs\_hold, xip, ddr, quad), [3]\,=\,start (pulse), [2]\,=\,rx\_flush, [1]\,=\,tx\_flush \\
+  \texttt{0x08} & \asqspiCtrlRegExt    & rw & [11:4]\,=\,\texttt{qspi\_ctrl\_t} (addr\_len, cpol, cpha, dual, cs\_hold, xip, ddr, quad), [3]\,=\,start (pulse), [2]\,=\,rx\_flush, [1]\,=\,tx\_flush (reset\,=\,\texttt{0x10}, quad\,=\,1) \\
   \hline
   \texttt{0x10} & \asqspiCmdRegExt     & rw & [7:0] SPI opcode (reset\,=\,\texttt{0x6B}, Quad Fast Read) \\
   \hline
@@ -647,7 +650,7 @@ it applies to.
   \hline
   \texttt{0x70} & \asqspiTxdataRegExt  & wo & Push to TX FIFO \\
   \hline
-  \texttt{0x78} & \asqspiFifostatRegExt & ro & [28:24]\,=\,rx\_level, [20]\,=\,rx\_full, [19]\,=\,rx\_half, [12:8]\,=\,tx\_level, [4]\,=\,tx\_full, [3]\,=\,tx\_half \\
+  \texttt{0x78} & \asqspiFifostatRegExt & ro & [25]\,=\,rx\_full, [24]\,=\,rx\_half, [20:16]\,=\,rx\_level, [9]\,=\,tx\_full, [8]\,=\,tx\_half, [4:0]\,=\,tx\_level (reset\,=\,\texttt{0x100}) \\
   \hline
   \texttt{0x80} & \asqspiXipRegExt     & rw & [7:0] XIP mode byte (reset\,=\,\texttt{0xA0}, Winbond mode) \\
   \hline

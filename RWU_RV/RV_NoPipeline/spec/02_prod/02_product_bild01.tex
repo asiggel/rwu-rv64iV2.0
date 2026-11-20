@@ -1,8 +1,63 @@
 
-Figure \ref{fig:asTop01} shows the top level of the chip.
-\begin{figure}[H] 
+Figure \ref{fig:asTop01} shows the top level of the chip (Variant A).
+\begin{figure}[H]
 \centering
-  \includegraphics[width=0.70\textwidth]{\BILDERa project01}
-\caption{\aschip \; Overview}
+\begin{tikzpicture}
+% CPU
+\filldraw[fill=yellow, draw=black] (0,0) rectangle (4,4);
+\node[font=\small] at (2.0,2.0) {CPU};
+\filldraw[fill=lightgray!30, draw=black] (0,-0.5) rectangle (0.5,0);
+\node[font=\small] at (0.25,-0.25) {M};
+\filldraw[fill=lightgray!30, draw=black] (3.5,-0.5) rectangle (4.0,0);
+\node[font=\small] at (3.75,-0.25) {M};
+% I-Bus
+\node[double arrow,draw,fill=lightgray!30,text=black, minimum height=0.5cm,font=\small] at (0.25,-1.5) {I-Bus};
+\draw (0.25,-0.50) -- (0.25,-1.25);
+% I-Mem
+\filldraw[fill=yellow, draw=black] (-0.50,-4.00) rectangle (1.00,-2.50);
+\node[font=\small] at (0.25,-3.25) {I-Mem};
+\draw (0.25,-2.50) -- (0.25,-1.75);
+% D-Bus
+\node[double arrow,draw,fill=lightgray!30,text=black, minimum height=0.5cm,font=\small] at (5.75,-1.5) {--------------D-Bus--------------};
+\draw (3.75,-0.50) -- (3.75,-1.25);
+% D-Mem
+\filldraw[fill=yellow, draw=black] (3.00,-4.00) rectangle (4.50,-2.50);
+\node[font=\small] at (3.75,-3.25) {D-Mem};
+\draw (3.75,-2.50) -- (3.75,-1.75);
+\filldraw[fill=lightgray!30, draw=black] (3.50,-3.00) rectangle (4.00,-2.50);
+\node[font=\small] at (3.75,-2.75) {S};
+% ICU
+\filldraw[fill=yellow, draw=black] (5.00,-4.00) rectangle (6.50,-2.50);
+\node[font=\small] at (5.75,-3.25) {ICU};
+\draw (5.75,-2.50) -- (5.75,-1.75);
+\filldraw[fill=lightgray!30, draw=black] (5.50,-3.00) rectangle (6.00,-2.50);
+\node[font=\small] at (5.75,-2.75) {S};
+% UART
+\filldraw[fill=yellow, draw=black] (7.00,-4.00) rectangle (8.50,-2.50);
+\node[font=\small] at (7.75,-3.25) {UART};
+\draw (7.75,-2.50) -- (7.75,-1.75);
+\filldraw[fill=lightgray!30, draw=black] (7.50,-3.00) rectangle (8.00,-2.50);
+\node[font=\small] at (7.75,-2.75) {S};
+% CGU
+\filldraw[fill=yellow, draw=black] (5.00,-0.50) rectangle (6.50,1.00);
+\node[font=\small] at (5.75,0.25) {CGU};
+\draw (5.75,-0.50) -- (5.75,-1.25);
+\filldraw[fill=lightgray!30, draw=black] (5.50,-0.50) rectangle (6.00,0.00);
+\node[font=\small] at (5.75,-0.25) {S};
+% GPIO
+\filldraw[fill=yellow, draw=black] (7.00,-0.50) rectangle (8.50,1.00);
+\node[font=\small] at (7.75,0.25) {GPIO};
+\draw (7.75,-0.50) -- (7.75,-1.25);
+\filldraw[fill=lightgray!30, draw=black] (7.50,-0.50) rectangle (8.00,0.00);
+\node[font=\small] at (7.75,-0.25) {S};
+% JTAG
+\filldraw[fill=green, draw=black] (7.00,2.50) rectangle (8.50,4.00);
+\node[font=\small] at (7.75,3.25) {JTAG};
+% Legend
+\node[align=left, font=\small] at (-2.00,3.75) {Legend:\\- M: Master-BPI\\- S: Slave-BPI};
+\end{tikzpicture}
+%\centering
+%  \includegraphics[width=0.70\textwidth]{\BILDERa project01}
+\caption{\aschip \; Overview (Variant A)}
 \label{fig:asTop01}
 \end{figure}

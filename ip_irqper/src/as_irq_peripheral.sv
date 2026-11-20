@@ -22,7 +22,8 @@ Register set (offsets are set per peripheral by parameters)
   IMSC   rw    yes      Interrupt Mask: 1 = this RIS bit may raise irq_o
   MIS    r     no       Masked Interrupt Status = RIS & IMSC
   ICR    w     no       Interrupt Clear: writing 1 clears the RIS bit
-  ISR    w     no       Interrupt Set:   writing 1 sets the RIS bit (SW test)
+  ISR    w     no       Interrupt Set:   writing 1 sets the RIS bit (SW test);
+                         only implemented RIS bits, reserved bits stay 0
   -- only if irqs_yes_no = 1 --
   IRQSS  r     yes      Source Status: one bit per source of the same type
   IRQSM  rw    yes      Source Mask:   1 = this source contributes to RIS[0]
@@ -106,6 +107,10 @@ module as_irq_peripheral #(parameter int          addr_width      = 64, // width
   // With a group of same-type IRQs, RIS[0] is reserved for the group and the
   // other IRQs start at RIS[1]; otherwise they start at RIS[0].
   localparam int ris_lsb_c = (irqs_yes_no == 1) ? 1 : 0;
+  // Only these RIS bits exist; ISR must not set the reserved bits above them,
+  // otherwise a test write of all ones could raise irq_o via IMSC.
+  // A shift by data_width or more gives 0, so the mask is all ones in that case.
+  localparam logic [data_width-1:0] ris_mask_c = ~({data_width{1'b1}} << (ris_lsb_c + nr_other_irqs));
 
   // Flip-flops: RIS, IMSC, IRQSS, IRQSM.
   // MIS, ICR, ISR and IRQSC have no flip-flop (see header).
@@ -138,7 +143,7 @@ module as_irq_peripheral #(parameter int          addr_width      = 64, // width
     ris_set_s                             = '0;
     ris_set_s[ris_lsb_c +: nr_other_irqs] = irq_other_i;
     if (wr_isr_s)
-      ris_set_s                           = ris_set_s | data_i;
+      ris_set_s                           = ris_set_s | (data_i & ris_mask_c);
   end
 
   // ICR: only the bits written as 1 are cleared, and only in the write cycle.

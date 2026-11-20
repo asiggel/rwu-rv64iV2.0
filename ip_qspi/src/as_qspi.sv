@@ -72,12 +72,39 @@ module as_qspi (
   statetype_t state_s, nextstate_s;
 
   // ---------------------------------------------------------------------------
+  // Local parameter and remaining signal declarations (CLAUDE.md rule 1)
+  // ---------------------------------------------------------------------------
+  localparam logic [2:0] CMD_MAX = 3'd7;   // 8 Single cycles, always
+  logic [2:0] bpc_s;   // bits per SCK cycle for ADDR/DATA phase
+  logic [4:0] addr_max_s;
+  logic [19:0] dat_max_s;   // in bits
+  logic       sck_en_s;
+  logic [7:0] sck_cnt_r;
+  logic       sck_r;
+  logic [63:0] tx_shift_r;
+  logic [63:0] rx_shift_r;
+  logic [3:0] dout_s;
+  logic       doe_s;
+  logic xip_mb_active_s;
+  logic [2:0] xip_sub_r;
+  logic error_r;
+  logic [31:0] to_cnt_r;
+  logic        to_r;
+  logic xip_active_r;
+  logic sck_fall_s, sck_rise_s;
+  logic sck_drive_s, sck_sample_s;
+  logic tx_flag_r;
+  logic [2:0]  cnt_cmd_r;
+  logic [4:0]  cnt_addr_r;
+  logic [5:0]  cnt_dum_r;
+  logic [19:0] cnt_dat_r;
+
+  // ---------------------------------------------------------------------------
   // Preparation logic:
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // Bus width; detects from ctrl-reg if the transaction should be done with 1 bit, 2 bits or 4 bits in parallel
   // ---------------------------------------------------------------------------
-  logic [2:0] bpc_s;   // bits per SCK cycle for ADDR/DATA phase
   assign bpc_s = ctrl_reg_i.quad ? 3'd4 :
                  ctrl_reg_i.dual ? 3'd2 : 3'd1;
 
@@ -87,9 +114,7 @@ module as_qspi (
   // ADDR: 24 or 32 bits at bpc_s bits/cycle
   // DATA: len_reg_i bytes = len_reg_i*8 bits (counted in bits)
   // ---------------------------------------------------------------------------
-  localparam logic [2:0] CMD_MAX = 3'd7;   // 8 Single cycles, always
 
-  logic [4:0] addr_max_s;
   always_comb
     case (bpc_s)
       3'd4:    addr_max_s = ctrl_reg_i.addr_len ? 5'd7  : 5'd5;   // 32/4-1, 24/4-1
@@ -97,21 +122,9 @@ module as_qspi (
       default: addr_max_s = ctrl_reg_i.addr_len ? 5'd31 : 5'd23;
     endcase
 
-  logic [19:0] dat_max_s;   // in bits
   assign dat_max_s = {len_reg_i, 3'b000} - 20'd1;
 
 
-  // ---------------------------------------------------------------------------
-  // Signal declarations (grouped here so all uses in FSM block 1 are post-declaration)
-  // ---------------------------------------------------------------------------
-  logic xip_active_r;
-  logic sck_fall_s, sck_rise_s;
-  logic sck_drive_s, sck_sample_s;
-  logic tx_flag_r;
-  logic [2:0]  cnt_cmd_r;
-  logic [4:0]  cnt_addr_r;
-  logic [5:0]  cnt_dum_r;
-  logic [19:0] cnt_dat_r;
 
   // ---------------------------------------------------------------------------
   // FSM:
@@ -162,9 +175,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // SCK generator
   // ---------------------------------------------------------------------------
-  logic       sck_en_s;
-  logic [7:0] sck_cnt_r;
-  logic       sck_r;
 
   // ... set sck enable
   always_comb
@@ -243,7 +253,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // TX shift register – preloaded one cycle before DAT_ST
   // ---------------------------------------------------------------------------
-  logic [63:0] tx_shift_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       tx_shift_r <= '0;
@@ -261,7 +270,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // RX shift register
   // ---------------------------------------------------------------------------
-  logic [63:0] rx_shift_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)
       rx_shift_r <= '0;
@@ -287,17 +295,13 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // data_io driver
   // ---------------------------------------------------------------------------
-  logic [3:0] dout_s;
-  logic       doe_s;
 
   // XIP mode-bits: drive xip_mode_bits_i during the first dummy SCK cycle.
   // cnt_dum_r increments on sck_rise_s (= one cycle after the SCK rising edge
   // fires). So cnt_dum_r==0 covers all drive events of the first dummy cycle.
-  logic xip_mb_active_s;
   assign xip_mb_active_s = xip_active_r && (state_s == dum_st) && (cnt_dum_r == 6'd0);
 
   // Sub-index for mode-bit drive (counts sck_drive_s events in first dummy cycle)
-  logic [2:0] xip_sub_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)                           xip_sub_r <= '0;
     else if (state_s != dum_st)          xip_sub_r <= '0;
@@ -371,9 +375,10 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // Error latch
   // ---------------------------------------------------------------------------
-  logic error_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)     error_r <= 1'b0;
+    // Cleared on the next start, so that a new error gives a new rising edge (ERROR IRQ).
+    else if (state_s == idle_st && start_i) error_r <= 1'b0;
     else if (state_s == dat_st && tx_flag_r  && tx_empty_i) error_r <= 1'b1;
     else if (state_s == dat_st && !tx_flag_r && rx_full_i)  error_r <= 1'b1;
   end
@@ -382,8 +387,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // Timeout
   // ---------------------------------------------------------------------------
-  logic [31:0] to_cnt_r;
-  logic        to_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i) begin
       to_cnt_r <= '0;

@@ -5,6 +5,7 @@
 //   T1–T12  Wishbone configuration port (register R/W, FIFOs, IRQ, transfers)
 //   T13     AXI4 data port: 4-beat burst → 4 sequential 8-byte kernel runs
 //   T14     AXI4 ARREADY blocked while WB-started kernel is busy
+//   T15     ERROR (RX FIFO overrun): cleared on next start, IRQ fires again
 // =============================================================================
 `timescale 1ns/1ps
 import as_pack::*;
@@ -128,6 +129,17 @@ module asQspiTop_tb;
     @(negedge clk_i); wbdStb_i=0; wbdCyc_i=0;
   endtask
 
+  // WB-started RX transfer; returns when the kernel is idle again.
+  task automatic rx_xfer();
+    logic [DATA_W-1:0] st;
+    int tout;
+    wb_write(A_CTRL, 64'h08);   // START, single mode
+    repeat(4) @(posedge clk_i);
+    tout = 0;
+    do begin wb_read(A_STATUS, st); tout++; end while (st[0] && tout < 100000);
+    if (tout >= 100000) $display("FAIL  rx_xfer: transfer timeout");
+  endtask
+
   // ── Reset + bus idle ───────────────────────────────────────────────────────
   task automatic do_reset();
     rst_i=1;
@@ -238,6 +250,18 @@ module asQspiTop_tb;
     wb_write(A_XIPMODE, 64'hA0);     wb_read(A_XIPMODE,rdata); chk64("T1 XIPMODE", rdata, 64'hA0);
     wb_write(A_IMSC,    64'h1F);     wb_read(A_IMSC,rdata);    chk64("T1 IMSC",    rdata, 64'h1F);
 
+    // T1b – reserved bits are not stored and read as 0
+    $display("\n--- T1b: Reserved bits read as 0 ---");
+    wb_write(A_CTRL,    '1); wb_read(A_CTRL,rdata);    chk64("T1b CTRL",    rdata, 64'hFF0);
+    wb_write(A_CMD,     '1); wb_read(A_CMD,rdata);     chk64("T1b CMD",     rdata, 64'hFF);
+    wb_write(A_ADDR_R,  '1); wb_read(A_ADDR_R,rdata);  chk64("T1b ADDR",    rdata, 64'hFFFF_FFFF);
+    wb_write(A_LEN,     '1); wb_read(A_LEN,rdata);     chk64("T1b LEN",     rdata, 64'hFFFF);
+    wb_write(A_DUMMY,   '1); wb_read(A_DUMMY,rdata);   chk64("T1b DUMMY",   rdata, 64'h3F);
+    wb_write(A_CLKDIV,  '1); wb_read(A_CLKDIV,rdata);  chk64("T1b CLKDIV",  rdata, 64'hFF);
+    wb_write(A_TIMEOUT, '1); wb_read(A_TIMEOUT,rdata); chk64("T1b TIMEOUT", rdata, 64'hFFFF_FFFF);
+    wb_write(A_XIPMODE, '1); wb_read(A_XIPMODE,rdata); chk64("T1b XIPMODE", rdata, 64'hFF);
+    do_reset();
+
     // =========================================================================
     // T2 – ID register read-only
     // =========================================================================
@@ -301,6 +325,23 @@ module asQspiTop_tb;
     @(posedge clk_i); #1;
     chk1("T6 IRQ=1 after unmask", qspi_irq_o, 1'b1);
     wb_write(A_ICR, 64'h01);
+
+    // =========================================================================
+    // T6b – IMSC reset value, ISR only sets the 5 implemented RIS bits
+    // =========================================================================
+    $display("\n--- T6b: IMSC reset / reserved RIS bits ---");
+    do_reset();
+    wb_read(A_IMSC,rdata); chk64("T6b IMSC reset = 0", rdata, 64'h0);
+    wb_write(A_IMSC, '1);
+    wb_write(A_ISR,  '1);
+    @(posedge clk_i); #1;
+    wb_read(A_RIS,rdata); chk64("T6b RIS = 0x1F after ISR all ones", rdata, 64'h1F);
+    wb_read(A_MIS,rdata); chk64("T6b MIS = 0x1F",                   rdata, 64'h1F);
+    wb_write(A_ICR,  '1);
+    @(posedge clk_i); #1;
+    wb_read(A_RIS,rdata); chk64("T6b RIS = 0 after ICR all ones",    rdata, 64'h0);
+    chk1("T6b IRQ low after ICR", qspi_irq_o, 1'b0);
+    wb_write(A_IMSC, 64'h0);
 
     // =========================================================================
     // T7 – TX FIFO full: ACK always fires, level stays at FDEPTH
@@ -480,6 +521,43 @@ module asQspiTop_tb;
       do_reset();
       @(posedge clk_i); #1;
       chk1("T14 ARREADY=1 after reset", axi_arready, 1'b1);
+    end
+
+    // =========================================================================
+    // T15 – ERROR: RX transfer into a full RX FIFO. error_r is cleared on the
+    //       next start, so a second overrun gives a second ERROR interrupt.
+    // =========================================================================
+    $display("\n--- T15: ERROR cleared on start, IRQ fires again ---");
+    begin : t15
+      do_reset();
+      fm_arm=0;
+      wb_write(A_CMD,    64'h0B);
+      wb_write(A_ADDR_R, 64'h0);
+      wb_write(A_LEN,    64'd8);
+      wb_write(A_DUMMY,  64'd8);
+      wb_write(A_CLKDIV, 64'd0);
+      wb_write(A_TIMEOUT,64'd0);
+      wb_write(A_ICR,    '1);
+      wb_write(A_IMSC,   64'h08);   // ERROR only
+      repeat(16) rx_xfer();
+      wb_read(A_FIFOSTAT,rdata); chk64("T15 RX FIFO full",        64'(rdata[25:25]), 64'(1'b1));
+      wb_read(A_STATUS,rdata);   chk64("T15 ER=0 before overrun", 64'(rdata[3:3]),   64'(1'b0));
+      chk1("T15 no IRQ before overrun", qspi_irq_o, 1'b0);
+      rx_xfer();
+      wb_read(A_STATUS,rdata);   chk64("T15 ER=1 after overrun",  64'(rdata[3:3]),   64'(1'b1));
+      wb_read(A_RIS,rdata);      chk64("T15 RIS.ER=1",            64'(rdata[3:3]),   64'(1'b1));
+      chk1("T15 IRQ after 1st overrun", qspi_irq_o, 1'b1);
+      wb_write(A_ICR, 64'h08);
+      @(posedge clk_i); #1;
+      chk1("T15 IRQ cleared", qspi_irq_o, 1'b0);
+      wb_write(A_CTRL, 64'h04);     // RX_FLUSH
+      rx_xfer();
+      wb_read(A_STATUS,rdata);   chk64("T15 ER=0 after next start", 64'(rdata[3:3]), 64'(1'b0));
+      repeat(15) rx_xfer();         // RX FIFO full again
+      wb_read(A_RIS,rdata);      chk64("T15 RIS.ER=0 before 2nd overrun", 64'(rdata[3:3]), 64'(1'b0));
+      rx_xfer();
+      wb_read(A_RIS,rdata);      chk64("T15 RIS.ER=1 after 2nd overrun",  64'(rdata[3:3]), 64'(1'b1));
+      chk1("T15 IRQ after 2nd overrun", qspi_irq_o, 1'b1);
     end
 
     // =========================================================================

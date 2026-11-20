@@ -725,14 +725,14 @@ The UART controller exposes one bus interface:
 \subsubsection{Related Sections of this Spec}
 \begin{itemize}
   \item UART functional description starting with Section~\ref{subsec:uartfunc01}.
-  \item Interrupt and DMA Concept in Chapter ``Architecture Concepts''.
+  \item Interrupt Concept, Section~\ref{sec:archirq} (Architecture Concepts); UART0 is the case ``different IRQs'', Section~\ref{subsubsec:archirqdiff}.
   \item Peripheral Architecture Concept in Chapter ``Architecture Concepts'':
   \begin{itemize}
     \item Slave WB (Wishbone) BPI.
     \item Peripheral ID Registers.
     \item Peripheral Clocking Concept.
-    \item Horizontal Interrupt and DMA Register Structure.
-    \item Basic Interrupt and DMA Register Set.
+    \item Interrupt Register Structure, Section~\ref{subsec:archirqstruct}.
+    \item Interrupt Flow, Section~\ref{subsec:archirqflow}, and Register Description, Section~\ref{subsec:archirqregs}.
     \item Synchronization Block.
     \item Standardized Flip-Flop based FIFO.
     \item TX-FIFO Registers.
@@ -1097,6 +1097,7 @@ Table~\ref{tab:asUartPer06b} shows the interrupt service requests of UART0.
 RIS, IMSC, MIS, ICR and ISR are implemented by the shared block
 \texttt{as\_irq\_peripheral} (instance \texttt{u\_irq}, \texttt{irqs\_yes\_no}\,=\,0,
 seven event pulses on \texttt{irq\_other\_i}); see also the GPIO0 interrupt
-registers in Section~\ref{subsec:gpioirqregs}. ICR and ISR are write strobes and
+registers in Section~\ref{subsec:gpioirqregs} and the generic description in
+Section~\ref{sec:archirq}. ICR and ISR are write strobes and
 are not stored. If an event and an ICR write hit the same bit in the same cycle,
 the bit stays set (UART-IR-008).

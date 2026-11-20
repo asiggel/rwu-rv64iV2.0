@@ -25,6 +25,7 @@
 //   0x28  DUMMY_REG  rw   [5:0] dummy cycles
 //   0x30  CLKDIV_REG rw   [7:0] SCK divider
 //   0x38  TIMEOUT_REG rw  [31:0] timeout counter
+//   0x40..0x60: interrupt registers, implemented by as_irq_peripheral (u_irq)
 //   0x40  ISR        wo   Interrupt Set Register   (w1→set RIS)
 //   0x48  RIS        ro   Raw Interrupt Status     [4]=TO,[3]=ERR,[2]=TXHALF,[1]=RXHALF,[0]=DONE
 //   0x50  IMSC       rw   Interrupt Mask Control
@@ -32,10 +33,11 @@
 //   0x60  ICR        wo   Interrupt Clear Register (w1→clear RIS)
 //   0x68  RXDATA     ro   Pop from RX FIFO
 //   0x70  TXDATA     wo   Push to TX FIFO
-//   0x78  FIFOSTAT   ro   [28:24]=rx_level, [20]=rx_full, [19]=rx_half,
-//                          [12:8]=tx_level,  [4]=tx_full, [3]=tx_half
+//   0x78  FIFOSTAT   ro   [25]=rx_full, [24]=rx_half, [20:16]=rx_level,
+//                          [9]=tx_full,  [8]=tx_half, [4:0]=tx_level
 //   0x80  XIPMODE    rw   [7:0] XIP mode byte
 //   0x88  STATUS     ro   [4]=timeout,[3]=error,[2]=xip_active,[1]=done,[0]=busy
+// Reserved bits of the rw registers are not stored and read as 0.
 // =============================================================================
 `timescale 1ns/1ps
 
@@ -74,10 +76,11 @@ module as_qspi_top #(
   output logic        qspi_irq_o
 );
 
-  // ---------------------------------------------------------------------------
-  // QSPI register map: byte offsets and reset values
+  // ===========================================================================
+  // 1. localparams / typedefs
+  // ===========================================================================
+  // QSPI register map: byte offsets and reset values.
   // Defined locally so this module compiles with any as_pack.sv variant.
-  // ---------------------------------------------------------------------------
   localparam int OFF_ID      =   0;
   localparam int OFF_CTRL    =   8;
   localparam int OFF_CMD     =  16;
@@ -107,59 +110,45 @@ module as_qspi_top #(
   localparam logic [63:0] RST_TIMEOUT = 64'h00000000_00000000;
   localparam logic [63:0] RST_XIPMODE = 64'h00000000_000000A0; // Winbond mode byte
   localparam logic [63:0] RST_IMSC    = 64'h00000000_00000000;
-  localparam logic [63:0] RST_RIS     = 64'h00000000_00000000;
 
-  // ---------------------------------------------------------------------------
+  // Write masks: reserved bits are not stored and read as 0 (spec).
+  // CTRL[3:1] are strobes (START, RX_FLUSH, TX_FLUSH), CTRL[0] is reserved.
+  localparam logic [63:0] MSK_CTRL    = 64'h00000000_00000FF0;
+  localparam logic [63:0] MSK_CMD     = 64'h00000000_000000FF;
+  localparam logic [63:0] MSK_ADDR    = 64'h00000000_FFFFFFFF;
+  localparam logic [63:0] MSK_LEN     = 64'h00000000_0000FFFF;
+  localparam logic [63:0] MSK_DUMMY   = 64'h00000000_0000003F;
+  localparam logic [63:0] MSK_CLKDIV  = 64'h00000000_000000FF;
+  localparam logic [63:0] MSK_TIMEOUT = 64'h00000000_FFFFFFFF;
+  localparam logic [63:0] MSK_XIPMODE = 64'h00000000_000000FF;
+
+  // AXI4 slave FSM: 4 sequential 8-byte kernel transactions per 32-byte
+  // cache-line request (ARLEN=3). Results buffered in axi_buf[], then driven
+  // as R beats.
+  typedef enum logic [2:0] {
+    AXI_IDLE,    // ARREADY=1, waiting for AR handshake
+    AXI_KICK,    // Issue kernel start pulse for sub-transaction [sub_cnt]
+    AXI_WAIT,    // Wait for kernel done (stat_done_s=1)
+    AXI_RXPOP,   // Wait for RX FIFO non-empty, then capture + advance
+    AXI_RESP     // Drive R channel beats from axi_buf[]
+  } axi_st_t;
+
+  // ===========================================================================
+  // 2. Signal declarations
+  // ===========================================================================
   // BPI: Wishbone ↔ internal bus
-  // ---------------------------------------------------------------------------
   logic [QSPI_ADDR_WIDTH-1:0] addr_s;
   logic [reg_width-1:0]       data_wr_s;
   logic [reg_width-1:0]       data_rd_s;
   logic                       wr_s, rd_s;
 
-  as_slave_bpi #(QSPI_ADDR_WIDTH, QSPI_DATA_WIDTH) u_bpi (
-    .rst_i          (rst_i),
-    .clk_i          (clk_i),
-    .addr_o         (addr_s),
-    .dat_from_core_i(data_rd_s),
-    .dat_to_core_o  (data_wr_s),
-    .wr_o           (wr_s),
-    .rd_o           (rd_s),
-    .wb_s_addr_i    (wbdAddr_i),
-    .wb_s_dat_i     (wbdDat_i),
-    .wb_s_dat_o     (wbdDat_o),
-    .wb_s_we_i      (wbdWe_i),
-    .wb_s_sel_i     (wbdSel_i),
-    .wb_s_stb_i     (wbdStb_i),
-    .wb_s_ack_o     (wbdAck_o),
-    .wb_s_cyc_i     (wbdCyc_i)
-  );
-
-  // ---------------------------------------------------------------------------
   // Register write/read strobes
-  // ---------------------------------------------------------------------------
   logic wr_ctrl_s, wr_cmd_s, wr_addr_s, wr_len_s, wr_dummy_s;
-  logic wr_clkdiv_s, wr_timeout_s, wr_xipmode_s, wr_imsc_s;
-  logic wr_isr_s, wr_icr_s, wr_txdata_s;
+  logic wr_clkdiv_s, wr_timeout_s, wr_xipmode_s;
+  logic wr_txdata_s;
   logic rd_rxdata_s;
 
-  assign wr_ctrl_s    = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CTRL));
-  assign wr_cmd_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CMD));
-  assign wr_addr_s    = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_ADDR));
-  assign wr_len_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_LEN));
-  assign wr_dummy_s   = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_DUMMY));
-  assign wr_clkdiv_s  = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CLKDIV));
-  assign wr_timeout_s = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_TIMEOUT));
-  assign wr_xipmode_s = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_XIPMODE));
-  assign wr_imsc_s    = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_IMSC));
-  assign wr_isr_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_ISR));
-  assign wr_icr_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_ICR));
-  assign rd_rxdata_s  = rd_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_RXDATA));
-  assign wr_txdata_s  = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_TXDATA));
-
-  // ---------------------------------------------------------------------------
   // Configuration registers
-  // ---------------------------------------------------------------------------
   logic [reg_width-1:0] id_reg_s;
   logic [reg_width-1:0] ctrl_reg_s;
   logic [reg_width-1:0] cmd_reg_s;
@@ -169,161 +158,79 @@ module as_qspi_top #(
   logic [reg_width-1:0] clkdiv_reg_s;
   logic [reg_width-1:0] timeout_reg_s;
   logic [reg_width-1:0] xipmode_reg_s;
-  logic [reg_width-1:0] imsc_reg_s;
 
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i) id_reg_s <= RST_ID;
-
-  // CTRL: mask out the volatile bits (start[3], rx_flush[2], tx_flush[1]) on write
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)          ctrl_reg_s <= RST_CTRL;
-    else if (wr_ctrl_s) ctrl_reg_s <= data_wr_s & ~64'h0E;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)         cmd_reg_s <= RST_CMD;
-    else if (wr_cmd_s) cmd_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)          addr_reg_s <= RST_ADDR;
-    else if (wr_addr_s) addr_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)         len_reg_s <= RST_LEN;
-    else if (wr_len_s) len_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)           dummy_reg_s <= RST_DUMMY;
-    else if (wr_dummy_s) dummy_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)            clkdiv_reg_s <= RST_CLKDIV;
-    else if (wr_clkdiv_s) clkdiv_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)             timeout_reg_s <= RST_TIMEOUT;
-    else if (wr_timeout_s) timeout_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)             xipmode_reg_s <= RST_XIPMODE;
-    else if (wr_xipmode_s) xipmode_reg_s <= data_wr_s;
-
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i)          imsc_reg_s <= RST_IMSC;
-    else if (wr_imsc_s) imsc_reg_s <= data_wr_s;
-
-  // ---------------------------------------------------------------------------
-  // CTRL decode for kernel
-  // ---------------------------------------------------------------------------
+  // CTRL decode, start and flush
   qspi_ctrl_t ctrl_k_s;
-  assign ctrl_k_s = qspi_ctrl_t'(ctrl_reg_s[11:4]);
+  logic       wb_start_r;      // one cycle after a CTRL[3] write
+  logic       tx_flush_s, rx_flush_s;
 
-  // Wishbone start pulse: one cycle after CTRL[3] write
-  logic wb_start_r;
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i) wb_start_r <= 1'b0;
-    else        wb_start_r <= wr_ctrl_s && data_wr_s[3];
-
-  // TX/RX flush: combinatorial, active during the write cycle
-  logic tx_flush_s, rx_flush_s;
-  assign tx_flush_s = wr_ctrl_s && data_wr_s[1];
-  assign rx_flush_s = wr_ctrl_s && data_wr_s[2];
-
-  // ---------------------------------------------------------------------------
   // TX FIFO
-  // ---------------------------------------------------------------------------
   logic        tx_full_s, tx_empty_s, tx_half_s;
   logic [63:0] tx_data_rd_s;
   logic        tx_rd_kernel_s;
   logic [$clog2(FIFO_DEPTH):0] tx_level_s;
 
-  as_fifo #(.DATA_WIDTH(64), .FIFO_DEPTH(FIFO_DEPTH)) u_txfifo (
-    .rst_i         (rst_i),
-    .clk_i         (clk_i),
-    .flush_i       (tx_flush_s),
-    .wr_en_i       (wr_txdata_s && !tx_full_s),
-    .data_wr_i     (data_wr_s),
-    .full_o        (tx_full_s),
-    .almost_full_o (),
-    .half_full_o   (),
-    .rd_en_i       (tx_rd_kernel_s),
-    .data_rd_o     (tx_data_rd_s),
-    .empty_o       (tx_empty_s),
-    .almost_empty_o(),
-    .half_empty_o  (tx_half_s),
-    .level_o       (tx_level_s)
-  );
-
-  // ---------------------------------------------------------------------------
   // RX FIFO + 2-cycle write pipeline (NBA timing fix for rx_shift_r)
-  // ---------------------------------------------------------------------------
   logic        rx_full_s, rx_empty_s, rx_half_s;
   logic [63:0] rx_data_rd_s;
   logic        rx_wr_kernel_s;
   logic [63:0] rx_data_kernel_s;
   logic [$clog2(FIFO_DEPTH):0] rx_level_s;
-
   logic        rx_wr_d1, rx_wr_d2;
   logic [63:0] rx_data_snap;
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      rx_wr_d1     <= 1'b0;
-      rx_wr_d2     <= 1'b0;
-      rx_data_snap <= '0;
-    end else begin
-      rx_wr_d1 <= rx_wr_kernel_s;
-      rx_wr_d2 <= rx_wr_d1;
-      if (rx_wr_d1) rx_data_snap <= rx_data_kernel_s;
-    end
-  end
-
   // rx_pop_r: delayed read-pointer advance for both WB and AXI4 consumers.
   // AXI4 pops when in AXI_RXPOP state and FIFO is not empty.
   // WB pops one cycle after the bus read of RXDATA.
-  logic rx_pop_r;
+  logic        rx_pop_r;
 
-  as_fifo #(.DATA_WIDTH(64), .FIFO_DEPTH(FIFO_DEPTH)) u_rxfifo (
-    .rst_i         (rst_i),
-    .clk_i         (clk_i),
-    .flush_i       (rx_flush_s),
-    .wr_en_i       (rx_wr_d2),
-    .data_wr_i     (rx_data_snap),
-    .full_o        (rx_full_s),
-    .almost_full_o (),
-    .half_full_o   (rx_half_s),
-    .rd_en_i       (rx_pop_r),
-    .data_rd_o     (rx_data_rd_s),
-    .empty_o       (rx_empty_s),
-    .almost_empty_o(),
-    .half_empty_o  (),
-    .level_o       (rx_level_s)
-  );
-
-  // ---------------------------------------------------------------------------
   // AXI4 slave FSM
-  // ---------------------------------------------------------------------------
-  // Performs 4 sequential 8-byte kernel transactions per 32-byte cache-line
-  // request (ARLEN=3). Results buffered in axi_buf[], then driven as R beats.
-  // ---------------------------------------------------------------------------
-  typedef enum logic [2:0] {
-    AXI_IDLE,    // ARREADY=1, waiting for AR handshake
-    AXI_KICK,    // Issue kernel start pulse for sub-transaction [sub_cnt]
-    AXI_WAIT,    // Wait for kernel done (stat_done_s=1)
-    AXI_RXPOP,   // Wait for RX FIFO non-empty, then capture + advance
-    AXI_RESP     // Drive R channel beats from axi_buf[]
-  } axi_st_t;
-
   axi_st_t     axi_st;
   logic [31:0] axi_araddr_r;   // captured ARADDR
   logic [3:0]  axi_arid_r;     // captured ARID, echoed on R channel
   logic [1:0]  axi_sub_cnt;    // 0..3: index of current 8-byte sub-transaction
   logic [1:0]  axi_beat_cnt;   // 0..3: index of current R channel beat
   logic [63:0] axi_buf [4];    // receive buffer for 4×8-byte words
+  logic        axi_active;
+  logic        axi_start_s;    // high for exactly one cycle (AXI_KICK)
+  logic        axi_rxpop_s;
 
-  logic axi_active;
-  assign axi_active = (axi_st != AXI_IDLE);
+  // Kernel interface
+  logic [31:0] kernel_addr_s;
+  logic [15:0] kernel_len_s;
+  logic        stat_busy_s, stat_done_s, stat_error_s, stat_timeout_s, xip_active_s;
 
-  // Forward declarations: used in ARREADY assign and AXI FSM before QSPI kernel section
-  logic stat_busy_s, stat_done_s, stat_error_s, stat_timeout_s, xip_active_s;
+  // Interrupt logic: RIS[0]=DONE, [1]=RXHALF, [2]=TXHALF, [3]=ERROR, [4]=TIMEOUT
+  logic stat_done_d, rx_half_d, tx_half_d, stat_error_d, stat_timeout_d;
+  logic done_pulse, rxhalf_pulse, txhalf_pulse, error_pulse, timeout_pulse;
+  logic [4:0]           irq_ev_s;   // one-cycle event pulses -> RIS[4:0]
+  logic [reg_width-1:0] irq_rd_s;   // read data of the interrupt registers
+
+  // STATUS and FIFOSTAT
+  logic [reg_width-1:0] status_s, fifostat_s;
+
+  // ===========================================================================
+  // 3. assign statements
+  // ===========================================================================
+  assign wr_ctrl_s    = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CTRL));
+  assign wr_cmd_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CMD));
+  assign wr_addr_s    = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_ADDR));
+  assign wr_len_s     = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_LEN));
+  assign wr_dummy_s   = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_DUMMY));
+  assign wr_clkdiv_s  = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_CLKDIV));
+  assign wr_timeout_s = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_TIMEOUT));
+  assign wr_xipmode_s = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_XIPMODE));
+  assign rd_rxdata_s  = rd_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_RXDATA));
+  assign wr_txdata_s  = wr_s && (addr_s == QSPI_ADDR_WIDTH'(OFF_TXDATA));
+
+  assign ctrl_k_s = qspi_ctrl_t'(ctrl_reg_s[11:4]);
+
+  // Flush is combinatorial, active during the write cycle
+  assign tx_flush_s = wr_ctrl_s && data_wr_s[1];
+  assign rx_flush_s = wr_ctrl_s && data_wr_s[2];
+
+  assign axi_active  = (axi_st != AXI_IDLE);
+  assign axi_start_s = (axi_st == AXI_KICK);
+  assign axi_rxpop_s = (axi_st == AXI_RXPOP) && !rx_empty_s;
 
   // AW / W / B channels: read-only slave → safe idle
   assign axi4_if.awready = 1'b0;
@@ -342,6 +249,117 @@ module as_qspi_top #(
   assign axi4_if.rresp  = 2'b00;   // OKAY
   assign axi4_if.rlast  = (axi_beat_cnt == 2'd3);
 
+  // Kernel addr/len mux: AXI4 overrides addr and len for each sub-transaction.
+  // SW must pre-configure CMD_REG=0x6B, CTRL.quad=1, DUMMY_REG, CLKDIV_REG.
+  assign kernel_addr_s = axi_active
+    ? (axi_araddr_r + {27'd0, axi_sub_cnt, 3'd0})  // ARADDR + sub_cnt*8
+    : addr_reg_s[31:0];
+  assign kernel_len_s  = axi_active ? 16'd8 : len_reg_s[15:0];
+
+  assign done_pulse    = stat_done_s    & ~stat_done_d;
+  assign rxhalf_pulse  = rx_half_s      & ~rx_half_d;
+  assign txhalf_pulse  = tx_half_s      & ~tx_half_d;
+  assign error_pulse   = stat_error_s   & ~stat_error_d;
+  assign timeout_pulse = stat_timeout_s & ~stat_timeout_d;
+  assign irq_ev_s = {timeout_pulse, error_pulse, txhalf_pulse, rxhalf_pulse, done_pulse};
+
+  assign status_s  = {59'b0, stat_timeout_s, stat_error_s,
+                      xip_active_s, stat_done_s, stat_busy_s};
+
+  assign fifostat_s = {reg_width{1'b0}}
+    | (64'(rx_full_s)  << 25)
+    | (64'(rx_half_s)  << 24)
+    | (64'(rx_level_s) << 16)
+    | (64'(tx_full_s)  <<  9)
+    | (64'(tx_half_s)  <<  8)
+    | (64'(tx_level_s));
+
+  // ===========================================================================
+  // 4. always_comb: Wishbone read multiplexer
+  // ===========================================================================
+  always_comb begin
+    case (addr_s)
+      QSPI_ADDR_WIDTH'(OFF_ID)      : data_rd_s = id_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_CTRL)    : data_rd_s = ctrl_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_CMD)     : data_rd_s = cmd_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_ADDR)    : data_rd_s = addr_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_LEN)     : data_rd_s = len_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_DUMMY)   : data_rd_s = dummy_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_CLKDIV)  : data_rd_s = clkdiv_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_TIMEOUT) : data_rd_s = timeout_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_RXDATA)  : data_rd_s = rx_empty_s ? '0 : rx_data_rd_s;
+      QSPI_ADDR_WIDTH'(OFF_TXDATA)  : data_rd_s = '0;   // write-only
+      QSPI_ADDR_WIDTH'(OFF_FIFOSTAT): data_rd_s = fifostat_s;
+      QSPI_ADDR_WIDTH'(OFF_XIPMODE) : data_rd_s = xipmode_reg_s;
+      QSPI_ADDR_WIDTH'(OFF_STATUS)  : data_rd_s = status_s;
+      // ISR, RIS, IMSC, MIS, ICR (as_irq_peripheral returns 0 for all other addresses)
+      default                       : data_rd_s = irq_rd_s;
+    endcase
+  end
+
+  // ===========================================================================
+  // 5. always_ff blocks
+  // ===========================================================================
+  // Configuration registers
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i) id_reg_s <= RST_ID;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)          ctrl_reg_s <= RST_CTRL;
+    else if (wr_ctrl_s) ctrl_reg_s <= data_wr_s & MSK_CTRL;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)         cmd_reg_s <= RST_CMD;
+    else if (wr_cmd_s) cmd_reg_s <= data_wr_s & MSK_CMD;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)          addr_reg_s <= RST_ADDR;
+    else if (wr_addr_s) addr_reg_s <= data_wr_s & MSK_ADDR;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)         len_reg_s <= RST_LEN;
+    else if (wr_len_s) len_reg_s <= data_wr_s & MSK_LEN;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)           dummy_reg_s <= RST_DUMMY;
+    else if (wr_dummy_s) dummy_reg_s <= data_wr_s & MSK_DUMMY;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)            clkdiv_reg_s <= RST_CLKDIV;
+    else if (wr_clkdiv_s) clkdiv_reg_s <= data_wr_s & MSK_CLKDIV;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)             timeout_reg_s <= RST_TIMEOUT;
+    else if (wr_timeout_s) timeout_reg_s <= data_wr_s & MSK_TIMEOUT;
+
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i)             xipmode_reg_s <= RST_XIPMODE;
+    else if (wr_xipmode_s) xipmode_reg_s <= data_wr_s & MSK_XIPMODE;
+
+  // Wishbone start pulse
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i) wb_start_r <= 1'b0;
+    else        wb_start_r <= wr_ctrl_s && data_wr_s[3];
+
+  // RX FIFO write pipeline
+  always_ff @(posedge clk_i, posedge rst_i) begin
+    if (rst_i) begin
+      rx_wr_d1     <= 1'b0;
+      rx_wr_d2     <= 1'b0;
+      rx_data_snap <= '0;
+    end else begin
+      rx_wr_d1 <= rx_wr_kernel_s;
+      rx_wr_d2 <= rx_wr_d1;
+      if (rx_wr_d1) rx_data_snap <= rx_data_kernel_s;
+    end
+  end
+
+  // RX FIFO pop: serves both WB (delayed by 1 cycle) and AXI4 (in RXPOP state)
+  always_ff @(posedge clk_i, posedge rst_i)
+    if (rst_i) rx_pop_r <= 1'b0;
+    else       rx_pop_r <= (rd_rxdata_s && !rx_empty_s) || axi_rxpop_s;
+
+  // AXI4 slave FSM
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i) begin
       axi_st       <= AXI_IDLE;
@@ -401,30 +419,78 @@ module as_qspi_top #(
     end
   end
 
-  // AXI4 start pulse: high for exactly one cycle (the AXI_KICK cycle).
-  logic axi_start_s;
-  assign axi_start_s = (axi_st == AXI_KICK);
+  // Edge detectors for the interrupt events
+  always_ff @(posedge clk_i, posedge rst_i) begin
+    if (rst_i) begin
+      stat_done_d    <= 1'b0;
+      rx_half_d      <= 1'b0;
+      tx_half_d      <= 1'b0;
+      stat_error_d   <= 1'b0;
+      stat_timeout_d <= 1'b0;
+    end else begin
+      stat_done_d    <= stat_done_s;
+      rx_half_d      <= rx_half_s;
+      tx_half_d      <= tx_half_s;
+      stat_error_d   <= stat_error_s;
+      stat_timeout_d <= stat_timeout_s;
+    end
+  end
 
-  // Kernel addr/len mux: AXI4 overrides addr and len for each sub-transaction.
-  // SW must pre-configure CMD_REG=0x6B, CTRL.quad=1, DUMMY_REG, CLKDIV_REG.
-  logic [31:0] kernel_addr_s;
-  logic [15:0] kernel_len_s;
-  assign kernel_addr_s = axi_active
-    ? (axi_araddr_r + {27'd0, axi_sub_cnt, 3'd0})  // ARADDR + sub_cnt*8
-    : addr_reg_s[31:0];
-  assign kernel_len_s  = axi_active ? 16'd8 : len_reg_s[15:0];
+  // ===========================================================================
+  // 7. Module instantiations
+  // ===========================================================================
+  as_slave_bpi #(QSPI_ADDR_WIDTH, QSPI_DATA_WIDTH) u_bpi (
+    .rst_i          (rst_i),
+    .clk_i          (clk_i),
+    .addr_o         (addr_s),
+    .dat_from_core_i(data_rd_s),
+    .dat_to_core_o  (data_wr_s),
+    .wr_o           (wr_s),
+    .rd_o           (rd_s),
+    .wb_s_addr_i    (wbdAddr_i),
+    .wb_s_dat_i     (wbdDat_i),
+    .wb_s_dat_o     (wbdDat_o),
+    .wb_s_we_i      (wbdWe_i),
+    .wb_s_sel_i     (wbdSel_i),
+    .wb_s_stb_i     (wbdStb_i),
+    .wb_s_ack_o     (wbdAck_o),
+    .wb_s_cyc_i     (wbdCyc_i)
+  );
 
-  // RX FIFO pop: extended to serve both WB (delayed by 1 cycle) and AXI4 (in RXPOP state).
-  logic axi_rxpop_s;
-  assign axi_rxpop_s = (axi_st == AXI_RXPOP) && !rx_empty_s;
+  as_fifo #(.DATA_WIDTH(64), .FIFO_DEPTH(FIFO_DEPTH)) u_txfifo (
+    .rst_i         (rst_i),
+    .clk_i         (clk_i),
+    .flush_i       (tx_flush_s),
+    .wr_en_i       (wr_txdata_s && !tx_full_s),
+    .data_wr_i     (data_wr_s),
+    .full_o        (tx_full_s),
+    .almost_full_o (),
+    .half_full_o   (),
+    .rd_en_i       (tx_rd_kernel_s),
+    .data_rd_o     (tx_data_rd_s),
+    .empty_o       (tx_empty_s),
+    .almost_empty_o(),
+    .half_empty_o  (tx_half_s),
+    .level_o       (tx_level_s)
+  );
 
-  always_ff @(posedge clk_i, posedge rst_i)
-    if (rst_i) rx_pop_r <= 1'b0;
-    else       rx_pop_r <= (rd_rxdata_s && !rx_empty_s) || axi_rxpop_s;
+  as_fifo #(.DATA_WIDTH(64), .FIFO_DEPTH(FIFO_DEPTH)) u_rxfifo (
+    .rst_i         (rst_i),
+    .clk_i         (clk_i),
+    .flush_i       (rx_flush_s),
+    .wr_en_i       (rx_wr_d2),
+    .data_wr_i     (rx_data_snap),
+    .full_o        (rx_full_s),
+    .almost_full_o (),
+    .half_full_o   (rx_half_s),
+    .rd_en_i       (rx_pop_r),
+    .data_rd_o     (rx_data_rd_s),
+    .empty_o       (rx_empty_s),
+    .almost_empty_o(),
+    .half_empty_o  (),
+    .level_o       (rx_level_s)
+  );
 
-  // ---------------------------------------------------------------------------
-  // QSPI kernel instantiation
-  // ---------------------------------------------------------------------------
   as_qspi u_qspi (
     .rst_i          (rst_i),
     .clk_i          (clk_i),
@@ -453,108 +519,32 @@ module as_qspi_top #(
     .data_io        (data_io)
   );
 
-  // ---------------------------------------------------------------------------
-  // Interrupt logic
-  // RIS[0]=DONE, [1]=RXHALF, [2]=TXHALF, [3]=ERROR, [4]=TIMEOUT
-  // ---------------------------------------------------------------------------
-  logic [reg_width-1:0] ris_reg_s;
-  logic [reg_width-1:0] mis_reg_s;
-
-  logic stat_done_d, rx_half_d, tx_half_d, stat_error_d, stat_timeout_d;
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      stat_done_d    <= 1'b0;
-      rx_half_d      <= 1'b0;
-      tx_half_d      <= 1'b0;
-      stat_error_d   <= 1'b0;
-      stat_timeout_d <= 1'b0;
-    end else begin
-      stat_done_d    <= stat_done_s;
-      rx_half_d      <= rx_half_s;
-      tx_half_d      <= tx_half_s;
-      stat_error_d   <= stat_error_s;
-      stat_timeout_d <= stat_timeout_s;
-    end
-  end
-
-  wire done_pulse    = stat_done_s    & ~stat_done_d;
-  wire rxhalf_pulse  = rx_half_s      & ~rx_half_d;
-  wire txhalf_pulse  = tx_half_s      & ~tx_half_d;
-  wire error_pulse   = stat_error_s   & ~stat_error_d;
-  wire timeout_pulse = stat_timeout_s & ~stat_timeout_d;
-
-  always_ff @(posedge clk_i, posedge rst_i) begin
-    if (rst_i) begin
-      ris_reg_s <= RST_RIS;
-    end else begin
-      if      (wr_icr_s && data_wr_s[0]) ris_reg_s[0] <= 1'b0;
-      else if (wr_isr_s && data_wr_s[0]) ris_reg_s[0] <= 1'b1;
-      else if (done_pulse)               ris_reg_s[0] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[1]) ris_reg_s[1] <= 1'b0;
-      else if (wr_isr_s && data_wr_s[1]) ris_reg_s[1] <= 1'b1;
-      else if (rxhalf_pulse)             ris_reg_s[1] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[2]) ris_reg_s[2] <= 1'b0;
-      else if (wr_isr_s && data_wr_s[2]) ris_reg_s[2] <= 1'b1;
-      else if (txhalf_pulse)             ris_reg_s[2] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[3]) ris_reg_s[3] <= 1'b0;
-      else if (wr_isr_s && data_wr_s[3]) ris_reg_s[3] <= 1'b1;
-      else if (error_pulse)              ris_reg_s[3] <= 1'b1;
-
-      if      (wr_icr_s && data_wr_s[4]) ris_reg_s[4] <= 1'b0;
-      else if (wr_isr_s && data_wr_s[4]) ris_reg_s[4] <= 1'b1;
-      else if (timeout_pulse)            ris_reg_s[4] <= 1'b1;
-
-      ris_reg_s[reg_width-1:5] <= '0;
-    end
-  end
-
-  assign mis_reg_s  = ris_reg_s & imsc_reg_s;
-  assign qspi_irq_o = |mis_reg_s;
-
-  // ---------------------------------------------------------------------------
-  // STATUS and FIFOSTAT (combinatorial)
-  // ---------------------------------------------------------------------------
-  logic [reg_width-1:0] status_s, fifostat_s;
-
-  assign status_s  = {59'b0, stat_timeout_s, stat_error_s,
-                      xip_active_s, stat_done_s, stat_busy_s};
-
-  assign fifostat_s = {reg_width{1'b0}}
-    | (64'(rx_full_s)  << 25)
-    | (64'(rx_half_s)  << 24)
-    | (64'(rx_level_s) << 16)
-    | (64'(tx_full_s)  <<  9)
-    | (64'(tx_half_s)  <<  8)
-    | (64'(tx_level_s));
-
-  // ---------------------------------------------------------------------------
-  // Wishbone read multiplexer
-  // ---------------------------------------------------------------------------
-  always_comb begin
-    case (addr_s)
-      QSPI_ADDR_WIDTH'(OFF_ID)      : data_rd_s = id_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_CTRL)    : data_rd_s = ctrl_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_CMD)     : data_rd_s = cmd_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_ADDR)    : data_rd_s = addr_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_LEN)     : data_rd_s = len_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_DUMMY)   : data_rd_s = dummy_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_CLKDIV)  : data_rd_s = clkdiv_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_TIMEOUT) : data_rd_s = timeout_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_ISR)     : data_rd_s = '0;   // write-only
-      QSPI_ADDR_WIDTH'(OFF_RIS)     : data_rd_s = ris_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_IMSC)    : data_rd_s = imsc_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_MIS)     : data_rd_s = mis_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_ICR)     : data_rd_s = '0;   // write-only
-      QSPI_ADDR_WIDTH'(OFF_RXDATA)  : data_rd_s = rx_empty_s ? '0 : rx_data_rd_s;
-      QSPI_ADDR_WIDTH'(OFF_TXDATA)  : data_rd_s = '0;   // write-only
-      QSPI_ADDR_WIDTH'(OFF_FIFOSTAT): data_rd_s = fifostat_s;
-      QSPI_ADDR_WIDTH'(OFF_XIPMODE) : data_rd_s = xipmode_reg_s;
-      QSPI_ADDR_WIDTH'(OFF_STATUS)  : data_rd_s = status_s;
-      default                       : data_rd_s = '0;
-    endcase
-  end
+  // Shared interrupt register block (Spec: Architecture Concepts, Interrupt
+  // Concept, case "different IRQs"). Set wins over clear: an event in the
+  // same cycle as an ICR write of the same bit is not lost.
+  as_irq_peripheral #(
+    .addr_width     (QSPI_ADDR_WIDTH),
+    .data_width     (reg_width),
+    .nr_other_irqs  (5),
+    .nr_same_irqs   (1),
+    .irqs_yes_no    (0),
+    .reg_imsc_rst   (RST_IMSC),
+    .addr_offs_imsc (OFF_IMSC),
+    .addr_offs_ris  (OFF_RIS),
+    .addr_offs_isr  (OFF_ISR),
+    .addr_offs_icr  (OFF_ICR),
+    .addr_offs_mis  (OFF_MIS)
+  ) u_irq (
+    .rst_i      (rst_i),
+    .clk_i      (clk_i),
+    .en_i       (wr_s),
+    .irq_other_i(irq_ev_s),
+    .irq_same_i (1'b0),
+    .addr_i     (addr_s),
+    .data_i     (data_wr_s),
+    .data_o     (irq_rd_s),
+    .ris_o      (),
+    .irq_o      (qspi_irq_o)
+  );
 
 endmodule : as_qspi_top

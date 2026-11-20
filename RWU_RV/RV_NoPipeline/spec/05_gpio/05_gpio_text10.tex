@@ -64,7 +64,7 @@ Identification register of this peripheral. A write will have no effect, a read 
 
 \subsubsection{Interrupt Registers}
 \label{subsec:gpioirqregs}
-The interrupt registers are implemented by the shared block \texttt{as\_irq\_peripheral} (\texttt{ip\_irqper/src}), which is also used by UART0. GPIO0 instantiates it with irqs\_yes\_no\,=\,1, i.e.\ with the additional source registers IRQSS, IRQSM and IRQSC for the eight interrupts of the same type (one per pin). The kernel delivers a one-clock-cycle pulse per detected edge.
+The interrupt registers are implemented by the shared block \texttt{as\_irq\_peripheral} (\texttt{ip\_irqper/src}), which is also used by UART0. GPIO0 instantiates it with irqs\_yes\_no\,=\,1, i.e.\ with the additional source registers IRQSS, IRQSM and IRQSC for the eight interrupts of the same type (one per pin). The kernel delivers a one-clock-cycle pulse per detected edge. The structure, the interrupt flow and the generic register description are given in Section~\ref{sec:archirq}.
 
 \begin{table}[H]
 \caption{GPIO0 Interrupt Registers}
