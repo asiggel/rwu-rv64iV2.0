@@ -38,8 +38,7 @@ ICU-SR: spare sources & SR-001 & High & Testbench &
 \hline
 ICU-SR: existing peripherals & SR-002 & High & Testbench &
   The ICU shall accept one interrupt input per existing
-  interrupt-capable peripheral (GPIO0, UART0, and -- on
-  \textit{RV\_PipelineCacheFwd} -- QSPI0), plus the spares from SR-001. &
+  interrupt-capable peripheral (GPIO0, UART0), plus the spares from SR-001. &
   Explicitly requested. \\
 \hline
 ICU-SR: slot count & SR-003 & High & RTL Review &
@@ -179,7 +178,6 @@ ICU-HW: shared design & HW-003 & High & Regression &
 ICU-HW: no internal CDC & HW-004 & Medium & RTL Review &
   The ICU shall perform no cross-clock-domain synchronization; all
   connected sources shall already be synchronous to clk\_i. &
-  True for GPIO0/QSPI0/UART0/CPU today (all on clk\_div\_s on both
-  chips); documented as an explicit assumption for future sources. \\
+  True for GPIO0/UART0/CPU today (all on clk\_div\_s); documented as an explicit assumption for future sources. \\
 \hline
 \end{longtable}

@@ -17,20 +17,23 @@
 % Pfade %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %\newcommand{\ASROOT}{/media/andreas/arbeit/neuestruktur/hs_vorlesungen/}
 %\newcommand{\UMGEBUNG}{\ASROOT latex/}
-\newcommand{\UMGEBUNG}{./}
-\newcommand{\BILDERa}{./}
+\newcommand{\COMMON}{../../spec_common/}
+\newcommand{\UMGEBUNG}{\COMMON}
+\newcommand{\BILDERa}{\COMMON}
 \newcommand{\TEXTa}{./}
 \newcommand{\TEXTprod}{./02_prod/}
 \newcommand{\TEXTarch}{./03_arch/}
-\newcommand{\TEXTalu}{./04_alu/}
-\newcommand{\TEXTdec}{./04_dec/}
-\newcommand{\TEXTmems}{./04_memsyst/}
-\newcommand{\TEXTgpio}{./05_gpio/}
+\newcommand{\TEXTarchc}{\COMMON 03_arch/}
+\newcommand{\TEXTalu}{\COMMON 04_alu/}
+\newcommand{\TEXTdec}{\COMMON 04_dec/}
+\newcommand{\TEXTgpio}{\COMMON 05_gpio/}
+\newcommand{\TEXTuart}{\COMMON 05_uart/}
+\newcommand{\TEXTicu}{\COMMON 05_icu/}
 \newcommand{\TEXTimem}{./05_imem/}
-\newcommand{\TEXTqspi}{./05_qspi/}
-\newcommand{\TEXTuart}{./05_uart/}
-\newcommand{\TEXTicu}{./05_icu/}
-\newcommand{\TEXTmcnn}{./06_mcnn/}
+% Variant switch: text in \onlyA{} appears only in this (Variant A) spec
+\newcommand{\onlyA}[1]{#1}
+\newcommand{\onlyB}[1]{}
+\newcommand{\asvariant}{Variant A -- RV\_NoPipeline}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -52,138 +55,11 @@
                      natbib=true,
                      hyperref=true,
                      maxnames=4]{biblatex}
-\addbibresource{./as_literature.bib} %% Einbinden der bib-Datei
+\addbibresource{../../spec_common/as_literature.bib} %% Einbinden der bib-Datei
 \DeclareBibliographyCategory{cited}
 \AtEveryCitekey{\addtocategory{cited}{\thefield{entrykey}}}
 
-% Block names
-\newcommand{\asrvi}{\textbf{RV64I}\,}
-\newcommand{\aschip}{\textbf{RWU-RV64I}\,}
-\newcommand{\asimem}{\textbf{I-Mem0}\,}
-\newcommand{\asimemg}{\textbf{I-Mem}\,}
-
-% Pin names, signal names
-\newcommand{\asgpioPinInt}{gpio\_io\,}
-\newcommand{\asgpioPinExt}{gpio\_io\,}
-\newcommand{\asgpioIRQ}{GPIO\_INT\,}
-\newcommand{\asimemAddrPinInt}{addr\_i\,}
-\newcommand{\asimemAddrPinExt}{iBusAddr2\_s\,}
-\newcommand{\asimemDatoPinInt}{data\_o\,}
-\newcommand{\asimemDatoPinExt}{iBusDataRd\_s\,}
-\newcommand{\asimemDatiPinInt}{data\_i\,}
-\newcommand{\asimemDatiPinExt}{iBusDataWr\_s\,}
-\newcommand{\asimemWePinInt}{wr\_i\,}
-\newcommand{\asimemWePinExt}{iMemWr\_s\,}
-\newcommand{\asqspiSCK}{qspiSck\_o\,}
-\newcommand{\asqspiCS}{qspiCs\_o\,}
-\newcommand{\asqspiData}{qspi\_data\_io\,}
-
-% Registers
-% GPIO
-\newcommand{\asgpioDirRegInt}{dir\_reg\_s }
-\newcommand{\asgpioDirRegExt}{\textbf{GPIO0\_DIR}\,}
-\newcommand{\asgpioDatRegInt}{data\_reg\_s\,}
-\newcommand{\asgpioDatRegExt}{\textbf{GPIO0\_DATA}\,}
-\newcommand{\asgpioIRQSSRegInt}{gpioIrq.irqss\_r\,}
-\newcommand{\asgpioIRQSSRegExt}{\textbf{GPIO0\_IRQSS}\,}
-\newcommand{\asgpioIRQSCRegInt}{gpioIrq.g\_same\_irqs.wr\_irqsc\_s\,}
-\newcommand{\asgpioIRQSCRegExt}{\textbf{GPIO0\_IRQSC}\,}
-\newcommand{\asgpioIRQSMRegInt}{gpioIrq.irqsm\_r\,}
-\newcommand{\asgpioIRQSMRegExt}{\textbf{GPIO0\_IRQSM}\,}
-\newcommand{\asgpioRISRegInt}{gpioIrq.ris\_s\,}
-\newcommand{\asgpioRISRegExt}{\textbf{GPIO0\_RIS}\,}
-\newcommand{\asgpioISRRegInt}{gpioIrq.wr\_isr\_s\,}
-\newcommand{\asgpioISRRegExt}{\textbf{GPIO0\_ISR}\,}
-\newcommand{\asgpioIMSCRegInt}{gpioIrq.imsc\_r\,}
-\newcommand{\asgpioIMSCRegExt}{\textbf{GPIO0\_IMSC}\,}
-\newcommand{\asgpioMISRegInt}{gpioIrq.mis\_s\,}
-\newcommand{\asgpioMISRegExt}{\textbf{GPIO0\_MIS}\,}
-\newcommand{\asgpioICRRegInt}{gpioIrq.wr\_icr\_s\,}
-\newcommand{\asgpioICRRegExt}{\textbf{GPIO0\_ICR}\,}
-\newcommand{\asgpioIDRegInt}{id\_reg\_s\,}
-\newcommand{\asgpioIDRegExt}{\textbf{GPIO0\_ID}\,}
-
-% CGU
-\newcommand{\ascguIDRegInt}{id\_reg\_s\,}
-\newcommand{\ascguIDRegExt}{\textbf{CGU\_ID}\,}
-
-% QSPI
-\newcommand{\asqspiCtrlRegInt}{ctrl\_reg\_s }
-\newcommand{\asqspiCtrlRegExt}{\textbf{QSPI0\_CTRL}\,}
-\newcommand{\asqspiCmdRegInt}{cmd\_reg\_s\,}
-\newcommand{\asqspiCmdRegExt}{\textbf{QSPI0\_CMD}\,}
-\newcommand{\asqspiAddrRegInt}{addr\_reg\_s\,}
-\newcommand{\asqspiAddrRegExt}{\textbf{QSPI0\_ADDR}\,}
-\newcommand{\asqspiLenRegInt}{len\_reg\_s\,}
-\newcommand{\asqspiLenRegExt}{\textbf{QSPI0\_LEN}\,}
-\newcommand{\asqspiDummyRegInt}{dummy\_reg\_s\,}
-\newcommand{\asqspiDummyRegExt}{\textbf{QSPI0\_DUMMY}\,}
-\newcommand{\asqspiStatusRegInt}{status\_reg\_s\,}
-\newcommand{\asqspiStatusRegExt}{\textbf{QSPI0\_STATUS}\,}
-\newcommand{\asqspiTxdataRegInt}{txdata\_reg\_s\,}
-\newcommand{\asqspiTxdataRegExt}{\textbf{QSPI0\_TXDATA}\,}
-\newcommand{\asqspiRxdataRegInt}{rxdata\_reg\_s\,}
-\newcommand{\asqspiRxdataRegExt}{\textbf{QSPI0\_RXDATA}\,}
-\newcommand{\asqspiFifostatRegInt}{fifostat\_reg\_s\,}
-\newcommand{\asqspiFifostatRegExt}{\textbf{QSPI0\_FIFOSTAT}\,}
-\newcommand{\asqspiICRRegInt}{u\_irq.wr\_icr\_s\,}
-\newcommand{\asqspiICRRegExt}{\textbf{QSPI0\_ICR}\,}
-\newcommand{\asqspiRISRegInt}{u\_irq.ris\_s\,}
-\newcommand{\asqspiRISRegExt}{\textbf{QSPI0\_RIS}\,}
-\newcommand{\asqspiISRRegInt}{u\_irq.wr\_isr\_s\,}
-\newcommand{\asqspiISRRegExt}{\textbf{QSPI0\_ISR}\,}
-\newcommand{\asqspiIMSCRegInt}{u\_irq.imsc\_r\,}
-\newcommand{\asqspiIMSCRegExt}{\textbf{QSPI0\_IMSC}\,}
-\newcommand{\asqspiMISRegInt}{u\_irq.mis\_s\,}
-\newcommand{\asqspiMISRegExt}{\textbf{QSPI0\_MIS}\,}
-\newcommand{\asqspiIDRegInt}{id\_reg\_s\,}
-\newcommand{\asqspiIDRegExt}{\textbf{QSPI0\_ID}\,}
-\newcommand{\asqspiClkdivRegInt}{clkdiv\_reg\_s\,}
-\newcommand{\asqspiClkdivRegExt}{\textbf{QSPI0\_CLKDIV}\,}
-\newcommand{\asqspiTimeoutRegInt}{timeout\_reg\_s\,}
-\newcommand{\asqspiTimeoutRegExt}{\textbf{QSPI0\_TIMEOUT}\,}
-\newcommand{\asqspiFifostatusRegInt}{fifostat\_reg\_s\,}
-\newcommand{\asqspiFifostatusRegExt}{\textbf{QSPI0\_FIFOSTAT}\,}
-\newcommand{\asqspiXipRegInt}{xipmode\_reg\_s\,}
-\newcommand{\asqspiXipRegExt}{\textbf{QSPI0\_XIPMODE}\,}
-\newcommand{\asqspiStatusxRegInt}{status\_reg\_s\,}
-\newcommand{\asqspiStatusxRegExt}{\textbf{QSPI0\_STATUS}\,}
-
-% QSPI IRQ signal name (for memory-map IRQ table)
-\newcommand{\asqspiIRQ}{qspi\_irq\_o\,}
-
-% UART
-\newcommand{\asuartTx}{uart0\_tx\_o\,}
-\newcommand{\asuartRx}{uart0\_rx\_i\,}
-\newcommand{\asuartIRQ}{UART0\_INT\,}
-\newcommand{\asuartIDRegInt}{id\_reg\_s\,}
-\newcommand{\asuartIDRegExt}{\textbf{UART0\_ID}\,}
-\newcommand{\asuartLcrRegInt}{lcr\_reg\_s\,}
-\newcommand{\asuartLcrRegExt}{\textbf{UART0\_LCR}\,}
-\newcommand{\asuartClkdivRegInt}{clkdiv\_reg\_s\,}
-\newcommand{\asuartClkdivRegExt}{\textbf{UART0\_CLKDIV}\,}
-\newcommand{\asuartCtrlRegInt}{ctrl\_reg\_s\,}
-\newcommand{\asuartCtrlRegExt}{\textbf{UART0\_CTRL}\,}
-\newcommand{\asuartStatusRegInt}{status\_reg\_s\,}
-\newcommand{\asuartStatusRegExt}{\textbf{UART0\_STATUS}\,}
-\newcommand{\asuartDataRegInt}{data\_reg\_s\,}
-\newcommand{\asuartDataRegExt}{\textbf{UART0\_DATA}\,}
-\newcommand{\asuartFifostatRegInt}{fifostat\_reg\_s\,}
-\newcommand{\asuartFifostatRegExt}{\textbf{UART0\_FIFOSTAT}\,}
-\newcommand{\asuartRxthresRegInt}{rxthres\_reg\_s\,}
-\newcommand{\asuartRxthresRegExt}{\textbf{UART0\_RXTHRES}\,}
-\newcommand{\asuartRISRegInt}{u\_irq.ris\_s\,}
-\newcommand{\asuartRISRegExt}{\textbf{UART0\_RIS}\,}
-\newcommand{\asuartIMSCRegInt}{u\_irq.imsc\_r\,}
-\newcommand{\asuartIMSCRegExt}{\textbf{UART0\_IMSC}\,}
-\newcommand{\asuartMISRegInt}{u\_irq.mis\_s\,}
-\newcommand{\asuartMISRegExt}{\textbf{UART0\_MIS}\,}
-\newcommand{\asuartICRRegInt}{u\_irq.wr\_icr\_s\,}
-\newcommand{\asuartICRRegExt}{\textbf{UART0\_ICR}\,}
-\newcommand{\asuartISRRegInt}{u\_irq.wr\_isr\_s\,}
-\newcommand{\asuartISRRegExt}{\textbf{UART0\_ISR}\,}
-
-
+\input{\COMMON latex_spec_names}
 
 \usepackage{tikz}
 \usetikzlibrary{shapes.arrows}
@@ -196,8 +72,8 @@
 % Titel, author, date
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \ifthenelse{\equal{\deutsch}{false}}
-{\title{Specification - \aschip}}
-{\title{Spezifikation - \aschip}}
+{\title{Specification - \aschip \\ \asvariant}}
+{\title{Spezifikation - \aschip \\ \asvariant}}
 \author{Prof. Dr.-Ing. A. Siggelkow}
 \date{\today}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,13 @@
+The system memory consists of an off-chip NOR Flash (code and read-only
+data) plus two on-chip caches and one on-chip Scratchpad SRAM
+(see Table~\ref{tab:asChipVariants} and Section~\ref{subsec:chipVariants}):
+\begin{itemize}
+  \item The I-Cache (4\,kB) caches instruction fetches from Flash.
+  \item The D-Cache (4\,kB) caches load accesses to Flash; stores to the Flash
+    address region are not permitted and cause a bus error.
+  \item The Scratchpad SRAM (8\,kB) is the sole writable data store and is
+    accessed directly (cache bypass) for all load/store operations that
+    target its address range.
+  \item The NOR Flash is accessed through the on-chip QSPI controller via the
+    AXI4 cache-fill path.
+\end{itemize}

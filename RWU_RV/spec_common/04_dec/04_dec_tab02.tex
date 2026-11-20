@@ -1,0 +1,59 @@
+\begin{table}[H]
+\caption{HW Interfaces of Module InstrDec0}
+\label{tab:asDecPer02}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+   & Module internal name & Chip level name \\
+  \hline
+  \hline
+  Supply &  &  \\
+  \hline
+  Clock & - & - (pure combinational block, no \texttt{clk\_i}/\texttt{rst\_i}) \\
+  \hline
+  Bus & - & - \\
+  \hline
+  Interrupt & \texttt{trap\_illegal\_instr\_o} &
+    \onlyA{\texttt{trap\_illegal\_instrx\_s} (\texttt{asCPUx.sv})}%
+    \onlyB{\texttt{id\_trap\_illegal\_s} (\texttt{cc\_cpupipefwd.sv})}.
+    It feeds \texttt{mcause}\,=\,2 directly;
+    see Section~\ref{subsec:irqconcept}. \\
+  \hline
+  DMA & - & - \\
+  \hline
+  External Signals & - & - \\
+  \hline
+  Others & \texttt{instr\_opcode\_i}(6:0) &
+    \onlyA{\texttt{ir\_s}(6:0)}\onlyB{\texttt{if\_id\_instr\_r}(6:0)} \\
+         & \texttt{instr\_func3\_i}(2:0) &
+    \onlyA{\texttt{ir\_s}(14:12)}\onlyB{\texttt{if\_id\_instr\_r}(14:12)} \\
+         & \texttt{instr\_func7b5\_i} &
+    \onlyA{\texttt{ir\_s}(30)}\onlyB{\texttt{if\_id\_instr\_r}(30)} \\
+         & \texttt{take\_i} &
+    \onlyA{\texttt{take\_s} (branch-taken feedback from the
+    branch ALU)}\onlyB{tied to \texttt{1'b0}
+    (unused -- kept only for interface compatibility, see the
+    \texttt{verilator lint\_off UNUSEDSIGNAL} note in
+    \texttt{as\_instr\_decode.sv})} \\
+         & \texttt{mux\_resultSrc\_o} (\texttt{result\_src\_t}, 2\;bit) &
+    \onlyA{\texttt{resultSrcx\_s}}\onlyB{\texttt{id\_resultSrc\_s}} \\
+         & \texttt{en\_dMemWr\_o} & \onlyA{\texttt{dMemWr\_s}}\onlyB{\texttt{id\_dMemWr\_s}} \\
+         & \texttt{en\_dMemRd\_o} & \onlyA{\texttt{dMemRd\_s}}\onlyB{\texttt{id\_dMemRd\_s}} \\
+         & \texttt{mux\_aluSrcB\_o} & \onlyA{\texttt{aluSrcB\_s}}\onlyB{\texttt{id\_aluSrcB\_s}} \\
+         & \texttt{mux\_aluSrcA\_o} (\texttt{mux\_a\_t}, 2\;bit) &
+    \onlyA{\texttt{aluSrcA\_s}}\onlyB{\texttt{id\_aluSrcA\_s}} \\
+         & \texttt{en\_regWr\_o} & \onlyA{\texttt{regWr\_s}}\onlyB{\texttt{id\_regWr\_s}} \\
+         & \texttt{mux\_jump\_o} & \onlyA{\texttt{jump\_s}}\onlyB{\texttt{id\_jump\_s}} \\
+         & \texttt{sel\_immSrc\_o} (\texttt{imm\_src\_t}, 3\;bit) &
+    \onlyA{\texttt{immSrcx\_s}}\onlyB{\texttt{id\_immSrc\_s}} \\
+         & \texttt{alu\_op\_o} (\texttt{alu\_op\_t}, 6\;bit declared,
+           15 values used) & \onlyA{\texttt{aluSela\_s}}\onlyB{\texttt{id\_aluOp\_s}} \\
+         & \texttt{br\_op\_o} (\texttt{br\_op\_t}, 3\;bit) &
+    \onlyA{\texttt{aluSelb\_s}}\onlyB{\texttt{id\_brOp\_s}} \\
+  \hline
+\end{tabularx}
+\end{table}
+\noindent\footnotesize Both chip variants instantiate the identical,
+shared \texttt{as\_instr\_decode} module (\texttt{RWU\_RV/RV\_NoPipeline/
+src/asInstrDecode.sv}); the chip-level net names above are those of this
+variant.\normalsize

@@ -39,15 +39,15 @@ There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
   \hline
   \hline
   \texttt{clk\_core\_o} & \texttt{clk\_core\_div} = 80 &
-    CPU core, GPIO, UART0, D-Mem/Scratchpad, D-/I-Cache (Variant~B) &
+    CPU core, GPIO0, UART0, ICU0, D-Mem &
     Functional clock for the CPU and almost all peripherals \\
   \hline
   \texttt{clk\_bus1\_o} & \texttt{clk\_bus1\_div} = 80 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
   \hline
   \texttt{clk\_bus2\_o} & \texttt{clk\_bus2\_div} = 100 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
   \hline
-  \texttt{clk\_qspi\_o} & \texttt{clk\_qspi\_div} = 4 & QSPI controller (Variant~B only) &
-    Not present in Variant~A (no QSPI controller) \\
+  \texttt{clk\_qspi\_o} & \texttt{clk\_qspi\_div} = 4 & Reserved &
+    Not consumed in this variant (no QSPI controller) \\
   \hline
   \texttt{tck\_i} & --- (external JTAG clock) & JTAG TAP, I-Mem scan chain, boundary scan &
     Fully asynchronous to \texttt{clk\_i}; no timing relationship is analysed
@@ -58,7 +58,7 @@ There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
 
 \textbf{The divider ratios are fixed at RTL compile time, not run-time
 configurable.}
-Unlike the QSPI and UART peripherals (which expose a genuine \texttt{CLKDIV}
+Unlike the UART peripheral (which exposes a genuine \texttt{CLKDIV}
 Wishbone register), the CGU implements only a read/write peripheral
 \textbf{ID register}; the four divider ratios above are SystemVerilog
 \texttt{localparam}s in \texttt{as\_pack.sv} and take effect unconditionally.

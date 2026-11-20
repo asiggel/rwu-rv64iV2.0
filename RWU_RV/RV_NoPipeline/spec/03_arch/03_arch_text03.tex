@@ -1,15 +1,11 @@
-The \aschip \; project is a students test chip and comprises two distinct CPU/memory variants
-(RTL tops \texttt{RV\_NoPipeline} and \texttt{RV\_PipelineCacheFwd}; see
-Table~\ref{tab:asChipVariants}), neither of which implements an MMU:
+The \aschip \; Variant~A (RTL top \texttt{RV\_NoPipeline}, core \texttt{as\_cpux};
+see Table~\ref{tab:asChipVariants}) is a students test chip. It implements no MMU.
 
-\begin{itemize}
-  \item \textbf{RTL: \texttt{RV\_NoPipeline}} -- a single-cycle implementation without
-    pipeline or cache; every instruction completes in one clock cycle; on-chip
-    SRAM only (no memory hierarchy).
-  \item \textbf{RTL: \texttt{RV\_PipelineCacheFwd}} -- a 5-stage pipelined
-    implementation (IF/ID/EX/MEM/WB) with EX/MEM$\to$EX and MEM/WB$\to$EX
-    forwarding, backed by the I-Cache/D-Cache memory hierarchy described in
-    Section~\ref{subsec:memCacheOverview}. Forwarding eliminates all
-    non-load RAW stalls; only the load-use hazard (1 cycle) and CSR hazards
-    still stall the pipeline.
-\end{itemize}
+The core is a non-pipelined, multi-cycle implementation without cache.
+A finite state machine runs each instruction through the states
+\texttt{FETCH0\_ST} $\rightarrow$ \texttt{FETCH1\_ST} $\rightarrow$ \texttt{EXEC\_ST}
+(three core clock cycles). Loads take one additional state \texttt{EXECLD\_ST}
+(four cycles). \texttt{wfi} stays in \texttt{EXEC\_ST} until an interrupt is
+pending (Section~\ref{subsec:irqconcept}).
+Instructions and data are held in on-chip SRAM only (no memory hierarchy), so
+there are no pipeline hazards.

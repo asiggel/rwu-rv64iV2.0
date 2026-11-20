@@ -46,7 +46,6 @@
 \subsection{Introduction}
 \input{\TEXTprod 02_product_text01}
 \input{\TEXTprod 02_product_bild01}
-\input{\TEXTprod 02_product_bild01b}
 \subsection{Key Features}
 \input{\TEXTprod 02_product_text03}
 \subsection{Functional Block Diagram}
@@ -115,14 +114,13 @@
 \input{\TEXTarch 03_arch_tab01}
 \input{\TEXTarch 03_arch_tab02}
 \input{\TEXTarch 03_arch_tab03}
-\input{\TEXTarch 03_arch_hazard}
 \section{Bus Concept}
 \input{\TEXTarch 03_arch_history_tab02}
 \input{\TEXTarch 03_arch_bus_concept}
 \section{Interrupt Concept}
 \label{sec:archirq}
 \input{\TEXTarch 03_arch_history_tab03}
-\input{\TEXTarch 03_arch_irq_concept}
+\input{\TEXTarchc 03_arch_irq_concept}
 \section{Clock Concept}
 \input{\TEXTarch 03_arch_history_tab04}
 \input{\TEXTarch 03_arch_clock_concept}
@@ -215,10 +213,6 @@
 \input{\TEXTdec 04_dec_tab05}
 \subsection{Registers}
 \input{\TEXTalu 04_alu_text09}
-
-\section{Memory System}
-\label{sec:memfunc01}
-\input{\TEXTmems 04_memsyst_all}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % C: Peripherals
@@ -314,62 +308,6 @@
 \subsection{Registers}
 \input{\TEXTimem 05_imem_text10}
 
-% QSPI
-%\section{QSPI}
-%\label{sec:qspifunc01}
-%\subsection{System Integration of QSPI0}
-%\subsubsection{History}
-%\input{\TEXTqspi 05_qspi_author_tab01}
-%\input{\TEXTqspi 05_qspi_history_tab01}
-%\subsubsection{Functional Configuration of QSPI0}
-%\input{\TEXTqspi 05_qspi_text01}
-%\input{\TEXTqspi 05_qspi_tab01}
-%\subsubsection{HW Interfaces}
-%\input{\TEXTqspi 05_qspi_text02}
-%\input{\TEXTqspi 05_qspi_tab02}
-%\subsubsection{Bus Interface}
-%\input{\TEXTqspi 05_qspi_text03}
-%\subsubsection{Registers}
-%\input{\TEXTqspi 05_qspi_tab03}
-%\subsubsection{Related Sections of this Spec}
-%\input{\TEXTqspi 05_qspi_text04}
-%\subsection{History of QSPI}
-%\input{\TEXTqspi 05_qspi_history_tab02}
-%\subsection{Functional Overview}
-%\label{subsec:qspifunc01}
-%\input{\TEXTqspi 05_qspi_text05}
-%\subsection{Structural Overview}
-%\input{\TEXTqspi 05_qspi_text06}
-%\input{\TEXTqspi 05_qspi_bild01}
-%\input{\TEXTqspi 05_qspi_text07}
-%\subsubsection{I/O of the QSPI Kernel}
-%\input{\TEXTqspi 05_qspi_tab04}
-%\subsubsection{I/O of the QSPI BPI}
-%\input{\TEXTqspi 05_qspi_tab05}
-%\subsubsection{Internals of the QSPI BPI}
-%\input{\TEXTqspi 05_qspi_tab07}
-%\subsubsection{I/O of the QSPI Top}
-%\input{\TEXTqspi 05_qspi_tab06}
-%\subsection{Service Requests of the QSPI}
-%\input{\TEXTqspi 05_qspi_text08}
-%\subsection{The QSPI Peripheral Kernel}
-%\label{subsec:qspifunc02}
-%\input{\TEXTqspi 05_qspi_text09}
-%\input{\TEXTqspi 05_qspi_bild02}
-%\subsection{Registers}
-%\input{\TEXTqspi 05_qspi_text10}
-
-%AS
-\section{QSPI}
-\input{\TEXTqspi 05_qspi_all}
-
-%ChatGPT
-%\input{\TEXTqspi 05_qspi_all2}
-
-% Claude
-%\section{QSPI Claude}
-%\input{\TEXTqspi as_qspi_spec}
-
 % UART
 \section{UART}
 \input{\TEXTuart 05_uart_all}
@@ -390,7 +328,7 @@
 \section{Simulation Test Suite}
 \label{sec:simtest01}
 
-The \texttt{RV\_NoPipeline} and \texttt{RV\_PipelineCacheFwd} projects include a
+The \texttt{RV\_NoPipeline} project includes a
 regression test suite driven by CMake.
 Each test assembles a dedicated firmware program, runs it under xsim, and checks
 the result via GPIO output (0x55\,=\,pass, 0xFF\,=\,fail) or a waveform monitor.
@@ -435,81 +373,6 @@ EXECLD\_ST.
 The same pattern must be applied to any future read-once (clear-on-read) register
 on this Wishbone bus.
 
-\subsection{\texttt{RV\_PipelineCacheFwd} Simulation Tests}
-\label{subsec:pipecachefwdsimtest}
-
-In addition to the shared instruction-set regression (58 tests common with
-\texttt{RV\_NoPipeline}, plus \texttt{ecall}/\texttt{ebreak} and the hazard
-suite of Section~\ref{subsubsec:hazardTestSuite}, all run under xsim),
-\texttt{RV\_PipelineCacheFwd} has test infrastructure the flat-SRAM
-\texttt{RV\_NoPipeline} variant has no equivalent of, since it alone has a
-cache/AXI4/QSPI-Flash memory subsystem:
-
-\begin{itemize}
-  \item \textbf{Cache-specific xsim tests:} \texttt{scratchpad\_intensive}
-    (RMW byte/halfword/word isolation on the scratchpad SRAM),
-    \texttt{dcache\_test} (multi-way fill, eviction, warm-cache hits,
-    cold-miss-after-evict), \texttt{memory\_sections} (scratchpad heap
-    write/read-back across the full address range). Each is a dedicated
-    testbench (\texttt{tb/tb\_rv64i\_*.sv}) with its own multi-phase GPIO
-    checkpoints (\texttt{GPIO\,=\,0x0N} per phase, \texttt{0x55} on final
-    success), not the shared \texttt{tb\_rv64i\_instr.sv}.
-  \item \textbf{cocotb ISS-scoreboard suite} (\texttt{cocotb/}, ported from
-    \texttt{RV\_NoPipeline}'s): re-runs the same 59 programs
-    instruction-by-instruction against a Python instruction-set simulator
-    (\texttt{iss.py}), comparing architectural state every cycle rather
-    than only the final GPIO byte. Since this variant has no directly
-    pokeable instruction RAM, \texttt{tb\_flash\_wrap.sv} wraps
-    \texttt{as\_top\_mem} with a behavioural QSPI NOR-Flash model (copied
-    from \texttt{tb/tb\_rv64i\_instr.sv}) so a test program can be loaded
-    by poking \texttt{flash\_mem\_s} directly -- bypassing JTAG, but
-    exercising the real I-Cache/AXI4/QSPI path for every fetch.
-  \item \textbf{AXI4 cache-error trap test:}
-    \texttt{tb/tb\_cpupipefwd\_cachefault.sv} (xsim, standalone
-    \texttt{CMakeLists.txt} in the same directory) verifies the
-    \texttt{mcause}=1/5 trap path of Section~\ref{ss:axi4ErrCpuSeq}
-    directly against \texttt{cc\_cpupipefwd.sv}, with a scripted
-    \texttt{icpu\_if}/\texttt{dcpu\_if} response queue standing in for the
-    cache (whose own \texttt{ic\_err}/\texttt{dc\_err} generation is
-    separately unit-tested in \texttt{ip\_icache/tb/tb\_asICache.sv} and
-    \texttt{ip\_dcache/tb/tb\_asDCache.sv}) -- this isolates the CPU's own
-    fault-flag threading and \texttt{mcause}/\texttt{mepc}/\texttt{mtval}
-    logic from the cache/AXI4 timing it is triggered by.
-\end{itemize}
-
-\subsubsection{Flush/Stall Priority Race (Fixed 2026-07-13)}
-\label{subsubsec:flushStallRace}
-
-During verification of the \texttt{ecall}/\texttt{ebreak} traps (a new
-cycle-accurate cocotb ISS scoreboard, ported from \texttt{RV\_NoPipeline}
-for this purpose), a pre-existing, previously-hidden pipeline bug was
-found and confirmed by reproducing it against the unmodified RTL: the
-\texttt{id\_ex} and \texttt{ex\_mem} pipeline registers only processed
-\texttt{flush\_s}-driven squashing (branch/trap/\texttt{mret} redirect)
-inside an \texttt{else if (!global\_stall\_s)} branch. When a redirect
-landed on the exact same cycle as an ordinary one-cycle icache-hit lookup
-stall, the flush was silently skipped: stale, wrong-path instructions
-already latched in \texttt{id\_ex}/\texttt{ex\_mem} survived and were
-committed once the stall cleared.
-
-xsim's GPIO-only pass/fail check never caught this: the wrong path
-happened to reach the same final output byte by coincidence, on every one
-of the 68 tests then passing. It only surfaced once the ISS scoreboard
-started comparing architectural state cycle-by-cycle rather than only the
-final GPIO write.
-
-Fix: \texttt{flush\_s} (and, for \texttt{ex\_mem}, \texttt{wb\_trap\_taken\_s}/
-\texttt{wb\_mret\_s}) now takes priority over the stall gate in both
-registers' clocking, matching how \texttt{if\_id}/\texttt{ibuf} already
-handled the same situation. The general lesson -- \textbf{any squash
-condition driven by a WB-stage or EX-stage event must never be nested
-inside a stall-gated branch, since the two can coincide} -- was applied
-again, by construction, when the AXI4 cache-error fault flags were added
-later (Section~\ref{ss:axi4ErrCpuSeq}): \texttt{icache\_stall\_s}/
-\texttt{dcache\_stall\_s} release on \texttt{ic\_err}/\texttt{dc\_err}
-exactly like on \texttt{ic\_rvalid}/\texttt{dc\_rvalid}, so a fault is
-never left waiting behind a stall condition that will never clear.
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % C: Electrical Characteristics
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -528,8 +391,9 @@ Not yet
 Table~\ref{tab:sysmap} shows the complete address map of the \aschip{} system.
 The address space is 64-bit.
 Bit~32 of the address separates main memory (bit~32\,=\,0) from the peripheral
-bus (bit~32\,=\,1); the peripheral bridge in \textbf{RV\_PipelineCacheFwd} uses
-this bit to route accesses.
+bus (bit~32\,=\,1). The address decoder \texttt{as\_decode} generates one
+chip select per region; an access to an address outside all regions of
+Table~\ref{tab:sysmap} selects no slave.
 All peripheral registers are 64-bit wide and 8-byte aligned.
 The column \textit{AW} gives the address-width parameter passed to the
 peripheral's Wishbone slave interface (lower \textit{AW} bits of the full
@@ -548,34 +412,40 @@ address; the base address is always aligned to $2^{AW}$ bytes so the lower
   \hline
   \multicolumn{5}{|l|}{\textit{Main memory (bit 32 = 0)}} \\
   \hline
-  \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem / Scratchpad & --- &
-    \textit{RV\_NoPipeline}: flat SRAM.
-    \textit{RV\_PipelineCacheFwd}: scratchpad. \\
+  \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem & --- &
+    cs[0]. Decode window 64\,kB; 8\,kB implemented. The D-Mem uses
+    address bits [12:3] only, so the 8\,kB repeat (alias) within the window. \\
   \hline
   \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32\,=\,1)}} \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. Both variants. \\
+  \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \textit{RV\_PipelineCacheFwd} only. \\
+  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & (QSPI0) & -- & cs[2]. No slave in this variant: reads return 0,
+    writes have no effect (see note below). \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. Both variants. \\
+  \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. Both variants. \\
+  \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. \\
   \hline
-  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Both variants; aggregates GPIO0/QSPI0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See Section~\ref{sec:icufunc01} for the register map. \\
+  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Aggregates GPIO0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See Section~\ref{sec:icufunc01} for the register map. \\
   \hline
 \end{tabularx}}
 \end{table}
+
+\noindent\textbf{Unmapped accesses.} The Wishbone master BPI (\texttt{asMBpi})
+drives \texttt{STB}\,=\,\texttt{CYC}\,=\,1 permanently and does not evaluate
+\texttt{ACK}; the CPU FSM has a fixed timing. An access to the QSPI0 region
+(no slave, \texttt{wdbAckQspi\_s}\,=\,0) or to an address outside all regions
+therefore completes normally: a read returns 0, a write has no effect.
+No bus error or access-fault exception is raised (open item MAP-01).
 
 Tables~\ref{tab:gpiooffsets}--\ref{tab:uartoffsets} repeat the register
 offsets of every peripheral (from its own base address, see
 Table~\ref{tab:sysmap}) for quick reference; full bit-field descriptions
 are in the peripheral's own chapter/section as noted below each table.
-Each table states which chip variant(s) (Table~\ref{tab:asChipVariants})
-it applies to.
 
 \begin{table}[H]
-\caption{GPIO0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0000}) -- \textit{Both variants}}
+\caption{GPIO0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0000})}
 \label{tab:gpiooffsets}
 \centering
 {\footnotesize
@@ -613,61 +483,7 @@ it applies to.
 \end{table}
 
 \begin{table}[H]
-\caption{QSPI0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0200}) -- \textit{RV\_PipelineCacheFwd only}}
-\label{tab:qspioffsets}
-\centering
-{\footnotesize
-\begin{tabularx}{\textwidth}{|l |l |l |X|}
-  \hline
-  Offset & Symbol & Mode & Description \\
-  \hline
-  \hline
-  \texttt{0x00} & \asqspiIDRegExt      & ro & Peripheral ID \\
-  \hline
-  \texttt{0x08} & \asqspiCtrlRegExt    & rw & [11:4]\,=\,\texttt{qspi\_ctrl\_t} (addr\_len, cpol, cpha, dual, cs\_hold, xip, ddr, quad), [3]\,=\,start (pulse), [2]\,=\,rx\_flush, [1]\,=\,tx\_flush (reset\,=\,\texttt{0x10}, quad\,=\,1) \\
-  \hline
-  \texttt{0x10} & \asqspiCmdRegExt     & rw & [7:0] SPI opcode (reset\,=\,\texttt{0x6B}, Quad Fast Read) \\
-  \hline
-  \texttt{0x18} & \asqspiAddrRegExt    & rw & [31:0] Flash address \\
-  \hline
-  \texttt{0x20} & \asqspiLenRegExt     & rw & [15:0] Transfer length in bytes (reset\,=\,8) \\
-  \hline
-  \texttt{0x28} & \asqspiDummyRegExt   & rw & [5:0] Dummy cycles (reset\,=\,8) \\
-  \hline
-  \texttt{0x30} & \asqspiClkdivRegExt  & rw & [7:0] SCK divider (reset\,=\,4) \\
-  \hline
-  \texttt{0x38} & \asqspiTimeoutRegExt & rw & [31:0] Timeout counter (reset\,=\,0, disabled) \\
-  \hline
-  \texttt{0x40} & \asqspiISRRegExt     & wo & Interrupt Set Register (write-1\,$\rightarrow$\,set RIS bit) \\
-  \hline
-  \texttt{0x48} & \asqspiRISRegExt     & ro & Raw Interrupt Status: [4]\,=\,TIMEOUT, [3]\,=\,ERR, [2]\,=\,TXHALF, [1]\,=\,RXHALF, [0]\,=\,DONE \\
-  \hline
-  \texttt{0x50} & \asqspiIMSCRegExt    & rw & Interrupt Mask Control \\
-  \hline
-  \texttt{0x58} & \asqspiMISRegExt     & ro & Masked Interrupt Status ($=$ RIS $\wedge$ IMSC) \\
-  \hline
-  \texttt{0x60} & \asqspiICRRegExt     & wo & Interrupt Clear Register (write-1\,$\rightarrow$\,clear RIS bit) \\
-  \hline
-  \texttt{0x68} & \asqspiRxdataRegExt  & ro & Pop from RX FIFO \\
-  \hline
-  \texttt{0x70} & \asqspiTxdataRegExt  & wo & Push to TX FIFO \\
-  \hline
-  \texttt{0x78} & \asqspiFifostatRegExt & ro & [25]\,=\,rx\_full, [24]\,=\,rx\_half, [20:16]\,=\,rx\_level, [9]\,=\,tx\_full, [8]\,=\,tx\_half, [4:0]\,=\,tx\_level (reset\,=\,\texttt{0x100}) \\
-  \hline
-  \texttt{0x80} & \asqspiXipRegExt     & rw & [7:0] XIP mode byte (reset\,=\,\texttt{0xA0}, Winbond mode) \\
-  \hline
-  \texttt{0x88} & \asqspiStatusRegExt  & ro & [4]\,=\,timeout, [3]\,=\,error, [2]\,=\,xip\_active, [1]\,=\,done, [0]\,=\,busy \\
-  \hline
-\end{tabularx}}
-
-\noindent\footnotesize QSPI0 does not exist in \textit{RV\_NoPipeline}
-(Table~\ref{tab:asChipVariants}); see Section~\ref{sec:memfunc01} (Memory
-System) for the AXI4 cache-refill path this peripheral also serves.
-\normalsize
-\end{table}
-
-\begin{table}[H]
-\caption{CGU Register Offsets (from base \texttt{0x0000\_0001\_0000\_0400}) -- \textit{Both variants}}
+\caption{CGU Register Offsets (from base \texttt{0x0000\_0001\_0000\_0400})}
 \label{tab:cguoffsets}
 \centering
 {\footnotesize
@@ -688,7 +504,7 @@ the Clock Concept, Section~\ref{subsec:cguOverview}.
 \end{table}
 
 Table~\ref{tab:uartoffsets} repeats the UART0 register offsets (from the UART0
-base address) for quick reference (\textit{both variants}); full bit-field
+base address) for quick reference; full bit-field
 descriptions are in Section~\ref{sec:uartfunc01}.
 
 \begin{table}[H]
@@ -734,11 +550,9 @@ descriptions are in Section~\ref{sec:uartfunc01}.
 \label{sec:irqmap}
 
 Table~\ref{tab:irqmap} shows how the peripheral interrupt sources map onto
-the 8-bit \texttt{irq\_ext\_i} vector at the CPU boundary, for each chip
-variant.
+the 8-bit \texttt{irq\_ext\_i} vector at the CPU boundary.
 As detailed in Section~\ref{subsec:irqconcept}, \textbf{only bit~7 of
-\texttt{irq\_ext\_i} is synchronised and evaluated by the CPU} (identically
-in \texttt{as\_cpux} and \texttt{cc\_cpupipefwd}); bits~\texttt{[6:0]} are
+\texttt{irq\_ext\_i} is synchronised and evaluated by the CPU} (\texttt{as\_cpux}); bits~\texttt{[6:0]} are
 declared \texttt{UNUSEDSIGNAL} in the CPU RTL and have no effect on program
 flow, regardless of what is wired to them at the top level.
 
@@ -747,40 +561,31 @@ flow, regardless of what is wired to them at the top level.
 \label{tab:irqmap}
 \centering
 {\footnotesize
-\begin{tabularx}{\textwidth}{|l |X |X |X|}
+\begin{tabularx}{\textwidth}{|l |X |X|}
   \hline
-  Bit & \textit{RV\_NoPipeline} & \textit{RV\_PipelineCacheFwd} & Consumed by CPU? \\
+  Bit & Source & Consumed by CPU? \\
   \hline
   \hline
   7 & \texttt{icu\_irq\_s}: GPIO0 $\vert$ UART0, arbitrated by ICU0
     (\texttt{icu\_irq\_o}, Section~\ref{sec:icufunc01}); QSPI0 source tied
     to 0 (no QSPI0 in this variant) &
-    \texttt{icu\_irq\_s}: GPIO0 $\vert$ QSPI0 $\vert$ UART0, arbitrated by
-    ICU0 (\texttt{icu\_irq\_o}, Section~\ref{sec:icufunc01}) &
     \textbf{Yes} -- drives \texttt{mip.MEIP} \\
   \hline
-  6\,--\,0 & tied to 0 & tied to 0 &
-    \textbf{No} -- reserved (5 of ICU0's 8 source slots remain
+  6\,--\,0 & tied to 0 &
+    \textbf{No} -- reserved (6 of ICU0's 8 source slots remain
     unwired, Table~\ref{tab:asIcuSrcAssign}) \\
   \hline
 \end{tabularx}}
 \end{table}
 
-Both GPIO0 and UART0 (and, on \texttt{RV\_PipelineCacheFwd}, QSPI0) feed
+Both GPIO0 and UART0 feed
 ICU0 directly, not \texttt{irq\_ext\_i}; ICU0's own arbitrated output
 \texttt{icu\_irq\_o} is the only signal driving bit~7. Firmware
 determines the interrupt cause by reading \textbf{ICU0\_IRQID}
 (Section~\ref{sec:icufunc01}) instead of polling each peripheral's own
 \texttt{MIS} register -- this was an open item prior to ICU0's
-introduction and is now resolved on both chip variants.
-On \texttt{RV\_NoPipeline}, UART0's interrupt reaches the CPU for the
+introduction and is now resolved.
+UART0's interrupt reaches the CPU for the
 first time as a consequence of routing through ICU0 (see
-Table~\ref{tab:asIcuSrcAssign}, ``Behavioural change on
-\texttt{RV\_NoPipeline}''); previously it was wired to a bit the CPU never
+Table~\ref{tab:asIcuSrcAssign}, ``Behavioural change''); previously it was wired to a bit the CPU never
 read.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% C: Variant C -- Multi-Core NN Inference (concept)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\chapter{Variant C -- Multi-Core NN Inference (Concept)}
-\input{\TEXTmcnn 06_mcnn_all}

@@ -1,0 +1,15 @@
+There is no traditional on-chip data memory.
+The data address space is split into two regions:
+\begin{itemize}
+  \item \textbf{Flash region} (addresses below the Scratchpad base):
+    read-only data cached in the 4\,kB D-Cache.
+    Only load misses trigger cache-line fills from NOR Flash.
+    Store operations to this region are not permitted and generate a
+    bus error (\texttt{dc\_err\_o}).
+  \item \textbf{Scratchpad region}
+    (\texttt{SP\_BASE}~=~\texttt{0x0000\_0000},
+    size~=~8\,kB by default):
+    an on-chip SRAM accessed directly with byte granularity,
+    bypassing the D-Cache.
+    This region holds \texttt{.data}, \texttt{.bss}, heap, and stack.
+\end{itemize}

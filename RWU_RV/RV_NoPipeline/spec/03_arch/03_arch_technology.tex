@@ -1,7 +1,6 @@
-This section covers Variant~A (\texttt{RV\_NoPipeline}) in X-FAB XH018.
+This section covers the X-FAB XH018 implementation of Variant~A.
 The technology choice and the area budget are given in the product overview
-(Table~\ref{tab:asTechAreaA}). The memory subsystem of Variant~B (caches,
-scratchpad) still refers to XH035 (Section~\ref{subsec:sramSelection}).
+(Table~\ref{tab:asTechAreaA}).
 
 \subsection{SRAM Macro Selection -- Variant A}
 \label{subsec:sramSelectionA}
@@ -79,8 +78,8 @@ All control inputs are \textbf{active low}.
 Unlike the high-speed family, the low-power macros have no output enable
 (\texttt{OEn}); \texttt{Q} is always driven.
 
-In simulation the macros are replaced by a behavioural model of our own
-(as for Variant~B, Section~\ref{subsubsec:asSpramModel}). The X-FAB
+In simulation the macros are replaced by a behavioural model of our own.
+The X-FAB
 Verilog models are covered by the NDA and are not part of the repository.
 
 \subsection{Open Items -- Technology}
@@ -107,8 +106,6 @@ Verilog models are covered by the NDA and are not part of the repository.
             target software. \\
   \hline
   TECH-04 & Pad count and pad-ring area; check whether the die is pad-limited. \\
-  \hline
-  TECH-05 & Re-evaluate Variant~B (caches, scratchpad) for XH018. \\
   \hline
 \end{tabularx}
 \end{table}

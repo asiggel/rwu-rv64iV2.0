@@ -1,0 +1,9 @@
+The \aschip \; Variant~B (RTL top \texttt{RV\_PipelineCacheFwd}, core
+\texttt{cc\_cpupipefwd}; see Table~\ref{tab:asChipVariants}) is a students test
+chip. It implements no MMU.
+
+The core is a 5-stage pipelined implementation (IF/ID/EX/MEM/WB) with
+EX/MEM$\to$EX and MEM/WB$\to$EX forwarding, backed by the I-Cache/D-Cache memory
+hierarchy described in Section~\ref{subsec:memCacheOverview}. Forwarding
+eliminates all non-load RAW stalls; only the load-use hazard (1 cycle) and CSR
+hazards still stall the pipeline.

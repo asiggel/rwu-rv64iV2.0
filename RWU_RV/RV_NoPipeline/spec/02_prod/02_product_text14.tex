@@ -1,9 +1,7 @@
 The \aschip{} implements the RISC-V \textbf{machine-mode-only} interrupt and
-trap concept of the privileged specification. Both chip variants use the
-same trap/CSR unit \texttt{cc\_trap\_csr} from \texttt{ip\_trapcsr/src}.
-It is instantiated as \texttt{trap\_csr} in the cores \texttt{as\_cpux}
-(\texttt{RV\_NoPipeline}) and \texttt{cc\_cpupipefwd}
-(\texttt{RV\_PipelineCacheFwd}). The core decides \emph{when} a trap is
+trap concept of the privileged specification. The trap/CSR unit
+\texttt{cc\_trap\_csr} from \texttt{ip\_trapcsr/src} (shared with Variant~B)
+is instantiated as \texttt{trap\_csr} in the core \texttt{as\_cpux}. The core decides \emph{when} a trap is
 taken (its precise-trap point, see below); \texttt{cc\_trap\_csr} holds the
 architectural state and decides \emph{what} happens.
 
@@ -18,7 +16,7 @@ All three standard machine interrupts are supported:
     CPU input \texttt{irq\_m\_timer\_i}, intended for the \texttt{mtip}
     output (\texttt{mtime}\,$\geq$\,\texttt{mtimecmp}) of a CLINT.
 \end{itemize}
-No CLINT exists on the chip yet; in both variants \texttt{as\_top\_mem}
+No CLINT exists on the chip yet; \texttt{as\_top\_mem}
 ties the inputs \texttt{irq\_m\_soft\_i} and \texttt{irq\_m\_timer\_i} to 0.
 A CLINT only has to drive these two level signals.
 
@@ -31,8 +29,7 @@ logic}: \texttt{cc\_trap\_csr} synchronises it (like
 2-flip-flop synchroniser and shows the result as \texttt{mip.MEIP}.
 Bits~\texttt{[6:0]} are declared but not consumed.
 Bit~7 is driven by \textbf{ICU0} (Section~\ref{sec:icufunc01}), a
-Wishbone-addressable interrupt controller that aggregates GPIO0, UART0,
-and (on \texttt{RV\_PipelineCacheFwd}) QSPI0 with software-configurable
+Wishbone-addressable interrupt controller that aggregates GPIO0 and UART0 with software-configurable
 priority and per-source masking, plus 5 further source slots reserved for
 future peripherals (Table~\ref{tab:asIcuSrcAssign}). GPIO0's own interrupt
 chain (per-pin change detection $\rightarrow$ \texttt{IRQSS}/\texttt{IRQSM}
@@ -127,23 +124,13 @@ younger one has changed a register, a CSR or memory.
     \texttt{mepc} = address of the first instruction that has not been
     executed (also directly after a taken branch or jump: then it is the
     branch target).
-  \item \texttt{RV\_NoPipeline}: exceptions are detected in
+  \item Exceptions are detected in
     \texttt{EXEC\_ST}/\texttt{EXECLD\_ST}; the store write enable and the
     register write are suppressed. Interrupts, exceptions and
     \texttt{mret} redirect the fetch in the following \texttt{FETCH0\_ST},
     before the next instruction is fetched, so no wrong-path instruction
     ever enters IR. The address of the next instruction in program order is
     registered at commit (\texttt{npc\_r}).
-  \item \texttt{RV\_PipelineCacheFwd}: misaligned loads/stores and
-    misaligned branch/jump targets are detected in EX and, like illegal
-    instructions and I-/D-cache faults, carried as flags to WB, where the
-    trap is taken. A load/store with an exception sends no
-    \texttt{dc\_req}, and no younger instruction in MEM sends
-    \texttt{dc\_req} in the cycle WB traps or returns. An interrupt is
-    taken on the instruction in WB before it commits (it is squashed,
-    \texttt{mepc} = its address), except for a load/store, whose memory
-    access in MEM has already happened: it commits, and the interrupt is
-    taken on the next instruction that reaches WB.
 \end{itemize}
 
 \paragraph{Trap entry and return.}
@@ -170,7 +157,7 @@ and \texttt{mcause} (e.g.\ via \texttt{mscratch}) may set
   0 & Instruction address misaligned (taken branch/jump to an address with
       bit 1 set; JALR clears bit 0 first) & target address \\
   \hline
-  1 & Instruction access fault (I-cache AXI4 error, \texttt{RV\_PipelineCacheFwd}) & fetch address \\
+  1 & Instruction access fault -- not raised in this variant (no cache/AXI4) & -- \\
   \hline
   2 & Illegal instruction (decoder, unknown CSR, write to read-only CSR,
       reserved \texttt{SYSTEM} encoding) & instruction bits \\
@@ -179,7 +166,7 @@ and \texttt{mcause} (e.g.\ via \texttt{mscratch}) may set
   \hline
   4 / 6 & Load / store address misaligned & access address \\
   \hline
-  5 & Load access fault (D-cache AXI4 error, \texttt{RV\_PipelineCacheFwd}) & access address \\
+  5 & Load access fault -- not raised in this variant (no cache/AXI4) & -- \\
   \hline
   11 & Environment call from M-mode (\texttt{ecall}) & 0 \\
   \hline
@@ -194,17 +181,15 @@ and \texttt{mcause} (e.g.\ via \texttt{mscratch}) may set
 before \texttt{mret} to continue after it.
 
 \paragraph{WFI.}
-In \texttt{RV\_NoPipeline}, \texttt{wfi} stays in \texttt{EXEC\_ST} until an
+\texttt{wfi} stays in \texttt{EXEC\_ST} until an
 interrupt is pending and enabled in \texttt{mie} (independent of
 \texttt{mstatus.MIE}); then it completes, and if \texttt{mstatus.MIE}\,=\,1
 the interrupt is taken with \texttt{mepc} = address after \texttt{wfi}.
-In \texttt{RV\_PipelineCacheFwd}, \texttt{wfi} is executed as a NOP, which
-the privileged specification allows.
 
 \paragraph{Verification.}
 \texttt{ip\_trapcsr/tb/cc\_trap\_csr\_tb.sv} checks the unit alone (reset
 values, legality, WARL, priority, vectoring, counters).
-\texttt{cocotb/test\_traps.py} of both variants (shared bodies in
+\texttt{cocotb/test\_traps.py} (bodies in
 \texttt{RV\_NoPipeline/cocotb/trap\_tests.py}) interrupts programs at random
 points and checks that no instruction is lost or repeated (also around
 jumps and memory read-modify-write sequences) and that every \texttt{mepc}
@@ -218,10 +203,9 @@ is the first unexecuted instruction; it also checks every exception cause,
     yet on the chip; the CPU inputs are ready for it. The \texttt{time}
     CSR (0xC01) is not implemented and traps as illegal.
   \item \texttt{mcountinhibit} is not implemented (illegal).
-  \item ICU0 provisions 8 source slots but only 3 are wired to real
-    hardware (GPIO0, UART0, and -- \texttt{RV\_PipelineCacheFwd} only --
-    QSPI0); connecting a future interrupt-capable peripheral only requires
-    wiring it into one of the 5 remaining slots
+  \item ICU0 provisions 8 source slots but only 2 are wired to real
+    hardware (GPIO0, UART0); connecting a future interrupt-capable peripheral only requires
+    wiring it into one of the remaining slots
     (Table~\ref{tab:asIcuSrcAssign}). All ICU0 sources share MEI
     (cause 11), so per-source dispatch uses ICU0\_IRQID in software.
 \end{itemize}

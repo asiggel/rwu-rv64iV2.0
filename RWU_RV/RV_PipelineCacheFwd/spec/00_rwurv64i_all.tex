@@ -1,0 +1,726 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% P: INTRO
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\ifthenelse{\equal{\deutsch}{false}}
+%{\part{Introduction-Part}}
+%{\part{Einleitung}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Requirements
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Requirements}
+\input{\TEXTa 01_requirements_tab01}
+\input{\TEXTa 01_requirements_tab02}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Document Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Document Overview}
+\input{\TEXTa 01_docover_text01}
+\section{Validity of this document}
+\input{\TEXTa 01_docover_text02}
+\section{Target Specification Status}
+\input{\TEXTa 01_docover_text03}
+\section{Major Changes since last Revision}
+\input{\TEXTa 01_docover_history_tab01}
+%\section{Table of Contents}
+\tableofcontents
+%\section{List of Figures}
+\listoffigures
+%\section{List of Tables}
+\listoftables
+\section{Glossary}
+\input{\TEXTa 01_docover_tab01}
+\section{Naming Conventions}
+\input{\TEXTa 01_docover_tab02}
+\section{Document List}
+\input{\TEXTa 01_docover_history_tab02}
+\input{\TEXTa 01_docover_tab03}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Product Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Product Overview}
+\section{Top Level View}
+\input{\TEXTprod 02_product_history_tab01}
+\subsection{Introduction}
+\input{\TEXTprod 02_product_text01}
+\input{\TEXTprod 02_product_bild01b}
+\subsection{Key Features}
+\input{\TEXTprod 02_product_text03}
+\subsection{Functional Block Diagram}
+\input{\TEXTprod 02_product_text04}
+\input{\TEXTprod 02_product_bild02}
+\input{\TEXTprod 02_product_bild03}
+\subsection{Package}
+\input{\TEXTprod 02_product_text05}
+\section{System View}
+\input{\TEXTprod 02_product_history_tab02}
+\input{\TEXTprod 02_product_text06}
+\section{Architecture Concepts Overview}
+\input{\TEXTprod 02_product_history_tab03}
+\subsection{Technology}
+\input{\TEXTprod 02_product_text07}
+\subsection{System Memory Concept}
+\input{\TEXTprod 02_product_text08}
+\subsection{Software Architecture}
+\input{\TEXTprod 02_product_text09}
+\subsection{Interprocessor Communication Concept}
+\input{\TEXTprod 02_product_text10}
+\subsection{Bus Concept}
+\input{\TEXTprod 02_product_text11}
+\subsection{Clock Concept}
+\input{\TEXTprod 02_product_text12}
+\subsection{System Control Concept}
+\input{\TEXTprod 02_product_text13}
+\subsection{Interrupt Concept}
+\label{subsec:irqconcept}
+\input{\TEXTprod 02_product_text14}
+\subsection{Debug Concept}
+\input{\TEXTprod 02_product_text15}
+\subsection{Power Management}
+\input{\TEXTprod 02_product_text16}
+\subsection{Protection and Security Concept}
+\input{\TEXTprod 02_product_text17}
+\section{Functional Block Overview}
+\input{\TEXTprod 02_product_history_tab04}
+\subsection{RISC-V Core}
+\input{\TEXTprod 02_product_text18}
+\subsection{Instruction Memory}
+\input{\TEXTprod 02_product_text19}
+\subsection{Data Memory}
+\input{\TEXTprod 02_product_text20}
+\subsection{Wishbone Peripherals}
+\subsubsection{GPIO}
+\input{\TEXTprod 02_product_text21}
+\subsection{Debug}
+\input{\TEXTprod 02_product_text22}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Architecture Concepts
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Architecture Concepts}
+\input{\TEXTarch 03_arch_text01}
+\input{\TEXTarch 03_arch_bild01}
+\input{\TEXTarch 03_arch_text02}
+\section{Technology}
+\label{sec:archtech}
+\input{\TEXTarch 03_arch_history_tab01}
+\section{CPU Concept}
+\label{sec:archcpu}
+\input{\TEXTarch 03_arch_history_tab01a}
+\input{\TEXTarch 03_arch_text03}
+\input{\TEXTarch 03_arch_tab01}
+\input{\TEXTarch 03_arch_tab02}
+\input{\TEXTarch 03_arch_tab03}
+\input{\TEXTarch 03_arch_hazard}
+\section{Bus Concept}
+\input{\TEXTarch 03_arch_history_tab02}
+\input{\TEXTarch 03_arch_bus_concept}
+\section{Interrupt Concept}
+\label{sec:archirq}
+\input{\TEXTarch 03_arch_history_tab03}
+\input{\TEXTarchc 03_arch_irq_concept}
+\section{Clock Concept}
+\input{\TEXTarch 03_arch_history_tab04}
+\input{\TEXTarch 03_arch_clock_concept}
+\section{System Control Concept}
+\input{\TEXTarch 03_arch_history_tab05}
+\section{Power Concept}
+\input{\TEXTarch 03_arch_history_tab06}
+\section{Memory Concept}
+\input{\TEXTarch 03_arch_history_tab07}
+\input{\TEXTarch 03_arch_memory_concept}
+\section{System Protection and Security Concept}
+\input{\TEXTarch 03_arch_history_tab08}
+\section{Debug Concept}
+\input{\TEXTarch 03_arch_history_tab09}
+\section{Register Concept}
+\input{\TEXTarch 03_arch_history_tab10}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: CPU Core
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{RWU-RV64I Core}
+\section{ALU}
+\label{sec:alufunc01}
+\subsubsection{History}
+\input{\TEXTalu 04_alu_author_tab01}
+\input{\TEXTalu 04_alu_history_tab01}
+\subsubsection{Functional Configuration of ALU0}
+\input{\TEXTalu 04_alu_text01}
+\input{\TEXTalu 04_alu_tab01}
+\subsubsection{HW Interfaces}
+\input{\TEXTalu 04_alu_text02}
+\input{\TEXTalu 04_alu_tab02}
+\subsubsection{Bus Interface}
+\input{\TEXTalu 04_alu_text03}
+\subsubsection{Registers}
+\input{\TEXTalu 04_alu_text04}
+\subsubsection{Related Sections of this Spec}
+\input{\TEXTalu 04_alu_text05}
+\subsection{History of ALU}
+\input{\TEXTalu 04_alu_history_tab02}
+\subsection{Functional Overview}
+\label{subsec:alufunc01}
+\input{\TEXTalu 04_alu_text06}
+\subsection{Structural Overview}
+\subsubsection{I/O of the ALU}
+\input{\TEXTalu 04_alu_tab03}
+\subsubsection{Internals of the ALU}
+%\input{\TEXTa 04_alu_tab04}
+\input{\TEXTalu 04_alu_list04}
+\subsection{Service Requests of the ALU}
+\input{\TEXTalu 04_alu_text07}
+\subsection{The ALU Peripheral Kernel}
+\input{\TEXTalu 04_alu_text08}
+\input{\TEXTalu 04_alu_tab05}
+\input{\TEXTalu 04_alu_tab06}
+\subsection{Registers}
+\input{\TEXTalu 04_alu_text09}
+
+\section{Instruction Decoder}
+\label{sec:decfunc01}
+\subsubsection{History}
+\input{\TEXTdec 04_dec_author_tab01}
+\input{\TEXTdec 04_dec_history_tab01}
+\subsubsection{Functional Configuration of InstructionDecode0}
+\input{\TEXTdec 04_dec_text01}
+\input{\TEXTdec 04_dec_tab01}
+\subsubsection{HW Interfaces}
+\input{\TEXTdec 04_dec_text02}
+\input{\TEXTdec 04_dec_tab02}
+\subsubsection{Bus Interface}
+\input{\TEXTdec 04_dec_text03}
+\subsubsection{Registers}
+\input{\TEXTdec 04_dec_text04}
+\subsubsection{Related Sections of this Spec}
+\input{\TEXTdec 04_dec_text05}
+\subsection{History of Instruction Decoder}
+\input{\TEXTdec 04_dec_history_tab02}
+\subsection{Functional Overview}
+\label{subsec:decfunc01}
+\input{\TEXTdec 04_dec_text06}
+\subsection{Structural Overview}
+\subsubsection{I/O of the Instruction Decoder}
+\input{\TEXTdec 04_dec_tab03}
+\subsubsection{Internals of the Instruction Decoder}
+\input{\TEXTdec 04_dec_list04}
+\subsection{Service Requests of the Instruction Decoder}
+\input{\TEXTdec 04_dec_text07}
+\subsection{The InstrDec Peripheral Kernel}
+\input{\TEXTdec 04_dec_text08}
+\input{\TEXTdec 04_dec_tab05}
+\subsection{Registers}
+\input{\TEXTalu 04_alu_text09}
+
+\section{Memory System}
+\label{sec:memfunc01}
+\input{\TEXTmems 04_memsyst_all}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Peripherals
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Peripherals}
+% GPIO
+\section{GPIO} % see INFINEON SGOLD 2 Spec USIF p.971
+\label{sec:gpiofunc01}
+\subsection{System Integration of GPIO0}
+\subsubsection{History}
+\input{\TEXTgpio 05_gpio_author_tab01}
+\input{\TEXTgpio 05_gpio_history_tab01}
+\subsubsection{Functional Configuration of GPIO0}
+\input{\TEXTgpio 05_gpio_text01}
+\input{\TEXTgpio 05_gpio_tab01}
+\subsubsection{HW Interfaces}
+\input{\TEXTgpio 05_gpio_text02}
+\input{\TEXTgpio 05_gpio_tab02}
+\subsubsection{Bus Interface}
+\input{\TEXTgpio 05_gpio_text03}
+\subsubsection{Registers}
+\input{\TEXTgpio 05_gpio_tab03}
+\subsubsection{Related Sections of this Spec}
+\input{\TEXTgpio 05_gpio_text04}
+\subsection{History of GPIO}
+\input{\TEXTgpio 05_gpio_history_tab02}
+\subsection{Functional Overview}
+\label{subsec:gpiofunc01}
+\input{\TEXTgpio 05_gpio_text05}
+\subsection{Structural Overview}
+\input{\TEXTgpio 05_gpio_text06}
+\input{\TEXTgpio 05_gpio_bild01}
+\input{\TEXTgpio 05_gpio_text07}
+\subsubsection{I/O of the GPIO Kernel}
+\input{\TEXTgpio 05_gpio_tab04}
+\subsubsection{I/O of the GPIO BPI}
+\input{\TEXTgpio 05_gpio_tab05}
+\subsubsection{Internals of the GPIO BPI}
+\input{\TEXTgpio 05_gpio_tab07}
+\subsubsection{I/O of the GPIO Top}
+\input{\TEXTgpio 05_gpio_tab06}
+\subsection{Service Requests of the GPIO}
+\input{\TEXTgpio 05_gpio_text08}
+\subsection{The GPIO Peripheral Kernel}
+\label{subsec:gpiofunc02}
+\input{\TEXTgpio 05_gpio_text09}
+\input{\TEXTgpio 05_gpio_bild02}
+\subsection{Registers}
+\input{\TEXTgpio 05_gpio_text10}
+
+% I-Mem
+% QSPI
+%\section{QSPI}
+%\label{sec:qspifunc01}
+%\subsection{System Integration of QSPI0}
+%\subsubsection{History}
+%\input{\TEXTqspi 05_qspi_author_tab01}
+%\input{\TEXTqspi 05_qspi_history_tab01}
+%\subsubsection{Functional Configuration of QSPI0}
+%\input{\TEXTqspi 05_qspi_text01}
+%\input{\TEXTqspi 05_qspi_tab01}
+%\subsubsection{HW Interfaces}
+%\input{\TEXTqspi 05_qspi_text02}
+%\input{\TEXTqspi 05_qspi_tab02}
+%\subsubsection{Bus Interface}
+%\input{\TEXTqspi 05_qspi_text03}
+%\subsubsection{Registers}
+%\input{\TEXTqspi 05_qspi_tab03}
+%\subsubsection{Related Sections of this Spec}
+%\input{\TEXTqspi 05_qspi_text04}
+%\subsection{History of QSPI}
+%\input{\TEXTqspi 05_qspi_history_tab02}
+%\subsection{Functional Overview}
+%\label{subsec:qspifunc01}
+%\input{\TEXTqspi 05_qspi_text05}
+%\subsection{Structural Overview}
+%\input{\TEXTqspi 05_qspi_text06}
+%\input{\TEXTqspi 05_qspi_bild01}
+%\input{\TEXTqspi 05_qspi_text07}
+%\subsubsection{I/O of the QSPI Kernel}
+%\input{\TEXTqspi 05_qspi_tab04}
+%\subsubsection{I/O of the QSPI BPI}
+%\input{\TEXTqspi 05_qspi_tab05}
+%\subsubsection{Internals of the QSPI BPI}
+%\input{\TEXTqspi 05_qspi_tab07}
+%\subsubsection{I/O of the QSPI Top}
+%\input{\TEXTqspi 05_qspi_tab06}
+%\subsection{Service Requests of the QSPI}
+%\input{\TEXTqspi 05_qspi_text08}
+%\subsection{The QSPI Peripheral Kernel}
+%\label{subsec:qspifunc02}
+%\input{\TEXTqspi 05_qspi_text09}
+%\input{\TEXTqspi 05_qspi_bild02}
+%\subsection{Registers}
+%\input{\TEXTqspi 05_qspi_text10}
+
+%AS
+\section{QSPI}
+\input{\TEXTqspi 05_qspi_all}
+
+%ChatGPT
+%\input{\TEXTqspi 05_qspi_all2}
+
+% Claude
+%\section{QSPI Claude}
+%\input{\TEXTqspi as_qspi_spec}
+
+% UART
+\section{UART}
+\input{\TEXTuart 05_uart_all}
+
+% ICU
+\section{ICU}
+\input{\TEXTicu 05_icu_all}
+
+
+
+%\input{\TEXTqspi 05_qspi_chatgpt}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Test & Debug
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Test and Debug}
+
+\section{Simulation Test Suite}
+\label{sec:simtest01}
+
+The \texttt{RV\_PipelineCacheFwd} project (like \texttt{RV\_NoPipeline}) includes a
+regression test suite driven by CMake.
+Each test assembles a dedicated firmware program, runs it under xsim, and checks
+the result via GPIO output (0x55\,=\,pass, 0xFF\,=\,fail) or a waveform monitor.
+
+\subsection{UART0 Simulation Tests}
+\label{subsec:uartsimtest}
+
+Two system-level tests verify UART0 end-to-end.
+Firmware uses \texttt{CLKDIV\,=\,4}, giving a bit period of
+$16 \times 4 \times 800\,\text{ns} = 51\,200\,\text{ns}$ at the 1.25\,MHz core clock.
+
+\paragraph{uart\_tx}
+Firmware writes twelve ASCII bytes (\textit{``Hello Rocker''}) to the UART TX FIFO
+one by one, polling STATUS[0] (tx\_busy) before each write.
+The testbench monitors \texttt{uart0\_tx\_o} and decodes each 8N1 frame,
+comparing against the expected string.
+On success GPIO\,=\,0x55 is written.
+
+\paragraph{uart\_rx}
+The testbench injects a pre-built 8N1 serial stream
+(\textit{``We will rock you.''}, 17\,bytes) onto \texttt{uart0\_rx\_i}.
+Firmware polls FIFOSTAT[21] (rx\_empty) until cleared, then reads the DATA
+register; each received byte is compared against the expected ASCII value.
+On full match GPIO\,=\,0x55; on any mismatch GPIO\,=\,0xFF.
+
+\subsubsection{RX FIFO Pop Bug (Fixed 2026-06-05)}
+\label{subsubsec:rxfifobug}
+
+During development, UART RX reads returned 0x00 for every received byte.
+Root cause: the non-pipelined CPU (\texttt{as\_cpux}) uses a two-cycle load
+sequence --- EXEC\_ST (address and read-enable asserted) followed by EXECLD\_ST
+(data captured by the register file).
+The Wishbone master (\texttt{asMBpi}) holds STB\,=\,CYC\,=\,1 throughout both
+cycles, so the UART slave's \texttt{rd\_data\_s} signal was high during EXEC\_ST,
+popping the show-ahead RX FIFO at the EXEC$\to$EXECLD clock edge.
+EXECLD\_ST then saw an empty FIFO and captured 0x00.
+
+Fix: a one-cycle delay register \texttt{rd\_data\_r} was added in
+\texttt{ip\_uart\_v2/src/as\_uart\_top.sv} and used as the FIFO \texttt{rd\_en\_i}.
+The pop now fires at EXECLD$\to$FETCH0, leaving the FIFO head valid throughout
+EXECLD\_ST.
+The same pattern must be applied to any future read-once (clear-on-read) register
+on this Wishbone bus.
+
+\subsection{\texttt{RV\_PipelineCacheFwd} Simulation Tests}
+\label{subsec:pipecachefwdsimtest}
+
+In addition to the shared instruction-set regression (58 tests common with
+\texttt{RV\_NoPipeline}, plus \texttt{ecall}/\texttt{ebreak} and the hazard
+suite of Section~\ref{subsubsec:hazardTestSuite}, all run under xsim),
+\texttt{RV\_PipelineCacheFwd} has test infrastructure the flat-SRAM
+\texttt{RV\_NoPipeline} variant has no equivalent of, since it alone has a
+cache/AXI4/QSPI-Flash memory subsystem:
+
+\begin{itemize}
+  \item \textbf{Cache-specific xsim tests:} \texttt{scratchpad\_intensive}
+    (RMW byte/halfword/word isolation on the scratchpad SRAM),
+    \texttt{dcache\_test} (multi-way fill, eviction, warm-cache hits,
+    cold-miss-after-evict), \texttt{memory\_sections} (scratchpad heap
+    write/read-back across the full address range). Each is a dedicated
+    testbench (\texttt{tb/tb\_rv64i\_*.sv}) with its own multi-phase GPIO
+    checkpoints (\texttt{GPIO\,=\,0x0N} per phase, \texttt{0x55} on final
+    success), not the shared \texttt{tb\_rv64i\_instr.sv}.
+  \item \textbf{cocotb ISS-scoreboard suite} (\texttt{cocotb/}, ported from
+    \texttt{RV\_NoPipeline}'s): re-runs the same 59 programs
+    instruction-by-instruction against a Python instruction-set simulator
+    (\texttt{iss.py}), comparing architectural state every cycle rather
+    than only the final GPIO byte. Since this variant has no directly
+    pokeable instruction RAM, \texttt{tb\_flash\_wrap.sv} wraps
+    \texttt{as\_top\_mem} with a behavioural QSPI NOR-Flash model (copied
+    from \texttt{tb/tb\_rv64i\_instr.sv}) so a test program can be loaded
+    by poking \texttt{flash\_mem\_s} directly -- bypassing JTAG, but
+    exercising the real I-Cache/AXI4/QSPI path for every fetch.
+  \item \textbf{AXI4 cache-error trap test:}
+    \texttt{tb/tb\_cpupipefwd\_cachefault.sv} (xsim, standalone
+    \texttt{CMakeLists.txt} in the same directory) verifies the
+    \texttt{mcause}=1/5 trap path of Section~\ref{ss:axi4ErrCpuSeq}
+    directly against \texttt{cc\_cpupipefwd.sv}, with a scripted
+    \texttt{icpu\_if}/\texttt{dcpu\_if} response queue standing in for the
+    cache (whose own \texttt{ic\_err}/\texttt{dc\_err} generation is
+    separately unit-tested in \texttt{ip\_icache/tb/tb\_asICache.sv} and
+    \texttt{ip\_dcache/tb/tb\_asDCache.sv}) -- this isolates the CPU's own
+    fault-flag threading and \texttt{mcause}/\texttt{mepc}/\texttt{mtval}
+    logic from the cache/AXI4 timing it is triggered by.
+\end{itemize}
+
+\subsubsection{Flush/Stall Priority Race (Fixed 2026-07-13)}
+\label{subsubsec:flushStallRace}
+
+During verification of the \texttt{ecall}/\texttt{ebreak} traps (a new
+cycle-accurate cocotb ISS scoreboard, ported from \texttt{RV\_NoPipeline}
+for this purpose), a pre-existing, previously-hidden pipeline bug was
+found and confirmed by reproducing it against the unmodified RTL: the
+\texttt{id\_ex} and \texttt{ex\_mem} pipeline registers only processed
+\texttt{flush\_s}-driven squashing (branch/trap/\texttt{mret} redirect)
+inside an \texttt{else if (!global\_stall\_s)} branch. When a redirect
+landed on the exact same cycle as an ordinary one-cycle icache-hit lookup
+stall, the flush was silently skipped: stale, wrong-path instructions
+already latched in \texttt{id\_ex}/\texttt{ex\_mem} survived and were
+committed once the stall cleared.
+
+xsim's GPIO-only pass/fail check never caught this: the wrong path
+happened to reach the same final output byte by coincidence, on every one
+of the 68 tests then passing. It only surfaced once the ISS scoreboard
+started comparing architectural state cycle-by-cycle rather than only the
+final GPIO write.
+
+Fix: \texttt{flush\_s} (and, for \texttt{ex\_mem}, \texttt{wb\_trap\_taken\_s}/
+\texttt{wb\_mret\_s}) now takes priority over the stall gate in both
+registers' clocking, matching how \texttt{if\_id}/\texttt{ibuf} already
+handled the same situation. The general lesson -- \textbf{any squash
+condition driven by a WB-stage or EX-stage event must never be nested
+inside a stall-gated branch, since the two can coincide} -- was applied
+again, by construction, when the AXI4 cache-error fault flags were added
+later (Section~\ref{ss:axi4ErrCpuSeq}): \texttt{icache\_stall\_s}/
+\texttt{dcache\_stall\_s} release on \texttt{ic\_err}/\texttt{dc\_err}
+exactly like on \texttt{ic\_rvalid}/\texttt{dc\_rvalid}, so a fault is
+never left waiting behind a stall condition that will never clear.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Electrical Characteristics
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Electrical Characteristics}
+Not yet
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Memory Map and Registers
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Memory Map and Registers}
+\label{ch:memmap}
+
+\section{System Memory Map}
+\label{sec:sysmap}
+
+Table~\ref{tab:sysmap} shows the complete address map of the \aschip{} system.
+The address space is 64-bit.
+Bit~32 of the address separates main memory (bit~32\,=\,0) from the peripheral
+bus (bit~32\,=\,1); the peripheral bridge in \textbf{RV\_PipelineCacheFwd} uses
+this bit to route accesses.
+All peripheral registers are 64-bit wide and 8-byte aligned.
+The column \textit{AW} gives the address-width parameter passed to the
+peripheral's Wishbone slave interface (lower \textit{AW} bits of the full
+address; the base address is always aligned to $2^{AW}$ bytes so the lower
+\textit{AW} bits equal the register offset directly).
+
+\begin{table}[H]
+\caption{System Memory Map}
+\label{tab:sysmap}
+\centering
+{\scriptsize
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Base Address & Size & Peripheral & AW & Notes \\
+  \hline
+  \hline
+  \multicolumn{5}{|l|}{\textit{Main memory (bit 32 = 0)}} \\
+  \hline
+  \texttt{0x0000\_0000\_0000\_0000} & 64\;kB & D-Mem / Scratchpad & --- &
+    Scratchpad. \\
+  \hline
+  \multicolumn{5}{|l|}{\textit{Peripheral bus (bit 32\,=\,1)}} \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0000} & 512\;B & \textbf{GPIO0}  & 7 & cs[1]. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0200} & 512\;B & \textbf{QSPI0}  & 8 & cs[2]. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0400} & 512\;B & \textbf{CGU}    & 4 & cs[3]. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0600} & 512\;B & \textbf{UART0}  & 8 & cs[4]. \\
+  \hline
+  \texttt{0x0000\_0001\_0000\_0800} & 512\;B & \textbf{ICU0}   & 8 & cs[5]. Aggregates GPIO0/QSPI0/UART0 IRQs into \texttt{irq\_ext\_i[7]}. See Section~\ref{sec:icufunc01} for the register map. \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+Tables~\ref{tab:gpiooffsets}--\ref{tab:uartoffsets} repeat the register
+offsets of every peripheral (from its own base address, see
+Table~\ref{tab:sysmap}) for quick reference; full bit-field descriptions
+are in the peripheral's own chapter/section as noted below each table.
+
+\begin{table}[H]
+\caption{GPIO0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0000})}
+\label{tab:gpiooffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asgpioIDRegExt   & rw & Peripheral ID \\
+  \hline
+  \texttt{0x08} & \asgpioDirRegExt  & rw & Direction, per pin: 1\,=\,input (pad\,$\rightarrow$\,reg), 0\,=\,output (reg\,$\rightarrow$\,pad, SW-writable) \\
+  \hline
+  \texttt{0x10} & \asgpioDatRegExt  & rw & Pin data: reads pad value (input pins) or driven value (output pins); writes set output pins \\
+  \hline
+  \texttt{0x18} & \asgpioIRQSSRegExt & ro & Interrupt Request Source Status (sticky, one bit per pin; hardware-set on pin change) \\
+  \hline
+  \texttt{0x20} & \asgpioIRQSMRegExt & rw & Interrupt Request Source Mask (per-pin; masks IRQSS into the single RIS[0] bit) \\
+  \hline
+  \texttt{0x28} & \asgpioIRQSCRegExt & wo & Interrupt Request Source Clear (write-1-to-clear IRQSS; not stored, reads 0) \\
+  \hline
+  \texttt{0x30} & \asgpioISRRegExt  & wo & Interrupt Set Register (write-1-to-set RIS bits, SW test; not stored, reads 0) \\
+  \hline
+  \texttt{0x38} & \asgpioRISRegExt  & ro & Raw Interrupt Status: [0]\,=\,|(IRQSS\,\&\,IRQSM) (level) or ISR-forced; [1]\,=\,ISR-forced only \\
+  \hline
+  \texttt{0x40} & \asgpioIMSCRegExt & rw & Interrupt Mask Control (chip-level enable feeding \texttt{gpio\_irq\_o}) \\
+  \hline
+  \texttt{0x48} & \asgpioMISRegExt  & ro & Masked Interrupt Status ($=$ IMSC $\wedge$ RIS) \\
+  \hline
+  \texttt{0x50} & \asgpioICRRegExt  & wo & Interrupt Clear (write-1-to-clear ISR-forced RIS bits; not stored, reads 0) \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize See Section~\ref{sec:gpiofunc01} (GPIO) for full bit-field descriptions.
+\normalsize
+\end{table}
+
+\begin{table}[H]
+\caption{QSPI0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0200})}
+\label{tab:qspioffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asqspiIDRegExt      & ro & Peripheral ID \\
+  \hline
+  \texttt{0x08} & \asqspiCtrlRegExt    & rw & [11:4]\,=\,\texttt{qspi\_ctrl\_t} (addr\_len, cpol, cpha, dual, cs\_hold, xip, ddr, quad), [3]\,=\,start (pulse), [2]\,=\,rx\_flush, [1]\,=\,tx\_flush (reset\,=\,\texttt{0x10}, quad\,=\,1) \\
+  \hline
+  \texttt{0x10} & \asqspiCmdRegExt     & rw & [7:0] SPI opcode (reset\,=\,\texttt{0x6B}, Quad Fast Read) \\
+  \hline
+  \texttt{0x18} & \asqspiAddrRegExt    & rw & [31:0] Flash address \\
+  \hline
+  \texttt{0x20} & \asqspiLenRegExt     & rw & [15:0] Transfer length in bytes (reset\,=\,8) \\
+  \hline
+  \texttt{0x28} & \asqspiDummyRegExt   & rw & [5:0] Dummy cycles (reset\,=\,8) \\
+  \hline
+  \texttt{0x30} & \asqspiClkdivRegExt  & rw & [7:0] SCK divider (reset\,=\,4) \\
+  \hline
+  \texttt{0x38} & \asqspiTimeoutRegExt & rw & [31:0] Timeout counter (reset\,=\,0, disabled) \\
+  \hline
+  \texttt{0x40} & \asqspiISRRegExt     & wo & Interrupt Set Register (write-1\,$\rightarrow$\,set RIS bit) \\
+  \hline
+  \texttt{0x48} & \asqspiRISRegExt     & ro & Raw Interrupt Status: [4]\,=\,TIMEOUT, [3]\,=\,ERR, [2]\,=\,TXHALF, [1]\,=\,RXHALF, [0]\,=\,DONE \\
+  \hline
+  \texttt{0x50} & \asqspiIMSCRegExt    & rw & Interrupt Mask Control \\
+  \hline
+  \texttt{0x58} & \asqspiMISRegExt     & ro & Masked Interrupt Status ($=$ RIS $\wedge$ IMSC) \\
+  \hline
+  \texttt{0x60} & \asqspiICRRegExt     & wo & Interrupt Clear Register (write-1\,$\rightarrow$\,clear RIS bit) \\
+  \hline
+  \texttt{0x68} & \asqspiRxdataRegExt  & ro & Pop from RX FIFO \\
+  \hline
+  \texttt{0x70} & \asqspiTxdataRegExt  & wo & Push to TX FIFO \\
+  \hline
+  \texttt{0x78} & \asqspiFifostatRegExt & ro & [25]\,=\,rx\_full, [24]\,=\,rx\_half, [20:16]\,=\,rx\_level, [9]\,=\,tx\_full, [8]\,=\,tx\_half, [4:0]\,=\,tx\_level (reset\,=\,\texttt{0x100}) \\
+  \hline
+  \texttt{0x80} & \asqspiXipRegExt     & rw & [7:0] XIP mode byte (reset\,=\,\texttt{0xA0}, Winbond mode) \\
+  \hline
+  \texttt{0x88} & \asqspiStatusRegExt  & ro & [4]\,=\,timeout, [3]\,=\,error, [2]\,=\,xip\_active, [1]\,=\,done, [0]\,=\,busy \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize See Section~\ref{sec:memfunc01} (Memory
+System) for the AXI4 cache-refill path this peripheral also serves.
+\normalsize
+\end{table}
+
+\begin{table}[H]
+\caption{CGU Register Offsets (from base \texttt{0x0000\_0001\_0000\_0400})}
+\label{tab:cguoffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \ascguIDRegExt & rw & Peripheral ID \\
+  \hline
+\end{tabularx}}
+
+\noindent\footnotesize The CGU's clock-divider ratios
+(\texttt{clk\_core\_div}, \texttt{clk\_bus1\_div}, \texttt{clk\_bus2\_div},
+\texttt{clk\_qspi\_div}) are compile-time constants, not registers -- see
+the Clock Concept, Section~\ref{subsec:cguOverview}.
+\normalsize
+\end{table}
+
+Table~\ref{tab:uartoffsets} repeats the UART0 register offsets (from the UART0
+base address) for quick reference; full bit-field
+descriptions are in Section~\ref{sec:uartfunc01}.
+
+\begin{table}[H]
+\caption{UART0 Register Offsets (from base \texttt{0x0000\_0001\_0000\_0600})}
+\label{tab:uartoffsets}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Offset & Symbol & Mode & Description \\
+  \hline
+  \hline
+  \texttt{0x00} & \asuartIDRegExt   & ro  & Peripheral ID (\texttt{0x20}) \\
+  \hline
+  \texttt{0x08} & \asuartLcrRegExt  & rw  & Line Control (data bits, parity, stop bits, break) \\
+  \hline
+  \texttt{0x10} & \asuartClkdivRegExt & rw & Baud-rate divisor (16-bit) \\
+  \hline
+  \texttt{0x18} & \asuartCtrlRegExt & rw  & Control (loopback, tx\_flush, rx\_flush) \\
+  \hline
+  \texttt{0x20} & \asuartStatusRegExt & ro & TX/RX busy; sticky error flags \\
+  \hline
+  \texttt{0x28} & \asuartDataRegExt & rw  & Write: TX FIFO push; Read: RX FIFO pop \\
+  \hline
+  \texttt{0x30} & \asuartFifostatRegExt & ro & TX/RX FIFO levels, full, half, empty \\
+  \hline
+  \texttt{0x38} & \asuartRxthresRegExt & rw & RX interrupt threshold (default\,=\,8) \\
+  \hline
+  \texttt{0x40} & \asuartRISRegExt  & ro  & Raw Interrupt Status \\
+  \hline
+  \texttt{0x48} & \asuartIMSCRegExt & rw  & Interrupt Mask Control \\
+  \hline
+  \texttt{0x50} & \asuartMISRegExt  & ro  & Masked Interrupt Status \\
+  \hline
+  \texttt{0x58} & \asuartICRRegExt  & wo  & Interrupt Clear (write-1-to-clear) \\
+  \hline
+  \texttt{0x60} & \asuartISRRegExt  & wo  & Interrupt Set (write-1-to-set, SW test) \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+\section{Interrupt Map}
+\label{sec:irqmap}
+
+Table~\ref{tab:irqmap} shows how the peripheral interrupt sources map onto
+the 8-bit \texttt{irq\_ext\_i} vector at the CPU boundary.
+As detailed in Section~\ref{subsec:irqconcept}, \textbf{only bit~7 of
+\texttt{irq\_ext\_i} is synchronised and evaluated by the CPU} (\texttt{cc\_cpupipefwd}); bits~\texttt{[6:0]} are
+declared \texttt{UNUSEDSIGNAL} in the CPU RTL and have no effect on program
+flow, regardless of what is wired to them at the top level.
+
+\begin{table}[H]
+\caption{External Interrupt Map (\texttt{irq\_ext\_i})}
+\label{tab:irqmap}
+\centering
+{\footnotesize
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  Bit & Source & Consumed by CPU? \\
+  \hline
+  \hline
+  7 &     \texttt{icu\_irq\_s}: GPIO0 $\vert$ QSPI0 $\vert$ UART0, arbitrated by
+    ICU0 (\texttt{icu\_irq\_o}, Section~\ref{sec:icufunc01}) &
+    \textbf{Yes} -- drives \texttt{mip.MEIP} \\
+  \hline
+  6\,--\,0 & tied to 0 &
+    \textbf{No} -- reserved (5 of ICU0's 8 source slots remain
+    unwired, Table~\ref{tab:asIcuSrcAssign}) \\
+  \hline
+\end{tabularx}}
+\end{table}
+
+GPIO0, UART0 and QSPI0 feed
+ICU0 directly, not \texttt{irq\_ext\_i}; ICU0's own arbitrated output
+\texttt{icu\_irq\_o} is the only signal driving bit~7. Firmware
+determines the interrupt cause by reading \textbf{ICU0\_IRQID}
+(Section~\ref{sec:icufunc01}) instead of polling each peripheral's own
+\texttt{MIS} register -- this was an open item prior to ICU0's
+introduction and is now resolved.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% C: Variant C -- Multi-Core NN Inference (concept)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Variant C -- Multi-Core NN Inference (Concept)}
+\input{\TEXTmcnn 06_mcnn_all}

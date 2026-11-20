@@ -1,0 +1,105 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Englisch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[a4paper,12pt]{book}
+\usepackage[english]{babel}
+\selectlanguage{english}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Deutsch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\documentclass[a4paper,12pt]{book} 
+%\usepackage[german,ngerman]{babel} %Chapter -> Kapitel
+%\usepackage[T1]{fontenc}           %Umlaute
+%\selectlanguage{ngerman}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pfade %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\newcommand{\ASROOT}{/media/andreas/arbeit/neuestruktur/hs_vorlesungen/}
+%\newcommand{\UMGEBUNG}{\ASROOT latex/}
+\newcommand{\COMMON}{../../spec_common/}
+\newcommand{\UMGEBUNG}{\COMMON}
+\newcommand{\BILDERa}{\COMMON}
+\newcommand{\TEXTa}{./}
+\newcommand{\TEXTprod}{./02_prod/}
+\newcommand{\TEXTarch}{./03_arch/}
+\newcommand{\TEXTarchc}{\COMMON 03_arch/}
+\newcommand{\TEXTalu}{\COMMON 04_alu/}
+\newcommand{\TEXTdec}{\COMMON 04_dec/}
+\newcommand{\TEXTgpio}{\COMMON 05_gpio/}
+\newcommand{\TEXTuart}{\COMMON 05_uart/}
+\newcommand{\TEXTicu}{\COMMON 05_icu/}
+\newcommand{\TEXTmems}{./04_memsyst/}
+\newcommand{\TEXTqspi}{./05_qspi/}
+\newcommand{\TEXTmcnn}{./06_mcnn/}
+% Variant switch: text in \onlyB{} appears only in this (Variant B) spec
+\newcommand{\onlyA}[1]{}
+\newcommand{\onlyB}[1]{#1}
+\newcommand{\asvariant}{Variant B -- RV\_PipelineCacheFwd}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Umgebung 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\input{\UMGEBUNG latex_all_asheader_en}
+\input{\UMGEBUNG latex_all_makros}
+
+\setcounter{tocdepth}{2}    % How many levels will be seen in ToC.
+\setcounter{secnumdepth}{2} % How many levels will have a number.
+%\usepackage[colorhead=true]{rwukoma}
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+ % Literatur: biber
+ %%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[backend=biber,
+                     style=ieee,
+                     natbib=true,
+                     hyperref=true,
+                     maxnames=4]{biblatex}
+\addbibresource{../../spec_common/as_literature.bib} %% Einbinden der bib-Datei
+\DeclareBibliographyCategory{cited}
+\AtEveryCitekey{\addtocategory{cited}{\thefield{entrykey}}}
+
+\input{\COMMON latex_spec_names}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes.arrows}
+\usetikzlibrary{shapes.multipart}
+\usetikzlibrary{positioning}
+\usetikzlibrary{automata}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Titel, author, date
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\ifthenelse{\equal{\deutsch}{false}}
+{\title{Specification - \aschip \\ \asvariant}}
+{\title{Spezifikation - \aschip \\ \asvariant}}
+\author{Prof. Dr.-Ing. A. Siggelkow}
+\date{\today}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Titelpage and table of content
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pagenumbering{Alph}
+\begin{titlepage}
+  \maketitle
+  \thispagestyle{empty}
+\end{titlepage}
+\pagenumbering{arabic}
+%\tableofcontents
+\thispagestyle{empty}
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Set the chapter counter and relate the
+% equation numbers to the chapters
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{chapter}{0}
+\numberwithin{equation}{section}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Document
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\input{\TEXTa 2do.tex}
+\input{\TEXTa 00_rwurv64i_all}
+\printbibliography
+\end{document}
