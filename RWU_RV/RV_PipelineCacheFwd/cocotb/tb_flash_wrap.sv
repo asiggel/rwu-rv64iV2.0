@@ -29,6 +29,7 @@ module tb_flash_wrap (
   // Flash memory: instructions loaded directly by cocotb (32-bit words)
   localparam int FLASH_WORDS = 16384;
   logic [31:0] flash_mem_s [0:FLASH_WORDS-1];
+  logic [nr_gpios-1:0] gpio_o_s, gpio_oe_s;
 
   logic       sck_s;
   logic       flash_cs_s;
@@ -39,8 +40,8 @@ module tb_flash_wrap (
 
   as_top_mem DUT (
     .clk_i(clk_i), .rst_i(rst_i),
-    .tck_i(tck_i), .trst_i(trst_i), .tms_i(tms_i), .tdi_i(tdi_i), .tdo_o(tdo_o),
-    .gpio_io(gpio_io),
+    .tck_i(tck_i), .trst_i(trst_i), .tms_i(tms_i), .tdi_i(tdi_i), .tdo_o(tdo_o), .tdo_oe_o(),
+    .gpio_o(gpio_o_s), .gpio_oe_o(gpio_oe_s), .gpio_i(gpio_io),
     .cs_o(cs_o),
     .sck_o(sck_s),
     .flash_cs_o(flash_cs_s),
@@ -49,6 +50,15 @@ module tb_flash_wrap (
     .uart0_tx_o(uart0_tx_o),
     .uart0_rx_i(uart0_rx_i)
   );
+
+  // GPIO pins: the tri-state driver is in the pad ring (cc_chip_top)
+  genvar gp;
+  generate
+    for (gp = 0; gp < nr_gpios; gp++)
+    begin : g_gpio_pin
+      assign gpio_io[gp] = gpio_oe_s[gp] ? gpio_o_s[gp] : 1'bz;
+    end
+  endgenerate
 
   //------------------------------------------
   // QSPI NOR flash model (W25Q-style, Quad Output Fast Read 0x6B)

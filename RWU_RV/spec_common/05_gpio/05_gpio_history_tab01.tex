@@ -23,5 +23,7 @@ Regulations for history table:
   \hline
   2026-11-06 & Andreas Siggelkow, Claude & Interrupt registers moved to the shared block as\_irq\_peripheral. IRQSC/ISR are write strobes (not stored). IRQSS collects pulses per bit. New register ICR (0x50). RIS[0] is the level |(IRQSS \& IRQSM). \\
   \hline
+  2026-11-21 & Claude & Tri-state moved out of the kernel: gpio\_io replaced by gpio\_o, gpio\_oe\_o, gpio\_i; the driver is in the pad (Variant~A pad ring, TECH-04). \\
+  \hline
 \end{tabularx}
 \end{table}

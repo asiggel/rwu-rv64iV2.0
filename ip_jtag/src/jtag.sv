@@ -26,7 +26,9 @@ module jtag ( input logic  tck_i,        // Test Clock
               output logic bs_shift_o,   // BS: shift enable
               output logic bs_clock_o,   // BS: clock enable
               output logic bs_upd_o,     // BS: update slave
-              output logic bs_mode_o     // BS: function or serial
+              output logic bs_mode_o,    // BS: function or serial
+              // last, so that positional instances (ip_jtag/tb) stay valid
+              output logic tdo_oe_o      // TDO output enable, active high; tri-state in the pad
               
               );
 
@@ -243,9 +245,11 @@ module jtag ( input logic  tck_i,        // Test Clock
   end
 
   //----------------------------------------
-  // TDO Tri-State — driven on falling TCK edge per IEEE 1149.1
+  // TDO driven on falling TCK edge per IEEE 1149.1; the tri-state driver is
+  // in the pad (cc_chip_top) or in the testbench.
   //----------------------------------------
-  assign tdo_o = (tdo_ena_n_s == 1) ? tdo_3rd_s : 1'bz;
+  assign tdo_o    = tdo_3rd_s;
+  assign tdo_oe_o = tdo_ena_n_s;
 
 
 endmodule : jtag

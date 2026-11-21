@@ -85,6 +85,89 @@ The I-Mem macro is clocked through a multiplexer: \texttt{tck\_i} while
 JTAG loads the program, \texttt{clk\_div\_s} otherwise
 (Table~\ref{tab:asImemModes}).
 
+\subsection{Pad Ring -- Variant A}
+\label{subsec:padRingA}
+
+The chip top \texttt{cc\_chip\_top} (\texttt{src/cc\_chip\_top.sv}) contains
+the pad ring and the core \texttt{as\_top\_mem} (instance \texttt{core}).
+Its ports are the bond pads and keep the former \texttt{as\_top\_mem} port
+names, so the SDC port names hold for both levels; it is the Genus top.
+The pads are instantiated through three wrappers:
+
+\begin{itemize}
+  \item \texttt{cc\_pad\_in} -- input, CMOS or Schmitt trigger
+    (parameter \texttt{schmitt}),
+  \item \texttt{cc\_pad\_out} -- output, tri-state cell with output enable
+    (active high; tied active except for TDO),
+  \item \texttt{cc\_pad\_bidir} -- bidirectional (GPIO), output enable
+    active high.
+\end{itemize}
+
+As with the SRAM wrappers, \texttt{`define XFAB\_PADS} selects the
+IO\_CELLS\_3V cells; the cell names come from the local path file
+(\texttt{\$XFAB\_PATHS}, NDA). Without the define the wrappers are
+behavioural, and \texttt{cc\_chip\_top} also serves as FPGA top with the old
+pin names. The NAND-tree test chain of the pad cells (\texttt{PI}/\texttt{PO})
+is not used.
+The tri-state drivers moved out of the core into the pads: the GPIO driver
+from \texttt{as\_gpio} into the bidirectional pads (\texttt{as\_top\_mem}
+ports \texttt{gpio\_o}, \texttt{gpio\_oe\_o}, \texttt{gpio\_i},
+Table~\ref{tab:asGpioPer04a}), the TDO driver from \texttt{jtag} into the
+TDO pad (new port \texttt{tdo\_oe\_o}, active only in Shift-IR/Shift-DR, so
+that TDO is high impedance otherwise, as required by IEEE~1149.1). The core therefore contains no internal tri-state
+net. The testbenches resolve the GPIO tri-state themselves.
+
+\begin{table}[H]
+\caption{Variant A -- Signal Pads}
+\label{tab:asPadsA}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Pin & Dir. & Pad & Remark \\
+  \hline
+  \hline
+  \texttt{clk\_i}      & in  & CMOS input    & 100\,MHz \\
+  \hline
+  \texttt{rst\_i}      & in  & Schmitt input & asynchronous reset \\
+  \hline
+  \texttt{tck\_i}      & in  & Schmitt input & JTAG clock, $\le$\,25\,MHz \\
+  \hline
+  \texttt{trst\_i}     & in  & Schmitt input & TAP reset \\
+  \hline
+  \texttt{tms\_i}, \texttt{tdi\_i} & in & CMOS input & JTAG \\
+  \hline
+  \texttt{uart0\_rx\_i} & in & CMOS input    & UART \\
+  \hline
+  \texttt{tdo\_o}      & out & 4\,mA tri-state output & enable \texttt{tdo\_oe\_o} \\
+  \hline
+  \texttt{cs\_o}, \texttt{uart0\_tx\_o} & out & 4\,mA output & \\
+  \hline
+  \texttt{gpio\_io[7:0]} & bidi & 4\,mA bidirectional & 8 pads \\
+  \hline
+  \multicolumn{3}{|l|}{Signal pads} & 18 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Supply pads.}
+Four supply roles with two pads each: core supply and core ground
+(1.8\,V), IO supply and IO ground (3.3\,V) -- 8 pads. Together with the
+18 signal pads this gives 26 pads plus 4 corner cells. Role, count and
+placement are a first estimate from the library data and must be checked
+against the IO\_CELLS\_3V databook (TECH-06). The supply pads are
+instantiated in \texttt{cc\_chip\_top} only with \texttt{`define XFAB\_PADS};
+corner and filler cells are added in place and route.
+
+\paragraph{Pad-limited or core-limited?}
+The core needs about 3.5--4.5\,mm\textsuperscript{2}
+(Table~\ref{tab:asTechAreaA}), i.e.\ a core side of about 2\,mm. With the
+pad ring around it the die side is about 2.5--2.7\,mm. A ring of this size
+has room for more than 100 pads; 26 are needed.
+A die that is just large enough for 26 pads would have a side below 1\,mm.
+\textbf{Variant~A is core-limited}: the SRAM and the logic set the die size,
+the pad ring is mostly filled with filler cells. Additional supply pads
+cost no area.
+
 \subsection{Open Items -- Technology}
 \label{subsec:techOpenA}
 
@@ -125,7 +208,13 @@ JTAG loads the program, \texttt{clk\_div\_s} otherwise
   TECH-03 & Decide the I-Mem size (32\,KiB or 16\,KiB) from the size of the
             target software. \\
   \hline
-  TECH-04 & Pad count and pad-ring area; check whether the die is pad-limited. \\
+  TECH-04 & \emph{Closed 2026-11-21:} pad ring in \texttt{cc\_chip\_top}
+            (Section~\ref{subsec:padRingA}): 18 signal pads, 8 supply pads,
+            4 corners; core-limited. \\
+  \hline
+  TECH-06 & Check the supply pads (roles, count, placement, ESD and
+            simultaneous switching) against the IO\_CELLS\_3V databook. \\
+
   \hline
 \end{tabularx}
 \end{table}

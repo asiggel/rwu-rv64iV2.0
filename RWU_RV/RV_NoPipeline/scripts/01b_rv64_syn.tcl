@@ -1,10 +1,10 @@
 #===============================================================================
 # 01b_rv64_syn.tcl
 #
-# Genus script: logic synthesis of RV_NoPipeline (as_top_mem)
+# Genus script: logic synthesis of RV_NoPipeline (chip top cc_chip_top)
 # Technology:   X-FAB XH018 (see 00_rv64_elab.tcl)
 #
-# Builds on the checkpoint written by 00_rv64_elab.tcl (as_top_mem_elab.db,
+# Builds on the checkpoint written by 00_rv64_elab.tcl (cc_chip_top_elab.db,
 # libraries, LEF, MMMC and SDC included) -- run it first, in the same run
 # directory.
 #
@@ -12,7 +12,7 @@
 #   genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/01b_rv64_syn.tcl
 #===============================================================================
 
-set DESIGN_TOP as_top_mem
+set DESIGN_TOP cc_chip_top
 
 # ------------------------------------------------------------------------
 # 1. Restore elaborated design
@@ -26,9 +26,10 @@ set_db syn_generic_effort medium
 set_db syn_map_effort     medium
 set_db syn_opt_effort     medium
 
-# The SDC files refer to cgu/CGUCore and as_jtag pins.
-set_db [get_db hinsts cgu/CGUCore] .ungroup_ok false
-set_db [get_db hinsts as_jtag]     .ungroup_ok false
+# The SDC files refer to core/cgu/CGUCore and core/as_jtag pins.
+set_db [get_db hinsts core]             .ungroup_ok false
+set_db [get_db hinsts core/cgu/CGUCore]  .ungroup_ok false
+set_db [get_db hinsts core/as_jtag]      .ungroup_ok false
 
 # ------------------------------------------------------------------------
 # 3. Run synthesis

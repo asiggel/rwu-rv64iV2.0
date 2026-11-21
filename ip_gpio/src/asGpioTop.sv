@@ -23,7 +23,9 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
                      //output logic [nr_gpios-1:0]       gpio_irq_o, // GPIO IRQ; input changed
                      output logic        gpio_irq_o, // GPIO IRQ; input changed
                      // I/O
-                     inout  tri   [nr_gpios-1:0]       gpio_io,    // to Pin
+                     output logic [nr_gpios-1:0]       gpio_o,     // to pad
+                     output logic [nr_gpios-1:0]       gpio_oe_o,  // to pad, active high
+                     input  logic [nr_gpios-1:0]       gpio_i,     // from pad
                      output logic                      cs_o       // to Pin
                    );
 
@@ -76,7 +78,9 @@ module as_gpio_top #( parameter gpioaddr_width = 64,
                    .data_o(dataok_s),
 		   .irq_o(irq_s),
                    .en_i(en_s),
-                   .gpio_io(gpio_io),
+                   .gpio_o(gpio_o),
+                   .gpio_oe_o(gpio_oe_o),
+                   .gpio_i(gpio_i),
                    .cs_o(cs_o)
                   );
 

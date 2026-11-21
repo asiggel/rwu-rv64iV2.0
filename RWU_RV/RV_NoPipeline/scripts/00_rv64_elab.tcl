@@ -2,7 +2,8 @@
 # 00_rv64_elab.tcl
 #
 # Genus script: read libraries (MMMC), LEF and RTL, elaborate RV_NoPipeline
-# (as_top_mem) and write the checkpoint for 01b_rv64_syn.tcl.
+# (chip top cc_chip_top = pad ring + as_top_mem) and write the checkpoint for
+# 01b_rv64_syn.tcl.
 # Technology:   X-FAB XH018 (4 metal layers, LPMOS),
 #               D_CELLS_HD, IO_CELLS_3V, SPRAM macros for I-Mem / D-Mem
 #
@@ -19,7 +20,7 @@
 # ------------------------------------------------------------------------
 set SCRIPT_DIR  [file dirname [file normalize [info script]]]
 set DESIGN_PATH [file normalize $SCRIPT_DIR/../../..]
-set DESIGN_TOP  as_top_mem
+set DESIGN_TOP  cc_chip_top
 
 if {![info exists ::env(XFAB_PATHS)] || ![file readable $::env(XFAB_PATHS)]} {
   error "XFAB_PATHS must point to the local X-FAB path file (see $SCRIPT_DIR/xh018_paths_template.tcl)"
@@ -87,17 +88,31 @@ set RTL_FILES [list \
   "$DESIGN_PATH/ip_icu/src/cc_icu.sv" \
   "$DESIGN_PATH/ip_icu/src/cc_icu_top.sv" \
   "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asTopMem.sv" \
+  "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/cc_pad_in.sv" \
+  "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/cc_pad_out.sv" \
+  "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/cc_pad_bidir.sv" \
+  "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/cc_chip_top.sv" \
 ]
 
 # ------------------------------------------------------------------------
 # 5. Read, elaborate, bind constraints
 # ------------------------------------------------------------------------
-# XFAB_SPRAM selects the SPRAM macros in as_imem / as_dmem_core instead of
-# the behavioural models. The macro cell names come from $XFAB_PATHS, so that
-# no X-FAB cell name is part of the repository.
+# XFAB_SPRAM selects the SPRAM macros in as_imem / as_dmem_core, XFAB_PADS the
+# IO_CELLS_3V cells in cc_pad_* and the supply pads in cc_chip_top, instead of
+# the behavioural models. All cell names come from $XFAB_PATHS, so that no
+# X-FAB cell name is part of the repository.
 read_hdl -sv -define [list XFAB_SPRAM \
                            XFAB_IMEM_MACRO=$IMEM_MACRO \
-                           XFAB_DMEM_MACRO=$DMEM_MACRO] $RTL_FILES
+                           XFAB_DMEM_MACRO=$DMEM_MACRO \
+                           XFAB_PADS \
+                           XFAB_PAD_IN=$PAD_IN \
+                           XFAB_PAD_IN_ST=$PAD_IN_ST \
+                           XFAB_PAD_OUT=$PAD_OUT \
+                           XFAB_PAD_BIDIR=$PAD_BIDIR \
+                           XFAB_PAD_VDD=$PAD_VDD \
+                           XFAB_PAD_GND=$PAD_GND \
+                           XFAB_PAD_VDDO=$PAD_VDDO \
+                           XFAB_PAD_GNDO=$PAD_GNDO] $RTL_FILES
 elaborate $DESIGN_TOP
 init_design
 

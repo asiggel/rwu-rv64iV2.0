@@ -16,8 +16,11 @@ module as_top_mem (
     input  logic                    tms_i,
     input  logic                    tdi_i,
     output logic                    tdo_o,
-    // GPIO
-    inout  tri [nr_gpios-1:0]       gpio_io,
+    output logic                    tdo_oe_o,
+    // GPIO: tri-state in the pad ring (cc_chip_top) or in the testbench
+    output logic [nr_gpios-1:0]        gpio_o,
+    output logic [nr_gpios-1:0]        gpio_oe_o,
+    input  logic [nr_gpios-1:0]        gpio_i,
     output logic                    cs_o,
     // QSPI flash (physical pins)
     output logic                    sck_o,
@@ -178,7 +181,9 @@ module as_top_mem (
     .wbdAck_o(),
     .wbdCyc_i(is_periph_req_s),
     .gpio_irq_o(irq_gpiox_s),
-    .gpio_io(gpio_io),
+    .gpio_o(gpio_o),
+    .gpio_oe_o(gpio_oe_o),
+    .gpio_i(gpio_i),
     .cs_o(asGpioCs_s)
   );
 
@@ -257,7 +262,7 @@ module as_top_mem (
   assign im_tdo_s = 1'b0;
 
   jtag as_jtag (
-    .tck_i(tck_i), .trst_i(trst_i), .tms_i(tms_i), .tdi_i(tdi_i), .tdo_o(tdo_o),
+    .tck_i(tck_i), .trst_i(trst_i), .tms_i(tms_i), .tdi_i(tdi_i), .tdo_o(tdo_o), .tdo_oe_o(tdo_oe_o),
     .tap_rst_o(tap_rst_s),
     .dr_cap_o(dr_cap_s),
     .sc01_tdo_i(sc01_tdo_s), .sc01_tdi_o(sc01_tdi_s),

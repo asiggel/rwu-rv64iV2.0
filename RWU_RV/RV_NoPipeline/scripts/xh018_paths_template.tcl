@@ -35,3 +35,13 @@ set QRC_MIN    <QRC-Min/qrcTechFile>
 # SPRAM macro cell names (I-Mem 8192x32, D-Mem 1024x64 with bit write mask)
 set IMEM_MACRO <imem_macro_name>
 set DMEM_MACRO <dmem_macro_name>
+
+# IO_CELLS_3V cell names for the pad ring (cc_pad_*, cc_chip_top)
+set PAD_IN    <cmos_input_cell>          ;# pins PAD Y PI PO
+set PAD_IN_ST <schmitt_input_cell>       ;# pins PAD Y PI PO
+set PAD_OUT   <tristate_output_cell>     ;# pins A EN PAD, EN active low
+set PAD_BIDIR <bidirectional_cell>       ;# pins A EN PAD Y PI PO, EN active low
+set PAD_VDD   <core_supply_pad>
+set PAD_GND   <core_ground_pad>
+set PAD_VDDO  <io_supply_pad>
+set PAD_GNDO  <io_ground_pad>

@@ -10,9 +10,11 @@
 #   clk_core    clk_i / 80 = 1.25 MHz, CGU counter divider (clk_core_div = 80)
 #   tck_i       <= 25 MHz JTAG, asynchronous to clk_i
 #
-# Hierarchical pin names follow src/asTopMem.sv and ip_cgu/src/asCguTop.sv
-# (instances cgu/CGUCore and as_jtag). Keep those hierarchies ungrouped
-# until after synthesis, or update the names here.
+# Design top: cc_chip_top (pad ring); the ports are the bond pads and carry
+# the as_top_mem port names. Hierarchical pin names follow src/cc_chip_top.sv,
+# src/asTopMem.sv and ip_cgu/src/asCguTop.sv (instances core, core/cgu/CGUCore,
+# core/as_jtag). Keep those hierarchies ungrouped until after synthesis, or
+# update the names here.
 #===============================================================================
 
 # ---- Clocks ------------------------------------------------------------------
@@ -21,13 +23,13 @@ create_clock -name tck_i -period 40.000 [get_ports tck_i]
 
 # The CGU divides clk_i by a counter; clk_core_o is its decoded output.
 create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
-  [get_pins cgu/CGUCore/clk_core_o]
+  [get_pins core/cgu/CGUCore/clk_core_o]
 
 # Functional mode: the scan bypass mux (clk_div_s = dr_cap_s ? clk_i : clk_core_s)
 # selects clk_core. Without this, every core path would also be timed at the
 # 100 MHz clk_i, which is only used in scan test.
-set_case_analysis 0 [get_pins as_jtag/dr_cap_o]
-# The I-Mem clock mux (as_jtag/im_mode_o) is fixed per mode in the mode file.
+set_case_analysis 0 [get_pins core/as_jtag/dr_cap_o]
+# The I-Mem clock mux (core/as_jtag/im_mode_o) is fixed per mode in the mode file.
 
 # JTAG writes the I-Mem with tck_i, the core reads it with clk_core; the
 # software only runs after loading (rst_i = 1 while loading), so there is no
@@ -54,6 +56,7 @@ set_output_delay -clock clk_core [expr {0.2 * $_core_period}] $_func_out
 set_input_delay  -clock tck_i 10.000 [get_ports {tms_i tdi_i}]
 set_output_delay -clock tck_i 10.000 [get_ports tdo_o]
 
-# ---- Environment (pad ring not yet instantiated, TECH-04) ---------------
-set_load 0.050 [all_outputs]
-set_input_transition 0.500 [all_inputs]
+# ---- Environment: board at the bond pads ------------------------------------
+# 10 pF board and probe load per output, 1 ns edges from the board drivers.
+set_load 10.000 [all_outputs]
+set_input_transition 1.000 [all_inputs]

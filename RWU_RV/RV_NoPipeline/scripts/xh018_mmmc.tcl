@@ -1,7 +1,7 @@
 #===============================================================================
 # xh018_mmmc.tcl
 #
-# Multi-mode multi-corner setup for RV_NoPipeline (as_top_mem), X-FAB XH018.
+# Multi-mode multi-corner setup for RV_NoPipeline (cc_chip_top), X-FAB XH018.
 # Read by Genus (read_mmmc in 00_rv64_elab.tcl) and later by Innovus.
 # Expects the variables of the local path file ($XFAB_PATHS, see
 # xh018_paths_template.tcl) and SCRIPT_DIR to be set.

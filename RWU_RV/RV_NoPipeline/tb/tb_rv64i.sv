@@ -16,6 +16,7 @@ module tb_rv64i ();
   logic	rst_s;
   logic	tck_s, trst_s, tms_s, tdi_s, tdo_s;
   tri [nr_gpios-1:0]	      gpio_s; // gpio
+  logic [nr_gpios-1:0] gpio_o_s, gpio_oe_s;
   logic [gpio_addr_width-1:0] gpioAddr_s;
   logic			      cs_s;
 
@@ -31,12 +32,21 @@ module tb_rv64i ();
               .tms_i(tms_s),
               .tdi_i(tdi_s),
               .tdo_o(tdo_s),
-              .gpio_io(gpio_s),
+              .gpio_o(gpio_o_s), .gpio_oe_o(gpio_oe_s), .gpio_i(gpio_s),
               //.gpioAddr_o(gpioAddr_s),
               .cs_o(cs_s),
               .uart0_tx_o(),
               .uart0_rx_i(1'b1)
              );
+
+  // GPIO pins: the tri-state driver is in the pad ring (cc_chip_top)
+  genvar gp;
+  generate
+    for (gp = 0; gp < nr_gpios; gp++)
+    begin : g_gpio_pin
+      assign gpio_s[gp] = gpio_oe_s[gp] ? gpio_o_s[gp] : 1'bz;
+    end
+  endgenerate
   // read instructions
   initial
     $readmemh("riscvtest.mem",iram_s);

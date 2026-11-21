@@ -22,8 +22,11 @@ module as_top_mem (input logic                       clk_i,
                   input  logic                       tms_i,      // Test Mode Select
                   input  logic                       tdi_i,      // Test Data In
                   output logic                       tdo_o,      // Test Data Out
-                  // GPIO
-                  inout tri [nr_gpios-1:0]           gpio_io,
+                  output logic                       tdo_oe_o,   // TDO output enable (tri-state in the pad)
+                  // GPIO: tri-state in the pad ring (cc_chip_top) or in the testbench
+                  output logic [nr_gpios-1:0]        gpio_o,
+                  output logic [nr_gpios-1:0]        gpio_oe_o,
+                  input  logic [nr_gpios-1:0]        gpio_i,
                   output logic                       cs_o,
                   // UART0
                   output logic                       uart0_tx_o,
@@ -167,7 +170,9 @@ module as_top_mem (input logic                       clk_i,
                                    .wbdAck_o(wdbAckGpio_s),
                                    .wbdCyc_i(wbdcycarb_s),
 				   .gpio_irq_o(irq_gpiox_s),
-                                   .gpio_io(gpio_io), //asGpio_s
+                                   .gpio_o(gpio_o),
+                                   .gpio_oe_o(gpio_oe_o),
+                                   .gpio_i(gpio_i),
                                    .cs_o(asGpioCs_s)
                                   );
 
@@ -394,6 +399,7 @@ module as_top_mem (input logic                       clk_i,
                 .tms_i(tms_i),
                 .tdi_i(tdi_i),
                 .tdo_o(tdo_o),
+                .tdo_oe_o(tdo_oe_o),
                 .tap_rst_o(tap_rst_s),
                 .dr_cap_o(dr_cap_s),
                 .sc01_tdo_i(sc01_tdo_s),

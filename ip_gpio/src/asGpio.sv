@@ -13,8 +13,10 @@ module as_gpio ( input  logic                       rst_i,
                  output logic [nr_gpios-1:0]        data_o,      // GPIO inputs; from pad to SFR data register
                  output logic [nr_gpios-1:0]        irq_o,       // IRQs; to BPI-SRB
                  input  logic                       en_i,        // Chip select, derived from WB enable
-                 // Chip I/Os
-                 inout  tri   [nr_gpios-1:0]        gpio_io,   // to Pin
+                 // Chip I/Os: the tri-state driver is in the pad ring
+                 output logic [nr_gpios-1:0]        gpio_o,    // to pad: output value
+                 output logic [nr_gpios-1:0]        gpio_oe_o, // to pad: output enable, active high
+                 input  logic [nr_gpios-1:0]        gpio_i,    // from pad: input value
                  output logic                       cs_o       // to Pin   
                 );
   
@@ -30,17 +32,10 @@ module as_gpio ( input  logic                       rst_i,
   //--------------------------------------------
   assign gpio_out_s = data_i;
   
-  genvar j;
-  generate
-    for (j=0; j < nr_gpios; j++)
-      assign gpio_io[j]  =  (~direction_i[j]) ? gpio_out_s[j] : 1'bz; // tristate driver in output direction
-  endgenerate
-
-  genvar m;
-  generate
-    for (m=0; m < nr_gpios; m++)
-      assign gpio_in_s[m] = (direction_i[m])  ? gpio_io[m]    : 1'b0; // tristate driver in input direction
-  endgenerate
+  assign gpio_o     = gpio_out_s;
+  assign gpio_oe_o  = ~direction_i;
+  // An output pin reads back as 0, as with the former in-core tri-state.
+  assign gpio_in_s  = direction_i & gpio_i;
 
   assign data_o = gpio_in_s;
   
@@ -77,7 +72,7 @@ module as_gpio ( input  logic                       rst_i,
 	begin
 	  if (direction_i[k] == 1)
 	  begin
-            shift_reg_s[k][0] <= gpio_in_s[k]; // gpio_io[k]
+            shift_reg_s[k][0] <= gpio_in_s[k];
             shift_reg_s[k][1] <= shift_reg_s[k][0];
 	  end
 	end
