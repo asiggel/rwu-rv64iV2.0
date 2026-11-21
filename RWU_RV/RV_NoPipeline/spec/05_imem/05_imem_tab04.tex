@@ -9,7 +9,11 @@ Table \ref{tab:asImemPer04a} shows the input and outputs of the \asimemg kernel.
   Pin & Direction & Width & Explanation \\
   \hline
   \hline
-  clk\_i & in & 1 & System clock \\
+  clk\_i & in & 1 & Core clock (\texttt{clk\_div\_s}); macro clock in function mode \\
+  \hline
+  tck\_i & in & 1 & JTAG clock; macro clock in load mode \\
+  \hline
+  im\_mode\_i & in & 1 & 1 = load mode (JTAG IR holds \texttt{I\_MEM}), selects \texttt{tck\_i}; see Table~\ref{tab:asImemModes} \\
   \hline
   \asimemAddrPinInt & in & 15 & From program counter (PC).  There is no byte access, so the lower two address bits will not be needed. In case of a program download, this is a part of the JTAG scan-chain (outside the block). \\
   \hline 

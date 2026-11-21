@@ -1,1 +1,8 @@
-The \asimemg is a Wishbone slave (asSlaveBPI) peripheral. It has one write port (for JTAG download) and one read port (for normal operation). The address is shared. 
+\texttt{as\_imem} (\texttt{asIMem.sv}) is the wrapper around the RAM. With
+\texttt{`define XFAB\_SPRAM} (set by the Genus script
+\texttt{scripts/00\_rv64\_elab.tcl}) it instantiates the low-power SPRAM macro;
+without it, it contains a behavioural model with the same clock multiplexer,
+enables and timing, used by xsim, Verilator/cocotb and the FPGA build. The
+behavioural array is \texttt{imem.iram\_s}; the testbenches write programs
+into it directly. The fetch address comes from the PC, during a JTAG write
+from the I-Mem scan chain (multiplexer in \texttt{as\_top\_mem}).

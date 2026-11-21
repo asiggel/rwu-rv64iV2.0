@@ -33,10 +33,8 @@ set_db [get_db hinsts as_jtag]     .ungroup_ok false
 # ------------------------------------------------------------------------
 # 3. Run synthesis
 # ------------------------------------------------------------------------
-# TECH-01: as_imem / as_dmem_core are still RTL arrays and are mapped to
-# flip-flops (about 300k for 40 KiB). Area and run time are meaningless
-# until the SPRAM wrappers instantiate $IMEM_MACRO / $DMEM_MACRO; the
-# macro libraries and LEFs are already loaded.
+# as_imem / as_dmem_core instantiate the SPRAM macros (XFAB_SPRAM, see
+# 00_rv64_elab.tcl); check_design -unresolved must report none.
 syn_generic
 syn_map
 syn_opt

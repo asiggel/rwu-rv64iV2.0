@@ -1,1 +1,3 @@
-The memory is implemented as a synchronous write, asynchronous read memory. The write will be done on the rising edge of TCK and a write enable from a JTAG scan-chain. 
+The kernel is one single-port RAM with a synchronous write and a synchronous
+read (Table~\ref{tab:asImemModes}). A write is done at the rising edge of
+TCK when the write bit of the JTAG data register is set.

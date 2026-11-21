@@ -112,6 +112,9 @@ module tb_rv64i ();
 //    end
     jtag_shift_in_imdr_to_rti(tclk_2_t, 45'b000000000000_01001010101010101010101010001000_0);
     #(50*2*tclk_2_t);
+    // Leave I_MEM before the CPU runs: im_mode_o = 0 switches the I-Mem clock
+    // back to clk_i (spec, I-Mem load procedure).
+    jtag_load_ir(tclk_2_t, 8'hFF);
     //loading_s = 0;
     rst_s = 0;
     #(1*2*tclk_2_t);

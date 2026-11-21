@@ -213,9 +213,10 @@ Misaligned accesses never reach it: the CPU raises a load (cause 4) or store
 (Table~\ref{tab:asTrapCause}).
 
 \paragraph{Read during write.}
-A read in the same cycle as a write to the same word returns the \emph{old}
-value. This case does not occur in normal operation: a store does not read,
-and the next load is at least three clock cycles later.
+In a write cycle the read register is undefined for the written bits: the
+behavioural model returns the old value, the low-power SPRAM macro does not define
+it. The CPU never uses it: a store does not read, and the next load is at
+least three clock cycles later.
 
 \paragraph{After reset.}
 Neither the array nor the read register is reset; the contents are undefined
@@ -250,12 +251,15 @@ initialise \texttt{.data}/\texttt{.bss} itself.
 \end{table}
 
 \paragraph{Silicon implementation.}
-In XH018 the array \texttt{as\_dmem\_core} is replaced by one SPRAMBLP macro
+In XH018 the array \texttt{as\_dmem\_core} is replaced by one low-power SPRAM macro
 1024 $\times$ 64 with a bit write mask (Section~\ref{subsec:sramSelectionA}).
 The byte enable maps to the active-low mask as
 \texttt{WEn[8i+7:8i]} = \texttt{\{8\{\textasciitilde byteEn[i]\}\}}.
-The macro also reads synchronously, so the timing of
-Section~\ref{subsec:dmemfunc01} is unchanged. The wrapper is open item TECH-01.
+\texttt{CEn} is tied to 0, so the read register is updated in every cycle
+as in the behavioural model. The macro also reads synchronously, so the timing
+of Section~\ref{subsec:dmemfunc01} is unchanged. \texttt{`define XFAB\_SPRAM}
+selects the macro, otherwise \texttt{as\_dmem\_core} contains the
+behavioural model.
 
 %-----------------------------------------------------------------------------
 \subsection{Verification}

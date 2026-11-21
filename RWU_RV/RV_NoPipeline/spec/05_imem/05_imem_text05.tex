@@ -1,19 +1,54 @@
-The \asimemg peripheral is the internal instruction memory of the \aschip.
+The \asimemg is the internal instruction memory of the \aschip.
 
 \paragraph{General Features: }
 \begin{itemize}
-  \item 32\;kByte ROM (8192 words/instructions)
-  \item Linear addressable
-  \item 32\;bit data width
-  \item Wishbone bus slave
+  \item 32\;KiB (8192 words of 32\,bit), word addressed (\texttt{addr\_i[14:2]})
+  \item One single-port RAM: on silicon the XH018 low-power SPRAM macro
+    (Section~\ref{subsec:sramSelectionA}), in simulation a behavioural
+    model with the same clocking
+  \item Written only by the JTAG loader (instruction \texttt{I\_MEM});
+    read-only for the CPU
+  \item Synchronous read: the address is taken at the rising clock edge,
+    the instruction is valid after it
+  \item No reset of the contents; after power-up the contents are undefined
+    until the program is loaded
 \end{itemize}
 
-\paragraph{Synchronous Mode: }
-\begin{itemize}
-  \item 32 data bits (write; program download via JTAG)
-\end{itemize}
+\paragraph{Clocking.}
+The macro has one clock input. A clock multiplexer in \texttt{as\_imem}
+selects the clock with \texttt{im\_mode\_i} (from \texttt{ir\_decode},
+1 while the JTAG IR holds \texttt{I\_MEM}):
 
-\paragraph{Asynchronous Mode: }
-\begin{itemize}
-  \item 32 data bits (read; normal operation)
-\end{itemize}
+\begin{table}[H]
+\caption{\asimemg Operating Modes}
+\label{tab:asImemModes}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  \texttt{im\_mode\_i} & Macro clock & Access & Notes \\
+  \hline
+  \hline
+  0 (function) & \texttt{clk\_i} (\texttt{clk\_div\_s}) & read in every cycle &
+    \texttt{CEn}\,=\,0, \texttt{WEn}\,=\,1; CPU instruction fetch \\
+  \hline
+  1 (load) & \texttt{tck\_i} & write when \texttt{wr\_i}\,=\,1, otherwise none &
+    \texttt{CEn}\,=\,\texttt{WEn}\,=\,\textasciitilde\texttt{wr\_i};
+    the output keeps the last read word \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Load procedure.}
+The select changes when the JTAG IR is updated, asynchronously to the core
+clock. The multiplexer is therefore glitch-free only if the core clock stands
+still while the IR changes:
+\begin{enumerate}
+  \item Set \texttt{rst\_i}\,=\,1. The CGU counter is reset, so
+    \texttt{clk\_core} is constant.
+  \item Load the IR with \texttt{I\_MEM}, shift and update one data register
+    per word (address, data, write bit).
+  \item Load another instruction into the IR (e.g.\ \texttt{BYPASS}).
+  \item Release \texttt{rst\_i}; the CPU starts at the reset vector.
+\end{enumerate}
+The first access after power-up must respect the power-up time of the macro
+data sheet; with the reset sequence above this is always met.

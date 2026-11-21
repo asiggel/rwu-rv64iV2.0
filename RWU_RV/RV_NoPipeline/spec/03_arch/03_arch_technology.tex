@@ -78,9 +78,12 @@ All control inputs are \textbf{active low}.
 Unlike the high-speed family, the low-power macros have no output enable
 (\texttt{OEn}); \texttt{Q} is always driven.
 
-In simulation the macros are replaced by a behavioural model of our own.
-The X-FAB
+Without \texttt{`define XFAB\_SPRAM} the wrappers contain a behavioural
+model of our own, so every simulator works without X-FAB files. The X-FAB
 Verilog models are covered by the NDA and are not part of the repository.
+The I-Mem macro is clocked through a multiplexer: \texttt{tck\_i} while
+JTAG loads the program, \texttt{clk\_div\_s} otherwise
+(Table~\ref{tab:asImemModes}).
 
 \subsection{Open Items -- Technology}
 \label{subsec:techOpenA}
@@ -94,9 +97,15 @@ Verilog models are covered by the NDA and are not part of the repository.
   ID & Item \\
   \hline
   \hline
-  TECH-01 & SRAM wrappers for I-Mem and D-Mem with the port mapping of
-            Table~\ref{tab:asSramPortsA}; behavioural model selected by
-            \texttt{`ifdef SIMULATION}. \\
+  TECH-01 & \emph{Closed 2026-11-20:} \texttt{as\_imem} and
+            \texttt{as\_dmem\_core} instantiate the macros with
+            \texttt{`define XFAB\_SPRAM}, otherwise the behavioural models.
+            Both were compared with the X-FAB Verilog models (random
+            accesses, identical read data, no timing violations). \\
+  \hline
+  TECH-05 & Constraint mode for JTAG loading (I-Mem clocked by
+            \texttt{tck\_i}); today \texttt{as\_top\_mem.sdc} times
+            only the function mode. \\
   \hline
   TECH-02 & \emph{Closed 2026-11-20:} the Genus scripts
             (\texttt{scripts/00\_rv64\_elab.tcl}, \texttt{01b\_rv64\_syn.tcl})

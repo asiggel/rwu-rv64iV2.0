@@ -92,7 +92,12 @@ set RTL_FILES [list \
 # ------------------------------------------------------------------------
 # 5. Read, elaborate, bind constraints
 # ------------------------------------------------------------------------
-read_hdl -sv $RTL_FILES
+# XFAB_SPRAM selects the SPRAM macros in as_imem / as_dmem_core instead of
+# the behavioural models. The macro cell names come from $XFAB_PATHS, so that
+# no X-FAB cell name is part of the repository.
+read_hdl -sv -define [list XFAB_SPRAM \
+                           XFAB_IMEM_MACRO=$IMEM_MACRO \
+                           XFAB_DMEM_MACRO=$DMEM_MACRO] $RTL_FILES
 elaborate $DESIGN_TOP
 init_design
 

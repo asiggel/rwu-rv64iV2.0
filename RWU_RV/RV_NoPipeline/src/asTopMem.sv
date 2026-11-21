@@ -337,6 +337,7 @@ module as_top_mem (input logic                       clk_i,
   assign iBusAddr2_s = (mux_sel_s == 0) ? iBusAddr_s[imem_addr_width-1:0] : im_addr_s; // address is either PC or scan chain
   as_imem imem (.tck_i(tck_i),                             // writing to I-Mem with TCK (tck_i, clk_core_s)
                 .clk_i(clk_div_s),
+                .im_mode_i(im_mode_s),                     // JTAG I_MEM instruction: macro clocked by TCK
                 .addr_i(iBusAddr2_s[imem_addr_width-1:0]), // PC or scan-chain
                 .data_i(iBusDataWr_s),                     // scan-chain
                 .wr_i(iMemWr_s),                           // scan-chain

@@ -1,11 +1,17 @@
 
 // asIMem.sv
+//
+// I-Mem, 8192 x 32 bit, single port.
+//   `define XFAB_SPRAM : X-FAB XH018 low-power SPRAM macro (Genus, 00_rv64_elab.tcl)
+//   default            : behavioural model with the same clocking, used by
+//                        xsim, Verilator/cocotb and the Vivado FPGA build
 `timescale 1ns/1ps
 
 import as_pack::*;
 
 module as_imem (input  logic                       tck_i,
                 input  logic                       clk_i,
+                input  logic                       im_mode_i,  // JTAG I_MEM instruction active
                 input  logic [imem_addr_width-1:0] addr_i,
                 input  logic [instr_width-1:0]     data_i,
                 input  logic                       wr_i,
@@ -14,57 +20,55 @@ module as_imem (input  logic                       tck_i,
 
   parameter int mdepth = imemdepth;
 
-  //(* ram_style = "distributed" *) logic [instr_width-1:0] iram_s[mdepth-1:0]; // x words capacity
-  (* ram_style = "block" *) logic [instr_width-1:0] iram_s[mdepth-1:0]; // x words capacity
+  logic                       mem_clk_s;
+  logic                       cen_s;
+  logic                       wen_s;
+  logic [imem_addr_width-3:0] word_addr_s;
+`ifndef XFAB_SPRAM
+  (* ram_style = "block" *) logic [instr_width-1:0] iram_s[mdepth-1:0];
+`endif
 
-  /*initial
-  begin
-    ram_s[0]  = 32'h00500113;
-    ram_s[1]  = 32'h00C00193;
-    ram_s[2]  = 32'hFF718393;
-    ram_s[3]  = 32'h0023E233;
-    ram_s[4]  = 32'h0041F2B3;
-    ram_s[5]  = 32'h004282B3;
-    ram_s[6]  = 32'h02728863;
-    ram_s[7]  = 32'h0041A233;
-    ram_s[8]  = 32'h00020463;
-    ram_s[9]  = 32'h00000293;
-    ram_s[10] = 32'h0023A233;
-    ram_s[11] = 32'h005203B3;
-    ram_s[12] = 32'h402383B3;
-    ram_s[13] = 32'h0471AA23;
-    ram_s[14] = 32'h06002103;
-    ram_s[15] = 32'h005104B3;
-    ram_s[16] = 32'h008001EF;
-    ram_s[17] = 32'h00100113;
-    ram_s[18] = 32'h00910133;
-    ram_s[19] = 32'h0A21AE23;
-    ram_s[20] = 32'h00210063;
-  end*/
+  // CLOCK GATE: the single-port macro has one clock. JTAG loading clocks it
+  // with tck_i, the CPU with clk_i. im_mode_i comes from the JTAG IR and is
+  // static while loading; load only with rst_i = 1, so that clk_core stands
+  // still when the IR switches (spec, I-Mem load procedure).
+  assign mem_clk_s = im_mode_i ? tck_i : clk_i;
 
-  /******************************************************/
-  /* Initial setting.                                   */
-  /******************************************************/
+  // Load mode: only the JTAG write cycles access the macro.
+  // Function mode: a read in every cycle, as the CPU fetch expects.
+  assign cen_s       = im_mode_i & ~wr_i;
+  assign wen_s       = ~(im_mode_i & wr_i);
+  assign word_addr_s = addr_i[imem_addr_width-1:2];
+
+`ifdef XFAB_SPRAM
+
+  // XFAB_IMEM_MACRO: SPRAM cell name, set by 00_rv64_elab.tcl from $XFAB_PATHS
+  `XFAB_IMEM_MACRO spram (.CLK(mem_clk_s),
+                               .CEn(cen_s),
+                               .WEn(wen_s),
+                               .A(word_addr_s),
+                               .D(data_i),
+                               .Q(data_o),
+                               .RDY()
+                              );
+
+`else
+
+  // Simulation start-up content; on silicon JTAG loads the program.
   initial
-    $readmemh("riscvtest.mem",iram_s);
+    $readmemh("riscvtest.mem", iram_s);
 
-  /****************************************/
-  /* Write to RAM.                        */
-  /****************************************/
-  always @(posedge(tck_i)) 
+  always_ff @(posedge mem_clk_s)
   begin
-    if( wr_i == 1 )
-      iram_s[addr_i[imem_addr_width-1:2]] <= data_i;
+    if (!cen_s)
+    begin
+      if (!wen_s)
+        iram_s[word_addr_s] <= data_i;
+      else
+        data_o <= iram_s[word_addr_s];
+    end
   end
 
-  /******************************************************/
-  /* Read the RAM.                                      */
-  /******************************************************/
-  always @(posedge clk_i)
-  begin
-      data_o <= iram_s[addr_i[imem_addr_width-1:2]];
-  end
-  //assign data_o = iram_s[addr_i[imem_addr_width-1:2]]; // word aligned
-                    
+`endif
+
 endmodule : as_imem
-
