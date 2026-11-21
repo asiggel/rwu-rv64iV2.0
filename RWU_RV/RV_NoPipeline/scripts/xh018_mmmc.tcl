@@ -6,8 +6,9 @@
 # Expects the variables of the local path file ($XFAB_PATHS, see
 # xh018_paths_template.tcl) and SCRIPT_DIR to be set.
 #
-# Setup is checked at the slow corner, hold at the fast corner; typ is only
-# reported.
+# Two constraint modes: func (CPU runs) and jtag_load (JTAG loads the I-Mem,
+# macro clocked by tck_i). Setup is checked at the slow corner, hold at the
+# fast corner, in both modes; typ is only reported (func).
 #===============================================================================
 
 create_library_set -name libs_slow -timing $LIBS_SLOW
@@ -26,10 +27,15 @@ create_delay_corner -name dc_slow -timing_condition tc_slow -rc_corner rc_max
 create_delay_corner -name dc_typ  -timing_condition tc_typ  -rc_corner rc_typ
 create_delay_corner -name dc_fast -timing_condition tc_fast -rc_corner rc_min
 
-create_constraint_mode -name func -sdc_files [list $SCRIPT_DIR/as_top_mem.sdc]
+create_constraint_mode -name func \
+  -sdc_files [list $SCRIPT_DIR/as_top_mem.sdc $SCRIPT_DIR/as_top_mem_func.sdc]
+create_constraint_mode -name jtag_load \
+  -sdc_files [list $SCRIPT_DIR/as_top_mem.sdc $SCRIPT_DIR/as_top_mem_jtag.sdc]
 
-create_analysis_view -name av_slow -constraint_mode func -delay_corner dc_slow
-create_analysis_view -name av_typ  -constraint_mode func -delay_corner dc_typ
-create_analysis_view -name av_fast -constraint_mode func -delay_corner dc_fast
+create_analysis_view -name av_slow      -constraint_mode func      -delay_corner dc_slow
+create_analysis_view -name av_typ       -constraint_mode func      -delay_corner dc_typ
+create_analysis_view -name av_fast      -constraint_mode func      -delay_corner dc_fast
+create_analysis_view -name av_jtag_slow -constraint_mode jtag_load -delay_corner dc_slow
+create_analysis_view -name av_jtag_fast -constraint_mode jtag_load -delay_corner dc_fast
 
-set_analysis_view -setup {av_slow av_typ} -hold {av_fast}
+set_analysis_view -setup {av_slow av_typ av_jtag_slow} -hold {av_fast av_jtag_fast}

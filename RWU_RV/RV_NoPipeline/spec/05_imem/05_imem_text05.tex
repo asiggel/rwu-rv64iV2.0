@@ -50,5 +50,10 @@ still while the IR changes:
   \item Load another instruction into the IR (e.g.\ \texttt{BYPASS}).
   \item Release \texttt{rst\_i}; the CPU starts at the reset vector.
 \end{enumerate}
+Static timing covers both modes: constraint mode \texttt{func} for
+\texttt{im\_mode\_o}\,=\,0 and \texttt{jtag\_load} for
+\texttt{im\_mode\_o}\,=\,1 (Section~\ref{subsec:techOpenA}, TECH-05). The
+switch itself is not timed; it is safe because \texttt{wr\_i}\,=\,0 while
+the IR changes, so a short clock pulse at the macro can at most cause a read.
 The first access after power-up must respect the power-up time of the macro
 data sheet; with the reset sequence above this is always met.

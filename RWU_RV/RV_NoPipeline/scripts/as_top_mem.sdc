@@ -1,5 +1,9 @@
 #===============================================================================
-# as_top_mem.sdc -- timing constraints, functional mode, RV_NoPipeline
+# as_top_mem.sdc -- timing constraints common to all modes, RV_NoPipeline
+#
+# Constraint modes (xh018_mmmc.tcl) = this file + one mode file:
+#   func      as_top_mem_func.sdc   CPU runs, I-Mem clocked by clk_div_s
+#   jtag_load as_top_mem_jtag.sdc   JTAG loads the I-Mem, macro clocked by tck_i
 #
 # Operating point (spec, Section "Clock Concept", tab:asNoPipelineClk):
 #   clk_i       100 MHz external
@@ -23,12 +27,11 @@ create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
 # selects clk_core. Without this, every core path would also be timed at the
 # 100 MHz clk_i, which is only used in scan test.
 set_case_analysis 0 [get_pins as_jtag/dr_cap_o]
-# Same for the I-Mem clock mux (im_mode = JTAG I_MEM instruction). JTAG
-# loading at tck_i needs its own constraint mode (open item).
-set_case_analysis 0 [get_pins as_jtag/im_mode_o]
+# The I-Mem clock mux (as_jtag/im_mode_o) is fixed per mode in the mode file.
 
 # JTAG writes the I-Mem with tck_i, the core reads it with clk_core; the
-# software only runs after loading, so there is no functional crossing.
+# software only runs after loading (rst_i = 1 while loading), so there is no
+# functional crossing in either mode.
 set_clock_groups -asynchronous -group {clk_i clk_core} -group {tck_i}
 
 set_clock_uncertainty -setup 0.300 [all_clocks]

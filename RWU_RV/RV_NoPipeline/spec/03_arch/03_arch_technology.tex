@@ -103,15 +103,21 @@ JTAG loads the program, \texttt{clk\_div\_s} otherwise
             Both were compared with the X-FAB Verilog models (random
             accesses, identical read data, no timing violations). \\
   \hline
-  TECH-05 & Constraint mode for JTAG loading (I-Mem clocked by
-            \texttt{tck\_i}); today \texttt{as\_top\_mem.sdc} times
-            only the function mode. \\
+  TECH-05 & \emph{Closed 2026-11-21:} two constraint modes in
+            \texttt{scripts/xh018\_mmmc.tcl}: \texttt{func}
+            (\texttt{as\_top\_mem.sdc} + \texttt{as\_top\_mem\_func.sdc},
+            \texttt{im\_mode\_o}\,=\,0) and \texttt{jtag\_load}
+            (\texttt{as\_top\_mem.sdc} + \texttt{as\_top\_mem\_jtag.sdc},
+            \texttt{im\_mode\_o}\,=\,1, macro clocked by \texttt{tck\_i}).
+            Setup views \texttt{av\_slow}, \texttt{av\_typ},
+            \texttt{av\_jtag\_slow}; hold views \texttt{av\_fast},
+            \texttt{av\_jtag\_fast}. \\
   \hline
   TECH-02 & \emph{Closed 2026-11-20:} the Genus scripts
             (\texttt{scripts/00\_rv64\_elab.tcl}, \texttt{01b\_rv64\_syn.tcl})
             target XH018 with \texttt{D\_CELLS\_HD} and \texttt{IO\_CELLS\_3V}.
             Corners slow/typ/fast in \texttt{scripts/xh018\_mmmc.tcl},
-            constraints in \texttt{scripts/as\_top\_mem.sdc}. The X-FAB file
+            constraints in \texttt{scripts/as\_top\_mem*.sdc}. The X-FAB file
             locations are read from a local file outside the repository
             (\texttt{\$XFAB\_PATHS}, NDA). Not yet run on the Cadence
             workstation. \\

@@ -91,14 +91,21 @@ The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
 
 No X-FAB XH018 gate-level static timing analysis (STA) has been run yet for
 \texttt{RV\_NoPipeline}.
-The Genus scripts target XH018 (TECH-02). The constraint file
+The Genus scripts target XH018 (TECH-02). The common constraint file
 \texttt{scripts/as\_top\_mem.sdc} implements the operating point of
 Table~\ref{tab:asNoPipelineClk}: \texttt{clk\_i} with 10\,ns, the generated
 clock \texttt{clk\_core} (\texttt{-divide\_by 80}) on the CGU output, the
 scan bypass mux fixed to functional mode by case analysis on
 \texttt{dr\_cap\_o}, and \texttt{tck\_i} with 40\,ns, asynchronous to the
-core clocks. The scripts have not been run yet, and the SRAM macros are not
-yet integrated (TECH-01).
+core clocks. Two constraint modes fix the I-Mem clock multiplexer by case
+analysis on \texttt{im\_mode\_o} (TECH-05): \texttt{func}
+(\texttt{as\_top\_mem\_func.sdc}, I-Mem on \texttt{clk\_div\_s}) and
+\texttt{jtag\_load} (\texttt{as\_top\_mem\_jtag.sdc}, I-Mem on
+\texttt{tck\_i}, CPU in reset). In \texttt{jtag\_load} the I-Mem data
+register and the write strobe reach the macro within one TCK period, the TAP
+control signals (falling TCK edge) reach the data register cells within half
+a period. The SRAM wrappers instantiate the macros (TECH-01); the scripts
+have not been run yet.
 The recommendation below is therefore a conservative pre-STA target, not a
 timing-signed-off number.
 
@@ -164,9 +171,9 @@ timing-signed-off number.
 \subsubsection{Open Items}
 
 \textbf{Action (CLK-01):} Once I-Mem/D-Mem SRAM macros are integrated into
-the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} with
-\texttt{scripts/as\_top\_mem.sdc} (generated clock \texttt{clk\_core},
-\texttt{-divide\_by 80}) at the slow corner and
+the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} for the views \texttt{av\_slow}
+(generated clock \texttt{clk\_core}, \texttt{-divide\_by 80}) and
+\texttt{av\_jtag\_slow} (25\,MHz TCK) and
 confirm that 1.25\,MHz core / 100\,MHz external clears timing with adequate
 margin at the worst-case corner.
 If margin is large, a higher core frequency may be considered for a later
