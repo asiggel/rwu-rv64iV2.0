@@ -122,7 +122,6 @@ init_design
 check_design -unresolved
 check_timing_intent
 report_summary
-write_html_report -filename ${DESIGN_TOP}_elab_summary.html
 
 # ------------------------------------------------------------------------
 # 7. Checkpoint for the next stage (01b synthesis script)

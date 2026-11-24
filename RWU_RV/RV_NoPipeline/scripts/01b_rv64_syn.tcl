@@ -62,4 +62,5 @@ write_sdc -view av_slow    > ${DESIGN_TOP}_syn.sdc
 write_sdc -view av_jtag_slow > ${DESIGN_TOP}_syn_jtag.sdc
 write_sdf -view av_slow    > ${DESIGN_TOP}_syn.sdf
 write_db -all_root_attributes ${DESIGN_TOP}_syn.db
-write_design -innovus -base_name innovus/${DESIGN_TOP}
+file mkdir innovus
+write_db -common -all_root_attributes innovus/${DESIGN_TOP}.db
