@@ -2,10 +2,11 @@
  HowTo: Cadence Design Flow fuer X-FAB (Simulation -> Synthese -> GDSII)
 ================================================================================
 
-Stand:        06.07.2026 (Mitschrift), ueberarbeitet 11.07.2026
+Stand:        06.07.2026 (Mitschrift), ueberarbeitet 11.07.2026, 26.11.2026
 Autor:        Prof. Dr.-Ing. Andreas Siggelkow
 Testvehikel:  Dummy-Adder (ha_e/ha_a/ha_tb) fuer die Werkzeugkette
-Zieldesign:   RV_NoPipeline (RISC-V CPU, SystemVerilog)
+Zieldesign:   RV_NoPipeline (RISC-V CPU, SystemVerilog), Chip-Top cc_chip_top
+Technologie:  X-FAB XH018 (4 Metall-Lagen, LPMOS)
 Ziel:         Von der RTL-Simulation bis zum Tape-Out (GDSII) bei X-FAB
 
 
@@ -16,9 +17,21 @@ Ziel:         Von der RTL-Simulation bis zum Tape-Out (GDSII) bei X-FAB
 Login:      edauser
 Projekt:    risc5cadence
 
+Rechner:    chip-design01
+Werkzeuge:  Cadence-Release 2026/27 (Genus 26.1, Innovus, Xcelium/xrun);
+            die Version 2023/24 ist im Labor geloescht
+
 Umgebung laden:
 
     source ./start_it.sh
+
+X-FAB-Pfaddatei (NDA, liegt NICHT im Repository) bekannt machen:
+
+    export XFAB_PATHS=/pfad/zu/X-FAB/xh018_paths.tcl     (bash)
+    setenv XFAB_PATHS /pfad/zu/X-FAB/xh018_paths.tcl     (csh)
+
+Vorlage dafuer: RWU_RV/RV_NoPipeline/scripts/xh018_paths_template.tcl
+(Liberty pro Corner, LEF, capTbl/QRC, SPRAM-Makro- und Pad-Zellnamen).
 
 
 --------------------------------------------------------------------------------
@@ -36,6 +49,22 @@ Hinweise:
     Waveform-Debugging.
   - "-top" legt die Testbench-Entity als Top-Level fest.
 
+RV_NoPipeline (aus RWU_RV/RV_NoPipeline):
+
+    ./scripts/xcelium/xrun_single.sh instr06addi        (mit SimVision-GUI)
+    ./scripts/xcelium/xrun_single.sh -b instr06addi     (batch)
+    ./scripts/xcelium/xrun_single.sh -l                 (Testliste)
+    ./scripts/xcelium/xrun_regression.sh                (alle Tests, batch)
+
+  - RTL-Dateiliste und Testtabelle kommen aus sim/CMakeLists.txt, die
+    Skripte muessen bei neuen Dateien/Tests nicht angepasst werden.
+  - Ergebnisse in build_xcelium/<test>/, Zusammenfassung in
+    build_xcelium/regression.txt.
+  - Der RWU-Lizenzserver hat nur 2 Xcelium-Lizenzen fuer ALLE Nutzer;
+    -licqueue wartet auf eine freie Lizenz. Eine offene SimVision-GUI
+    haelt ihre Lizenz, bis sie geschlossen wird.
+  - Ausfuehrliche Anleitung: DokuXCELIUM/DokuXCELIUM.pdf
+
 
 --------------------------------------------------------------------------------
 3. Synthese (Genus)
@@ -49,6 +78,50 @@ Alternativ direkt mit GUI:
 
     genus -files ./scripts/source.tcl -execute "gui_show"
 
+RV_NoPipeline (Run-Verzeichnis z. B. RWU_RV/RV_NoPipeline/syn/genus,
+$XFAB_PATHS gesetzt, beide Skripte im selben Verzeichnis):
+
+    genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/00_rv64_elab.tcl
+    genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/01b_rv64_syn.tcl
+
+  00_rv64_elab.tcl  MMMC (xh018_mmmc.tcl: slow/typ/fast), LEF, RTL lesen,
+                    cc_chip_top elaborieren -> cc_chip_top_elab.db
+                    Defines XFAB_SPRAM / XFAB_PADS waehlen die echten
+                    SPRAM-Makros und IO_CELLS_3V-Zellen statt der
+                    Verhaltensmodelle; alle Zellnamen kommen aus $XFAB_PATHS.
+  01b_rv64_syn.tcl  syn_generic/map/opt, Reports pro View (av_slow, av_typ,
+                    av_jtag_slow), Netzliste cc_chip_top_syn.v, SDC (func
+                    und jtag_load), SDF, innovus/cc_chip_top.db
+                    (write_db -common, Uebergabe an Innovus)
+
+  Constraints: as_top_mem.sdc, as_top_mem_func.sdc, as_top_mem_jtag.sdc
+  (clk_i 100 MHz, clk_core = clk_i/80 aus der CGU, tck_i asynchron).
+
+  Uebergabe an Innovus mit write_db -common (write_design -innovus ist
+  veraltet). Genus 26.1 loest Hierarchien wie core/cgu auf und benennt
+  dabei Pins um, auf die die SDC verweist -> 01b_rv64_syn.tcl setzt
+  ungroup_ok false fuer core, core/cgu, core/cgu/CGUCore, core/as_jtag.
+
+
+--------------------------------------------------------------------------------
+3a. Place & Route (Innovus)
+--------------------------------------------------------------------------------
+
+Im selben Run-Verzeichnis wie Genus:
+
+    innovus -batch -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/02_rv64_floorplan_pnr.tcl
+
+  Ablauf: read_db innovus/cc_chip_top.db -> Floorplan (Die 2600x2600 um,
+  Core 2086x2086 um, IO-Ring 257 um) -> Pad-Ring (26 Pads, CORNERP,
+  IO-Filler) -> place_design -> ccopt_design -> routeDesign.
+  Checkpoints: cc_chip_top_fp.db, _placed.db, _cts.db, _routed.db
+
+  Erster Durchlauf (24.11.2026, reiner Smoke-Test, damals noch mit
+  Innovus 23.33 -- mit Release 2026/27 zu wiederholen): 0 Connectivity-
+  Violations, Setup erfuellt, Routing ohne Fails; ca. 2630 DRC- und
+  159 Antenna-Violations -- erwartet, da Pad-Zuordnung (TECH-06) und
+  Power-Ring/-Stripes noch fehlen.
+
 
 --------------------------------------------------------------------------------
 4. X-FAB spezifische Punkte
@@ -61,7 +134,17 @@ Alternativ direkt mit GUI:
 4.2 EDA-Files / Design Kit
     1. XENV: Design Kit Packages -> Environment -> xenv-cadence
     2. PDK-Kernel:
-       - xh035-D_CELLS-liberty_MOS  -> liefert die .lib-Files (Timing/Power)
+       - (urspruenglich xh035-D_CELLS-liberty_MOS; Variante A ist inzwischen
+         auf XH018 umgestellt)
+       - XH018: D_CELLS_HD (Standardzellen), IO_CELLS_3V (Pads),
+         SPRAM-Makros fuer I-Mem und D-Mem -- jeweils .lib, LEF,
+         capTbl/QRC fuer die RC-Corner
+       - Prozessvariante: 4 Metall-Lagen, Modul LPMOS (muss zu den
+         SPRAM-Makros passen)
+       - Corner: slow 1,62 V/125 C (Setup), typ 1,80 V/25 C,
+         fast 1,98 V/-40 C (Hold)
+    3. NDA: X-FAB-PDK und Memory-Compiler-Dateien niemals ins Repository
+       (in .gitignore gesperrt); Pfade nur in der lokalen $XFAB_PATHS-Datei.
 
 4.3 Memory Compiler
     Frage:  Wie laedt man einen Memory Compiler herunter?
@@ -307,14 +390,15 @@ Die Form konkret
 
 Wie das ins RTL kommt
 
-  Das Funktionsmodell hat einen konkreten Modulnamen und Pinout (z. B.
-  sowas wie XH035_SRAM_1024X32 -- Name haengt vom generierten Makro ab).
-  Konkret heisst das:
+  Das Funktionsmodell hat einen konkreten Modulnamen und Pinout (Name
+  haengt vom generierten Makro ab und steht wegen NDA nur in $XFAB_PATHS).
+  Konkret heisst das (umgesetzt mit TECH-01, 20.11.2026):
 
-  1. as_dmem_core.sv / as_imem.sv (aktuell reines Verhaltens-RTL mit
-     Register-Array) werden umgebaut: statt "logic [..] mem [..]"
-     instanziiert man das SRAM-Makro direkt, mit passendem
-     Adress-/Daten-/CS-/WE-/Takt-Mapping.
+  1. ip_dmem/src/asDMemCore.sv (D-Mem 1024x64, Bit-Write-Mask) und
+     RWU_RV/RV_NoPipeline/src/asIMem.sv (I-Mem 8192x32) instanziieren
+     mit `define XFAB_SPRAM das SRAM-Makro, ohne Define das bisherige
+     Verhaltensmodell (xsim/FPGA). Der Makroname kommt per Define
+     (XFAB_IMEM_MACRO / XFAB_DMEM_MACRO) aus 00_rv64_elab.tcl.
   2. Da X-FAB-SRAMs synchron lesen UND schreiben (Adresse Takt N -> Daten
      Takt N+1), muss das an der Schnittstelle zur CPU abgefangen werden --
      deckt sich mit dem, was schon im Read.me steht ("jeder Cache-Hit
@@ -322,13 +406,14 @@ Wie das ins RTL kommt
   3. Fuer 01a_rv64_sim.tcl: das Verilog-Funktionsmodell kommt zusaetzlich
      in die RTL_FILES-Liste (als Ersatz fuer die bisherige
      Verhaltensbeschreibung).
-  4. Fuer 01b_rv64_syn.tcl: die .lib kommt in die library-Liste dazu, das
+  4. Fuer Genus: die .lib kommt ueber xh018_mmmc.tcl dazu, das
      Makro wird beim Lesen als Black Box behandelt (Genus erkennt das
      automatisch, wenn kein RTL fuer das Modul gelesen wird, sondern nur
      die Liberty).
   5. Fuer Physical Design (spaeter): das LEF muss zusaetzlich eingebunden
      werden -- VOR dem Floorplanning, sonst kennt Innovus die Flaeche
-     nicht.
+     nicht. (Erledigt: LEF_FILES in 00_rv64_elab.tcl, gelangt ueber
+     write_db -common nach Innovus.)
 
 Sonst noch wichtig
 
@@ -344,6 +429,28 @@ Sonst noch wichtig
     "Play"-Klick -- am besten gleich mit Versionsnummer/Konfigurations-
     namen ablegen, da jede Groessenaenderung ein neues Makro mit neuem
     Namen erzeugt.
+
+
+--------------------------------------------------------------------------------
+10. Stand RV_NoPipeline / Variante A (26.11.2026)
+--------------------------------------------------------------------------------
+
+Erledigt:
+  TECH-01  SPRAM-Wrapper fuer I-Mem und D-Mem (XH018)
+  TECH-02  Genus-Skripte auf XH018 (D_CELLS_HD, IO_CELLS_3V, MMMC, SDC)
+  TECH-04  Pad-Ring in cc_chip_top (GPIO- und TDO-Tristate in den Pads)
+  TECH-05  Constraint-Modi func und jtag_load
+  CLK-02   CGU-Registerinterface auf clk_div_s
+  Synthese auf chip-design01 gelaufen (Zellflaeche ca. 3,04 mm^2),
+  Innovus-Smoke-Test bis routeDesign gelaufen
+
+Offen:
+  TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
+           ca. 0,8 mm^2)
+  TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
+           IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
+  Power-Ring/-Stripes, DRC/Antenna bereinigen, Gate-Level-Simulation,
+  DFT (Scan/BIST), Signoff (Abschnitt 5, Schritte 5-10)
 
 
 ================================================================================

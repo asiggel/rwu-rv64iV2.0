@@ -15,8 +15,10 @@
 #   -> die 2600 x 2600 um, IO ring depth = pad cell height (257 um)
 #
 # Before running:
-#   XFAB_ROOT = local root of the extracted X-FAB packages (see
-#               scripts/xh018_paths_template.tcl)
+#   01b_rv64_syn.tcl must have written innovus/cc_chip_top.db. Libraries,
+#   LEF, MMMC and SDC come in with that DB (it references the X-FAB files
+#   from $XFAB_PATHS by absolute path), so this script needs no X-FAB path
+#   variable of its own -- the referenced files just have to be readable.
 #
 # Usage (same run directory as the Genus scripts, e.g. RV_NoPipeline/syn/genus):
 #   innovus -batch -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/02_rv64_floorplan_pnr.tcl
