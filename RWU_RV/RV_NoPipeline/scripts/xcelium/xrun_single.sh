@@ -42,6 +42,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 IP_ROOT="$(cd "$PROJECT_ROOT/../.." && pwd)"
 BUILD_ROOT="${BUILD_ROOT:-$PROJECT_ROOT/build_xcelium}"
+echo "Script-Dir: $SCRIPT_DIR"
+echo "Project-Root: $PROJECT_ROOT"
+echo "IP-Root: $IP_ROOT"
+echo "Build-Root: $BUILD_ROOT"
 
 MODE="gui"
 WAVES=0
@@ -94,6 +98,7 @@ done
 # ------------------------------------------------------------------------
 CFG_LINE="$(sed -n '/^set(INSTR_TB_CONFIG/,/^)/p' "$PROJECT_ROOT/CMakeLists.txt" \
             | sed 's/#.*//' | tr -d '"' | awk -v t="$TEST" '$1 == t {print $2, $3}')"
+echo "Tests-CFG-Line: $CFG_LINE"
 
 if [ -n "$CFG_LINE" ]; then
   TB_FILE="$PROJECT_ROOT/tb/tb_rv64i_instr.sv"
@@ -186,6 +191,7 @@ XRUN_ARGS=(
 # 3. Simulate
 # ------------------------------------------------------------------------
 echo "=== [$TEST] 2/3 xrun ($MODE) in $WORK"
+echo "    xrun ${XRUN_ARGS[*]}"
 echo "    xrun ${XRUN_ARGS[*]}" > xrun.cmd
 
 if [ "$MODE" = "gui" ]; then
