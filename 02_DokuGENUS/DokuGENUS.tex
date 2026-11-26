@@ -333,6 +333,7 @@ PASS  synthesis of cc_chip_top
     \cmd{cc\_chip\_top\_syn.sdf}        & delays, slow corner\\[1pt]
     \cmd{cc\_chip\_top\_*.rpt}          & check, timing\_intent, area, gates, clocks,
                                           qor, power, timing\_<view>\\[1pt]
+    \cmd{cc\_chip\_top\_syn.scandef}    & scan chain description for Innovus (reordering)\\[1pt]
     \cmd{innovus/cc\_chip\_top.db}      & hand-off to Innovus (\cmd{write\_db -common})\\
   \end{tabularx}
 \end{block}
@@ -629,6 +630,35 @@ write_db -common -all_root_attributes innovus/cc_chip_top.db
     \item \cmd{ungroup\_ok false}: Genus may dissolve a hierarchy for better
       optimization. Then \cmd{core/cgu/CGUCore/clk\_core\_o} is gone and the SDC
       no longer finds its pin
+  \end{itemize}
+\end{block}
+\end{frame}
+
+% VERIFY-LAB: DFT commands on internal pins, hookup pins, dft_dont_scan
+\renewcommand{\assubtitle}{f) Scan Insertion (DFT)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\tiny]
+set_db dft_scan_style muxed_scan
+define_test_clock   -name tck_scan -period 40000 tck_i
+define_test_mode    -name scan_mode  -active high core/as_jtag/sc01_mode_o
+define_shift_enable -name scan_shift -active high core/as_jtag/sc01_shift_o
+set_db [get_db hinsts core/as_jtag] .dft_dont_scan true
+check_dft_rules
+syn_generic ; syn_map                     # flip-flops -> scan flip-flops
+define_scan_chain -name sc01 -sdi tdi_i -sdo tdo_o -shared_output \
+  -hookup_pin_sdi core/as_jtag/sc01_tdi_o -hookup_pin_sdo core/as_jtag/sc01_tdo_i
+connect_scan_chains -chains sc01
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item One chain via JTAG \cmd{SCANTEST} (IR 129): TDI $\rightarrow$ core
+      flip-flops $\rightarrow$ TDO. Not in it: TAP, I-Mem load register, CGU
+    \item Core clock: TCK through a clock gate (one pulse per Capture-DR /
+      Shift-DR) and a clock mux, both library cells
+    \item Chain length (\cmd{\_scan\_chains.rpt}) $\rightarrow$
+      \cmd{+SCAN\_LENGTH} of the gate-level scan test
   \end{itemize}
 \end{block}
 \end{frame}

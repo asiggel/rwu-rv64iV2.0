@@ -214,7 +214,15 @@ cost no area.
   \hline
   TECH-06 & Check the supply pads (roles, count, placement, ESD and
             simultaneous switching) against the IO\_CELLS\_3V databook. \\
-
+  \hline
+  DFT-01 & Scan insertion through JTAG \texttt{SCANTEST}
+            (Section~\ref{subsubsec:scanClock}): RTL and Genus script done
+            2026-11-26. Open: first Genus run (DFT rule check, chain length),
+            clock mux and clock gate cell names in \texttt{\$XFAB\_PATHS},
+            scan chain reordering in Innovus (scandef), ATPG. \\
+  \hline
+  DFT-02 & Boundary-scan register at the pads, controlled by the existing
+            EXTEST / SAMPLE/PRELOAD / INTEST decoding of the TAP; BSDL file. \\
   \hline
 \end{tabularx}
 \end{table}

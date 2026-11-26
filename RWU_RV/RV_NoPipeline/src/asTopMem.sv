@@ -65,7 +65,13 @@ module as_top_mem (input logic                       clk_i,
 
   // JTAG
   logic tap_rst_s;
-  logic	sc01_tdo_s, sc01_tdi_s, sc01_shift_s, sc01_clock_s;
+  logic	sc01_tdo_s, sc01_tdi_s, sc01_clock_s, sc01_mode_s;
+  // Shift enable of the inserted scan chain: used by Genus
+  // (define_shift_enable on as_jtag/sc01_shift_o), not by the RTL.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic	sc01_shift_s;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic tck_scan_s;
   logic im_tdo_s, im_tdi_s, im_shift_s, im_clock_s, im_upd_s, im_upd_del_s, im_mode_s;
   logic bs_tdo_s, bs_tdi_s, bs_shift_s, bs_clock_s, bs_upd_s, bs_mode_s;
   // JTAG: I-Mem scan chain
@@ -117,7 +123,6 @@ module as_top_mem (input logic                       clk_i,
   logic				  irq_gpiox_s;
   //logic				  stall_ir_s;
 
-  logic				  dr_cap_s;
   logic				  clk_div_s;
 
   // Cache interfaces (disabled – CPU ties all outputs to 0 until asMemTop is wired)
@@ -199,7 +204,15 @@ module as_top_mem (input logic                       clk_i,
               .clk_core_o(clk_core_s)
              );
   
-  assign clk_div_s = (dr_cap_s) ? clk_i : clk_core_s; // During scan-test, the core clock must be controllable from the tester
+  // Scan test (JTAG SCANTEST): the core runs on TCK, one pulse per Capture-DR
+  // and per Shift-DR, so shift and capture are fully controlled from the
+  // tester through the TAP. Library cells, so that the clock path is not
+  // built from arbitrary gates (cc_clk_gate / cc_clk_mux2, XFAB_CLKCELLS).
+  cc_clk_gate scan_ckgate (.clk_i(tck_i), .en_i(sc01_clock_s), .te_i(1'b0),
+                           .gclk_o(tck_scan_s));
+
+  cc_clk_mux2 core_ckmux (.clk0_i(clk_core_s), .clk1_i(tck_scan_s),
+                          .sel_i(sc01_mode_s), .clk_o(clk_div_s));
 
   //--------------------------------------------
   // UART0  (base 0x0000_0001_0000_0600, 512 B)
@@ -268,16 +281,9 @@ module as_top_mem (input logic                       clk_i,
   assign wdbAckAll_s = (wdbAckDmem_s || wdbAckGpio_s || wdbAckQspi_s ||
                         wdbAckCgu_s  || wdbAckUart_s || wdbAckIcu_s) && gnt0_s;
   
-  as_cpux cpu (.clk_i(clk_div_s), // divided functional clock or external TB clock (scan)
+  as_cpux cpu (.clk_i(clk_div_s), // clk_core, or gated TCK in scan test
               .rst_i(rst_i),
-              .tck_i(tck_i),
               .ir_o(ir_s),
-              .dr_cap_i(dr_cap_s),
-               // scan path
-              .sc01_tdo_o(sc01_tdo_s),
-              .sc01_tdi_i(sc01_tdi_s),
-              .sc01_shift_i(sc01_shift_s),
-              .sc01_clock_i(sc01_clock_s),
                // instruction bus (legacy flat BPI)
               .iBusAddr_o(iBusAddr3_s),
               .iBusDataRd_i(iBusDataRd3_s),
@@ -402,7 +408,7 @@ module as_top_mem (input logic                       clk_i,
                 .tdo_o(tdo_o),
                 .tdo_oe_o(tdo_oe_o),
                 .tap_rst_o(tap_rst_s),
-                .dr_cap_o(dr_cap_s),
+                .dr_cap_o(),
                 .sc01_tdo_i(sc01_tdo_s),
                 .sc01_tdi_o(sc01_tdi_s),
                 .sc01_shift_o(sc01_shift_s),
@@ -418,8 +424,18 @@ module as_top_mem (input logic                       clk_i,
                 .bs_shift_o(bs_shift_s),
                 .bs_clock_o(bs_clock_s),
                 .bs_upd_o(bs_upd_s),
-                .bs_mode_o(bs_mode_s)
+                .bs_mode_o(bs_mode_s),
+                .sc01_mode_o(sc01_mode_s)
                );
+
+  // Scan chain hookup. RTL: chain of length 0. Synthesis (XFAB_DFT): left
+  // open, connect_scan_chains puts the inserted chain between
+  // as_jtag/sc01_tdi_o and as_jtag/sc01_tdo_i (01b_rv64_syn.tcl).
+`ifdef XFAB_DFT
+  assign sc01_tdo_s = 1'b0;
+`else
+  assign sc01_tdo_s = sc01_tdi_s;
+`endif
 
   //--------------------------------------------
   // Scan chain for I-Mem

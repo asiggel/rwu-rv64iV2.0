@@ -30,6 +30,8 @@ DESIGN_PATH=<path-to-design>
 RTL_FILES="
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/as_pack.sv
   $DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asRegFile.sv
+  $DESIGN_PATH/ip_clkcells/src/cc_clk_mux2.sv
+  $DESIGN_PATH/ip_clkcells/src/cc_clk_gate.sv
   $DESIGN_PATH/ip_dmem/src/asDMemBack.sv
   $DESIGN_PATH/ip_dmem/src/asDMemFront.sv
   $DESIGN_PATH/ip_dmem/src/asDMemCore.sv

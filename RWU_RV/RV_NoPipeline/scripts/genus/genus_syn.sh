@@ -19,7 +19,8 @@
 #   1. elaborate   ../00_rv64_elab.tcl  (always batch)  -> cc_chip_top_elab.db
 #   2. synthesize  ../01b_rv64_syn.tcl  (batch or GUI)  -> netlist, SDC, SDF,
 #                                                         reports, Innovus DB
-#   3. evaluate    Genus errors, unresolved cells, outputs present, timing
+#   3. evaluate    Genus errors, unresolved cells, outputs present, timing,
+#                  scan chain
 #
 # All results go to build_genus/ (logs, reports, netlist, innovus/).
 #
@@ -154,7 +155,7 @@ if [ -n "$(genus_errors syn.log)" ]; then
   RC=1
 fi
 for f in "${DESIGN_TOP}_syn.v" "${DESIGN_TOP}_syn.sdc" "${DESIGN_TOP}_syn_jtag.sdc" \
-         "${DESIGN_TOP}_syn.sdf" "innovus/${DESIGN_TOP}.db"; do
+         "${DESIGN_TOP}_syn.sdf" "${DESIGN_TOP}_syn.scandef" "innovus/${DESIGN_TOP}.db"; do
   if [ ! -e "$f" ]; then
     echo "missing output: $f"
     RC=1
@@ -171,7 +172,14 @@ for view in av_slow av_typ av_jtag_slow; do
            | head -1 | sed 's/^ *//')"
   printf '  %-13s %s\n' "$view" "${slack:-no slack line found}"
 done
-echo "--- reports: $BUILD_ROOT/${DESIGN_TOP}_{area,qor,timing_*}.rpt"
+echo "--- scan chain sc01 (length = +SCAN_LENGTH for the gate-level scan test)"
+if [ -s "${DESIGN_TOP}_scan_chains.rpt" ]; then
+  grep -iE 'sc01|length' "${DESIGN_TOP}_scan_chains.rpt" | head -5 | sed 's/^/  /'
+else
+  echo "  no ${DESIGN_TOP}_scan_chains.rpt"
+  RC=1
+fi
+echo "--- reports: $BUILD_ROOT/${DESIGN_TOP}_{area,qor,timing_*,scan_chains,dft_rules*}.rpt"
 
 if [ $RC -eq 0 ]; then
   echo "PASS  synthesis of $DESIGN_TOP"

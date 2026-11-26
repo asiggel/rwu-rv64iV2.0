@@ -3,56 +3,48 @@
 
 import as_pack::*;
 
+// Scan test through the JTAG instruction SCANTEST (IR = 129).
+//
+// Checks
+//   1. Clocking: with SCANTEST loaded the core clock clk_div_s is TCK, enabled
+//      only in Capture-DR and Shift-DR: exactly n_shift + 1 rising edges for
+//      one scan operation with n_shift shift cycles, none in Run-Test/Idle.
+//   2. Chain: a pseudo-random pattern shifted in at TDI comes out at TDO,
+//      delayed by the chain length. RTL: length 0 (as_top_mem connects
+//      sc01_tdi to sc01_tdo). Gate level: the length Genus reports for the
+//      inserted chain, given as +SCAN_LENGTH=<n>.
 module tb_rv64i ();
-  parameter tclk_2_t = 500; // 10 ns; given by timescale
-  parameter clk_2_t = 5;   // 5 ns; given by timescale
-  parameter clk_80_t = 400;
+  localparam int tclk_2_t = 500;   // half TCK period, 1 MHz TCK
+  localparam int n_pat    = 64;    // pattern bits beyond the chain length
 
-  parameter sc01_length_in = 2;
-  parameter sc01_length_out = 2;
-  parameter im_length_in = 4;
-  parameter im_length_out = 4;
-  parameter scan_lenght     = 4;
-  parameter scan_lenght_in  = 2;
-  parameter scan_lenght_out = 2;
-  
-
-  logic clk_s, clk_core_s;
-  logic	rst_s;
-  logic	tck_s, trst_s, tms_s, tdi_s, tdo_s;
-  tri [nr_gpios-1:0]	      gpio_s;
+  logic clk_s;
+  logic rst_s;
+  logic tck_s, trst_s, tms_s, tdi_s, tdo_s;
+  tri   [nr_gpios-1:0] gpio_s;
   logic [nr_gpios-1:0] gpio_o_s, gpio_oe_s;
-  logic			      cs_s;
+  logic                cs_s;
 
-  // initial load I-Mem
-  logic [instr_width-1:0]     iram_s[imemdepth-1:0]; // I-Mem
-  logic	[instr_width-1:0]     instr_s;               // one instruction
+  int   fd;
+  int   scan_length;
+  int   n_shift;
+  int   delay;
+  int   clk_edges;
+  int   errors;
+  logic pat_s [];
+  logic out_s [];
 
-  logic	[imem_addr_width-1:0] imScanAddr_s;
-  logic [instr_width-1:0]     imScanData_s;
-  logic			      imScanWe_s;
-  logic [im_scan_length-1:0]  imScanTdi_s;
-
-  logic			      test_case_s;
-  
-  
-  int fd;
-
-  int cnt = 0;
-  
-  
   as_top_mem DUT (.clk_i(clk_s),
-              .rst_i(rst_s),
-              .tck_i(tck_s),
-              .trst_i(trst_s),
-              .tms_i(tms_s),
-              .tdi_i(tdi_s),
-              .tdo_o(tdo_s),
-              .gpio_o(gpio_o_s), .gpio_oe_o(gpio_oe_s), .gpio_i(gpio_s),
-              .cs_o(cs_s),
-              .uart0_tx_o(),
-              .uart0_rx_i(1'b1)
-             );
+                  .rst_i(rst_s),
+                  .tck_i(tck_s),
+                  .trst_i(trst_s),
+                  .tms_i(tms_s),
+                  .tdi_i(tdi_s),
+                  .tdo_o(tdo_s),
+                  .gpio_o(gpio_o_s), .gpio_oe_o(gpio_oe_s), .gpio_i(gpio_s),
+                  .cs_o(cs_s),
+                  .uart0_tx_o(),
+                  .uart0_rx_i(1'b1)
+                 );
 
   // GPIO pins: the tri-state driver is in the pad ring (cc_chip_top)
   genvar gp;
@@ -62,114 +54,83 @@ module tb_rv64i ();
       assign gpio_s[gp] = gpio_oe_s[gp] ? gpio_o_s[gp] : 1'bz;
     end
   endgenerate
-  // read instructions
-  initial
-    $readmemh("riscvtest.mem",iram_s);
 
-  assign instr_s = iram_s[0];
-
-  initial
-  begin
-    fd = $fopen("./error.txt", "a");
-    trst_s <= 1;
-    tdi_s  <= 0;
-    tms_s  <= 0;
-  end
-  
-  // clock
-  /*always
-  begin
-    clk_s <= 1; #clk_2_t; clk_s <= 0; #clk_2_t; 
-  end*/
-
-  always
-  begin
-    clk_core_s <= 1; #clk_80_t; clk_core_s <= 0; #clk_80_t; // not needed here
-  end
-  
   // TCK
   always
   begin
-    tck_s <= 0; #tclk_2_t; tck_s <= 1; #tclk_2_t; 
+    tck_s <= 0; #tclk_2_t; tck_s <= 1; #tclk_2_t;
   end
 
-  // Scan-Test
+  // Rising edges of the core clock
+  always @(posedge DUT.clk_div_s)
+    clk_edges++;
+
   initial
   begin
-    test_case_s = 0;
-    
-    clk_s = 1'b0;
-    rst_s = 1'b1;
+    fd     = $fopen("./error.txt", "a");
+    errors = 0;
+    if (!$value$plusargs("SCAN_LENGTH=%d", scan_length))
+      scan_length = 0;
+    // TDO is sampled at the rising TCK edge after the falling edge that
+    // loads the TDO register. A bit shifted into the first chain flip-flop
+    // with rising edge i is therefore sampled with rising edge i+L. With the
+    // RTL chain of length 0, TDI reaches the TDO register directly, which
+    // takes one cycle as well.
+    delay   = (scan_length == 0) ? 1 : scan_length;
+    n_shift = delay + n_pat;
+
+    clk_s  = 1'b0;   // clk_i not needed: in SCANTEST the core runs on TCK
+    rst_s  = 1'b1;
+    trst_s = 1'b1;
+    tdi_s  = 1'b0;
+    tms_s  = 1'b0;
     #(tclk_2_t/2);
-    jtag_sw_rst(tclk_2_t);          // TAPC Soft-Reset
-    test_case_s = ~test_case_s;
-    jtag_load_ir(tclk_2_t, 8'h81);  // Load IR with 129, which is (dummy) scan-test
-    test_case_s = ~test_case_s;
-    rst_s = 1'b0;
+    jtag_sw_rst(tclk_2_t);
+    jtag_load_ir(tclk_2_t, 8'h81);   // SCANTEST
+    rst_s = 1'b0;                    // scan flip-flops out of reset
 
-    jtag_shift_in_out_capture(tclk_2_t, 2'b00, 2'b00); // 00 - 0
-    test_case_s = ~test_case_s;
-    jtag_shift_in_out_capture(tclk_2_t, 2'b01, 2'b00); // 01 - 0
-    test_case_s = ~test_case_s;
-    jtag_shift_in_out_capture(tclk_2_t, 2'b10, 2'b00); // 10 - 0
-    test_case_s = ~test_case_s;
-    jtag_shift_in_out_capture(tclk_2_t, 2'b11, 2'b00); // 11 - 1
-    test_case_s = ~test_case_s;
-    jtag_shift_in_out_capture(tclk_2_t, 2'b00, 2'b00); // 00 - 0
-    test_case_s = ~test_case_s;
-    #(50*2*tclk_2_t);
-  end // initial begin
+    // 1a. no core clock in Run-Test/Idle
+    clk_edges = 0;
+    repeat (10) @(negedge tck_s);
+    check("no core clock in Run-Test/Idle", clk_edges == 0);
 
-  logic [4:0] test_result_s;
-  initial test_result_s = 5'b00000;
+    // 1b + 2. one scan operation
+    pat_s = new[n_shift];
+    out_s = new[n_shift];
+    foreach (pat_s[i])
+      pat_s[i] = 1'($urandom_range(1, 0));
+    clk_edges = 0;
+    jtag_scan(tclk_2_t);
+    check($sformatf("core clock edges = %0d (expected %0d)", clk_edges, n_shift + 1),
+          clk_edges == n_shift + 1);
 
-  // check results
-  always @(posedge clk_s) // here: clk_s pulses only once in a test and only in a test
-  begin
-    #(5*tclk_2_t); // TDO negedge-registered: needs extra TCK half-cycle before valid
-    
-    if(tdo_s === 1)
-    begin
-      test_result_s[cnt] = 1'b1;
-      cnt++;	
-      $display("TDO=1 detected: %d", cnt);
-      if(cnt === 5)    // 5 tests
-      begin
-        if(test_result_s === 5'b01000) // AND gate
-          $fdisplay(fd,"%s - scan test: Test ok", get_time());
-        else
-          $fdisplay(fd,"%s - scan test: Test fail", get_time());
-        $fclose(fd);
-        $stop;
-      end
-    end
-    else if(tdo_s === 0)
-    begin
-      test_result_s[cnt] = 1'b0;
-      cnt++;
-      $display("TDO=0 detected: %d", cnt);
-      if(cnt === 5)
-      begin
-        if(test_result_s === 5'b01000) // AND gate
-          $fdisplay(fd,"%s - scan test: Test ok", get_time()); 
-        else
-          $fdisplay(fd,"%s - scan test: Test fail", get_time());
-        $fclose(fd);
-        $stop;
-      end
-    end
-    else $display("TDO=x detected: %d", cnt); 
+    for (int i = delay; i < n_shift; i++)
+      if (out_s[i] !== pat_s[i - delay])
+        errors++;
+    check($sformatf("pattern through chain of length %0d (%0d bit errors)",
+                    scan_length, errors), errors == 0);
+
+    $fclose(fd);
+    $stop;
   end
 
+  task check(string what, bit ok);
+  begin
+    $display("%s: %s", ok ? "OK  " : "FAIL", what);
+    $fdisplay(fd, "%s - scan test, %s: %s", get_time(), what,
+              ok ? "Test ok" : "Test fail");
+  end
+  endtask
+
 //------------------------------------------
-// Functions
+// JTAG tasks
 //------------------------------------------
 
   task jtag_sw_rst(int cl_2_t);
   begin
     tms_s = 1; #(5*2*cl_2_t);
   end
-  endtask // jtag_sw_rst
+  endtask
 
   task jtag_load_ir(int cl_2_t, logic [7:0] ir);
   begin
@@ -179,101 +140,43 @@ module tb_rv64i ();
     tms_s = 1; #(2*cl_2_t); // Select-IR-Scan
     tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Capture-IR
     tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Shift-IR (dummy: parallel load absorbs this slot)
-    tdi_s = ir[7]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 7
-    tdi_s = ir[6]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 6
-    tdi_s = ir[5]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 5
-    tdi_s = ir[4]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 4
-    tdi_s = ir[3]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 3
-    tdi_s = ir[2]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 2
-    tdi_s = ir[1]; tms_s = 0; #(2*cl_2_t); // Shift-IR bit 1
-    tdi_s = ir[0]; tms_s = 1; #(2*cl_2_t); // Exit1-IR bit 0
+    for (int i = 7; i > 0; i--)
+    begin
+      tdi_s = ir[i]; tms_s = 0; #(2*cl_2_t); // Shift-IR
+    end
+    tdi_s = ir[0]; tms_s = 1; #(2*cl_2_t); // Exit1-IR
     tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Update-IR
     tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Run-Test-Idle
   end
-  endtask // jtag_load_ir
+  endtask
 
-  task jtag_shift_in_out_capture(int cl_2_t, logic [scan_lenght_in-1:0] dr_in, logic [scan_lenght_out-1:0] dr_out);
+  // From Run-Test/Idle: Capture-DR, n_shift x Shift-DR, back to Run-Test/Idle.
+  // pat_s[i] is applied in the i-th Shift-DR cycle, out_s[i] is TDO sampled at
+  // the rising TCK edge that ends it. The TB drives a quarter period before
+  // the rising edge.
+  task jtag_scan(int cl_2_t);
   begin
-    // from run-test-idle
     tdi_s = 0; tms_s = 1; #(2*cl_2_t); // -> Select-DR-Scan
     tdi_s = 0; tms_s = 0; #(2*cl_2_t); // -> Capture-DR
     tdi_s = 0; tms_s = 0; #(2*cl_2_t); // -> Shift-DR
-    for(int i=scan_lenght_in-1;i>0;i--)
+    for (int i = 0; i < n_shift; i++)
     begin
-      tdi_s = dr_in[i]; tms_s = 0; #(2*cl_2_t); // -> Shift-DR
+      tdi_s = pat_s[i];
+      tms_s = (i == n_shift - 1);       // last bit: -> Exit1-DR
+      @(posedge tck_s);
+      out_s[i] = tdo_s;
+      #(cl_2_t + cl_2_t/2);              // to the next drive point
     end
-    tdi_s = dr_in[0]; tms_s = 1; #(2*cl_2_t); // -> Exit1-DR
     tdi_s = 0; tms_s = 1; #(2*cl_2_t); // -> Update-DR
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // -> Select-DR-Scan
-    tdi_s = 0; tms_s = 0; #(cl_2_t); clk_s = 1'b1; #(cl_2_t/2); clk_s = 1'b0; #(cl_2_t/2); // -> Capture-DR; ONE clock pulse
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // -> Shift-DR
-    for(int i=scan_lenght_out-1;i>0;i--)
-    begin
-      tdi_s = dr_out[i]; tms_s = 0; #(2*cl_2_t); // -> Shift-DR
-    end
-    tdi_s = dr_out[0]; tms_s = 1; #(2*cl_2_t); // -> Exit1-DR
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // -> Update-DR
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // -> RTI
-  end
-  endtask
-
-  task jtag_shift_in_dr_to_pause(int cl_2_t, logic [sc01_length_in-1:0] dr);
-  begin
-    // from run-test-idle
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Select-DR-Scan
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Capture-DR
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Shift-DR ??
-    for(int i=sc01_length_in-1;i>0;i--)
-    begin
-      tdi_s = dr[i]; tms_s = 0; #(2*cl_2_t); // Shift-DR
-    end
-    tdi_s = dr[0]; tms_s = 1; #(2*cl_2_t); // Exit1-DR
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Pause-DR
-  end
-  endtask // jtag_shift_in_dr_to_pause
-
-  task jtag_shift_out_dr(int cl_2_t);
-  begin
-    // from pause
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Exit2-DR;
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Shift-DR; // shift out ??
-    for(int i=sc01_length_out-1;i>0;i--)
-    begin
-      tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Shift-DR; // shift out
-    end
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Exit1-DR  // shift out
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Update-DR;
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Run-Test_idle
-  end
-  endtask // jtag_shift_in_dr_to_pause
-
-  task jtag_shift_in_imdr_to_rti(int cl_2_t, logic [im_length_in-1:0] dr);
-  begin
-    // from run-test-idle
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Select-DR-Scan
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Capture-DR
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Shift-DR ??
-    for(int i=im_length_in-1;i>0;i--)
-    begin
-      tdi_s = dr[i]; tms_s = 0; #(2*cl_2_t); // Shift-DR
-    end
-    tdi_s = dr[0]; tms_s = 1; #(2*cl_2_t); // Exit1-DR
-    tdi_s = 0; tms_s = 1; #(2*cl_2_t); // Update-DR
-    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // Run-Test_idle
+    tdi_s = 0; tms_s = 0; #(2*cl_2_t); // -> Run-Test-Idle
   end
   endtask
 
   function string get_time();
-    int    file_pointer;
-    
-    //Stores time and date to file sys_time
-    //void'($system("date +%X--%x > sys_time"));
+    int file_pointer;
     void'($system("date +%x > sys_time"));
-    //Open the file sys_time with read access
     file_pointer = $fopen("sys_time","r");
-    //assin the value from file to variable
     void'($fscanf(file_pointer,"%s",get_time));
-    //close the file
     $fclose(file_pointer);
     void'($system("rm sys_time"));
   endfunction

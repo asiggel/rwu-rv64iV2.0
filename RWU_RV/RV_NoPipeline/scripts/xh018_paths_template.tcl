@@ -46,6 +46,19 @@ set PAD_GND   <core_ground_pad>
 set PAD_VDDO  <io_supply_pad>
 set PAD_GNDO  <io_ground_pad>
 
+# D_CELLS_HD clock cells for cc_clk_mux2 / cc_clk_gate (ip_clkcells), with
+# their pin names: the RTL instantiates them by these names
+set CLKMUX     <clock_mux2_cell>            ;# 2:1 clock multiplexer
+set CLKMUX_I0  <pin_input_sel0>
+set CLKMUX_I1  <pin_input_sel1>
+set CLKMUX_S   <pin_select>
+set CLKMUX_Q   <pin_output>
+set ICG        <integrated_clock_gate_cell> ;# latch + AND, enable + test enable
+set ICG_CK     <pin_clock>
+set ICG_E      <pin_enable>
+set ICG_TE     <pin_test_enable>
+set ICG_Q      <pin_gated_clock>
+
 # Physical-only cells and the standard-cell site for Innovus
 # (02_rv64_floorplan_pnr.tcl)
 set CORE_SITE   <std_cell_site>              ;# row site of the HD standard cells

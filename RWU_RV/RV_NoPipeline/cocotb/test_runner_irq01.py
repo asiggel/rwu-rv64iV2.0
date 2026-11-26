@@ -30,6 +30,8 @@ VERILOG_SOURCES = [
     IP_ROOT / "ip_dmem" / "src" / "asDMemTop.sv",
     SRC_DIR / "src" / "asIMem.sv",
     SRC_DIR / "src" / "asRegFile.sv",
+    IP_ROOT / "ip_clkcells" / "src" / "cc_clk_mux2.sv",
+    IP_ROOT / "ip_clkcells" / "src" / "cc_clk_gate.sv",
     SRC_DIR / "src" / "asAlu.sv",
     SRC_DIR / "src" / "asAluBr.sv",
     SRC_DIR / "src" / "asInstrDecode.sv",

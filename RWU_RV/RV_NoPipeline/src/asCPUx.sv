@@ -7,16 +7,7 @@ import as_pack::*;
 module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
               (input  logic                         clk_i,
                input  logic                          rst_i,
-               input  logic tck_i,
                output logic [instr_width-1:0]        ir_o,         // needed for byte-select logic in D-Mem
-               input  logic dr_cap_i,
-              // Scan Chain
-               output logic                          sc01_tdo_o,   // scan: serial out
-               input  logic                          sc01_tdi_i,   // scan: serial in
-               input  logic                          sc01_shift_i, // scan: shift enable
-               /* verilator lint_off UNUSEDSIGNAL */ // scan clock received for interface compatibility; not used in current scan chain implementation
-               input  logic                          sc01_clock_i,
-               /* verilator lint_on UNUSEDSIGNAL */ // scan: clock enabe
                // Instruction bus (legacy flat BPI)
                output logic [iaddr_width-1:0]        iBusAddr_o,     // I-Bus: address
                input  logic [instr_width-1:0]        iBusDataRd_i,   // I-Bus: data
@@ -73,13 +64,6 @@ module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
   logic [reg_width-1:0] result_s;
   // ALU
   logic [reg_width-1:0]	aluRes_s, aluCalcRes_s;
-
-  logic	and_in01_s;
-  logic	sc01_01_s;
-  logic	sc01_02_s;
-  logic	sc01_03_s;
-  logic	and_in02_s;
-  logic	and_out_s;
 
   //IRQ
   logic [reg_width-1:0] csr_data_s;
@@ -140,8 +124,6 @@ module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
   logic [63:0]            trap_vec_s;
   logic [63:0]            mepc_s;
 
-  logic	gated_clk_s;
-  logic	clk_mux_s;
   
   
 
@@ -560,24 +542,6 @@ module as_cpux #(parameter logic [63:0] HART_ID = 64'd0) // -> mhartid
   assign dcpu_if.dc_wdata = '0;
   assign dcpu_if.dc_wstrb = '0;
   assign dcpu_if.dc_flush = 1'b0;
-
-  //--------------------------------------------
-  // Test Scan Chain; for the ASIC: disconnect this chain, 
-  // remove all components and connect the dangling ends to the 
-  // automatically inserted scan-chain. Check: Is the ATPG tool 
-  // from Cadence replacing the correct clock muxes and clock gates? 
-  //--------------------------------------------
-  assign clk_mux_s = (sc01_shift_i == 1) ? tck_i : gated_clk_s; // Must be a real clock mux!
-  assign gated_clk_s = clk_i && dr_cap_i;                       // Must be a real clock gate!
-  
-  //assign clk_mux_s = ~tck_i; // !!! Must be a real clock mux!!!
-  scan_cell sc01 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_tdi_i, and_in01_s, sc01_01_s);
-  scan_cell sc02 (clk_mux_s, rst_i, sc01_shift_i, 1'b0, sc01_01_s, and_in02_s, sc01_02_s);
-  assign and_out_s = and_in01_s & and_in02_s;
-  scan_cell sc03 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
-                  .data_i(and_out_s), .ser_i(sc01_02_s), .data_o(), .ser_o(sc01_03_s));
-  scan_cell sc04 (.tck_i(clk_mux_s), .trst_i(rst_i), .scan_shift_i(sc01_shift_i),
-                  .data_i(1'b0), .ser_i(sc01_03_s), .data_o(), .ser_o(sc01_tdo_o));
 
 endmodule : as_cpux
 

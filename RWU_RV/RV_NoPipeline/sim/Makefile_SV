@@ -10,6 +10,8 @@ TB_TOP := tb_rv64i
 SOURCES_SV := \
 	../src/as_pack.sv \
 	../src/asRegFile.sv \
+	../../../ip_clkcells/src/cc_clk_mux2.sv \
+	../../../ip_clkcells/src/cc_clk_gate.sv \
 	../src/asAdd.sv \
 	../../../ip_dmem/src/asDMemBack.sv \
 	../../../ip_dmem/src/asDMemFront.sv \

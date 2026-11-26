@@ -25,10 +25,10 @@ create_clock -name tck_i -period 40.000 [get_ports tck_i]
 create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
   [get_pins core/cgu/CGUCore/clk_core_o]
 
-# Functional mode: the scan bypass mux (clk_div_s = dr_cap_s ? clk_i : clk_core_s)
-# selects clk_core. Without this, every core path would also be timed at the
-# 100 MHz clk_i, which is only used in scan test.
-set_case_analysis 0 [get_pins core/as_jtag/dr_cap_o]
+# Functional mode: the scan clock mux core_ckmux (cc_clk_mux2) selects
+# clk_core. With JTAG SCANTEST (sc01_mode_o = 1) it selects tck_i, gated by
+# scan_ckgate; that path is only used in scan test.
+set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o]
 # The I-Mem clock mux (core/as_jtag/im_mode_o) is fixed per mode in the mode file.
 
 # JTAG writes the I-Mem with tck_i, the core reads it with clk_core; the

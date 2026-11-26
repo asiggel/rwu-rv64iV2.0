@@ -40,5 +40,9 @@
   \hline
   & 2026-11-26 & CLK-02 closed: CGU register interface moved from \texttt{clk\_i} to \texttt{clk\_div\_s} (no CPU write into the \texttt{clk\_i} domain) (CC) \\
   \hline
+  & 2026-11-26 & DFT-01: scan insertion in Genus through JTAG \texttt{SCANTEST}; core scan clock = gated TCK (library clock gate and clock mux, \texttt{cc\_clk\_gate} / \texttt{cc\_clk\_mux2}); dummy scan chain removed (CC) \\
+  \hline
+  & 2026-11-26 & CLK-03: CGU divided clocks come straight from a flip-flop instead of a decoded counter value (CC) \\
+  \hline
 \end{tabularx}
 \end{table}

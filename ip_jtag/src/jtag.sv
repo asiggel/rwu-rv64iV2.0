@@ -28,7 +28,8 @@ module jtag ( input logic  tck_i,        // Test Clock
               output logic bs_upd_o,     // BS: update slave
               output logic bs_mode_o,    // BS: function or serial
               // last, so that positional instances (ip_jtag/tb) stay valid
-              output logic tdo_oe_o      // TDO output enable, active high; tri-state in the pad
+              output logic tdo_oe_o,     // TDO output enable, active high; tri-state in the pad
+              output logic sc01_mode_o   // Scan Chain: SCANTEST loaded, core clock = TCK
               
               );
 
@@ -105,7 +106,7 @@ module jtag ( input logic  tck_i,        // Test Clock
   //----------------------------------------
   // IR Decode
   //----------------------------------------
-  ir_decode irdecode (dr_shift_s,dr_clock_s,dr_upd_s,ir_s,sel_tdo_s,bs_mode_o,by_shift_s,by_clock_s,bs_shift_o,bs_clock_o,bs_upd_o,id_shift_s,id_clock_s,id_upd_s,id_mode_s,im_shift_o,im_clock_o,im_upd_o,im_mode_o,sc01_clock_o,sc01_shift_o);
+  ir_decode irdecode (dr_shift_s,dr_clock_s,dr_upd_s,ir_s,sel_tdo_s,bs_mode_o,by_shift_s,by_clock_s,bs_shift_o,bs_clock_o,bs_upd_o,id_shift_s,id_clock_s,id_upd_s,id_mode_s,im_shift_o,im_clock_o,im_upd_o,im_mode_o,sc01_clock_o,sc01_shift_o,sc01_mode_o);
   /*ir_decode irdecode (.dr_shift_i(dr_shift_s),    // from FSM
                       .dr_clock_i(dr_clock_s),    // from FSM
                       .dr_upd_i(dr_upd_s),        // from FSM

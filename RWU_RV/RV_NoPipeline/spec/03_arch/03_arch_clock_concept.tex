@@ -27,7 +27,11 @@ Both chip variants (Table~\ref{tab:asChipVariants}) share the same Clock
 Generation Unit IP (\texttt{as\_cgu\_top} / \texttt{as\_cgucore}).
 The chip has a single external clock input, \texttt{clk\_i}, from which the
 CGU derives all internal clock domains using free-running counter-based
-dividers.
+dividers. Every divided clock leaves the CGU directly from a flip-flop (the
+registered compare \texttt{cnt < div/2}): a decoded counter value could
+glitch while the counter bits switch, and a glitch on a clock line is an
+extra clock edge. The registered output has the same waveform, delayed by one
+\texttt{clk\_i} cycle.
 There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
 
 \begin{table}[H]
@@ -67,22 +71,52 @@ Wishbone register), the CGU implements only a read/write peripheral
 Changing a divider therefore requires an RTL/constant change and a full
 re-synthesis -- it cannot be adjusted by software or by writing a register.
 
-\subsubsection{Scan-Test Clock Bypass}
+\subsubsection{Scan-Test Clock}
+\label{subsubsec:scanClock}
 
 During normal operation the CPU and Wishbone peripherals are clocked by
-\texttt{clk\_div\_s}, which is generated in \texttt{as\_top\_mem} as:
+\texttt{clk\_div\_s}. In \texttt{as\_top\_mem} it is selected by a clock
+multiplexer from the CGU output and a gated TCK:
 \begin{verbatim}
-assign clk_div_s = dr_cap_s ? clk_i : clk_core_s;
+cc_clk_gate scan_ckgate (.clk_i(tck_i), .en_i(sc01_clock_s), .te_i(1'b0),
+                         .gclk_o(tck_scan_s));
+cc_clk_mux2 core_ckmux  (.clk0_i(clk_core_s), .clk1_i(tck_scan_s),
+                         .sel_i(sc01_mode_s), .clk_o(clk_div_s));
 \end{verbatim}
-\texttt{dr\_cap\_s} is driven by the JTAG TAP.
-In normal function mode (\texttt{dr\_cap\_s}\,=\,0) the CPU runs on the
-divided \texttt{clk\_core\_s}.
-In scan-test mode (\texttt{dr\_cap\_s}\,=\,1) the divider is bypassed and the
-CPU is clocked directly by the raw external \texttt{clk\_i}, so that an ATE
-tester can single-step or free-run the scan chain independently of the CGU
-divide ratio.
-The CGU dividers (\texttt{as\_cgucore}) always run on the undivided
-\texttt{clk\_i}; only their divided outputs are subject to the bypass mux.
+\begin{itemize}
+  \item \texttt{sc01\_mode\_s} is 1 while the JTAG instruction register holds
+    \texttt{SCANTEST} (129). It is static during a scan test.
+  \item \texttt{sc01\_clock\_s} is 1 in the TAP states Capture-DR and
+    Shift-DR. The clock gate lets exactly one TCK pulse through per state:
+    one capture pulse and one pulse per shifted bit.
+  \item \texttt{sc01\_shift\_s} (Shift-DR) is the shift enable of the scan
+    flip-flops.
+\end{itemize}
+Shift and capture therefore both run on TCK and are fully controlled by the
+tester through the TAP, independent of the CGU divide ratio and of
+\texttt{clk\_i}. This is a stuck-at test; an at-speed test is not possible
+through the TAP.
+
+\texttt{cc\_clk\_gate} and \texttt{cc\_clk\_mux2} (\texttt{ip\_clkcells})
+instantiate a clock gating cell and a clock multiplexer of
+\texttt{D\_CELLS\_HD} with \texttt{`define XFAB\_CLKCELLS}; without it they are
+behavioural models for simulation and FPGA. The I-Mem clock multiplexer
+(\texttt{tck\_i} while loading, \texttt{clk\_div\_s} otherwise) uses
+\texttt{cc\_clk\_mux2} as well.
+
+The scan chain is inserted by Genus (\texttt{scripts/01b\_rv64\_syn.tcl}). It
+starts at the TAP output \texttt{sc01\_tdi\_o} (TDI in \texttt{SCANTEST}) and
+ends at the TAP input \texttt{sc01\_tdo\_i} (to TDO). In the RTL the two are
+connected directly (chain of length 0). Not scanned: the TAP and the I-Mem
+load register (they control the scan operation) and the CGU dividers (on
+\texttt{clk\_i}).
+
+Up to 2026-11-26 the multiplexer was \texttt{clk\_div\_s = dr\_cap\_s ? clk\_i
+: clk\_core\_s}, and a four-bit dummy scan chain in \texttt{as\_cpux} shifted
+with TCK and captured with \texttt{clk\_i} during Capture-DR. The number of
+capture pulses then depended on the TCK/\texttt{clk\_i} ratio, which an ATPG
+setup cannot handle reliably. The dummy chain was removed with the scan
+insertion (DFT-01).
 
 \subsubsection{CGU Register Clock}
 \label{subsubsec:cguRegClock}
@@ -124,8 +158,8 @@ The Genus scripts target XH018 (TECH-02). The common constraint file
 \texttt{scripts/as\_top\_mem.sdc} implements the operating point of
 Table~\ref{tab:asNoPipelineClk}: \texttt{clk\_i} with 10\,ns, the generated
 clock \texttt{clk\_core} (\texttt{-divide\_by 80}) on the CGU output, the
-scan bypass mux fixed to functional mode by case analysis on
-\texttt{dr\_cap\_o}, and \texttt{tck\_i} with 40\,ns, asynchronous to the
+scan clock multiplexer fixed to functional mode by case analysis on
+\texttt{sc01\_mode\_o}, and \texttt{tck\_i} with 40\,ns, asynchronous to the
 core clocks. Two constraint modes fix the I-Mem clock multiplexer by case
 analysis on \texttt{im\_mode\_o} (TECH-05): \texttt{func}
 (\texttt{as\_top\_mem\_func.sdc}, I-Mem on \texttt{clk\_div\_s}) and

@@ -28,11 +28,13 @@ module as_imem (input  logic                       tck_i,
   (* ram_style = "block" *) logic [instr_width-1:0] iram_s[mdepth-1:0];
 `endif
 
-  // CLOCK GATE: the single-port macro has one clock. JTAG loading clocks it
-  // with tck_i, the CPU with clk_i. im_mode_i comes from the JTAG IR and is
-  // static while loading; load only with rst_i = 1, so that clk_core stands
-  // still when the IR switches (spec, I-Mem load procedure).
-  assign mem_clk_s = im_mode_i ? tck_i : clk_i;
+  // The single-port macro has one clock. JTAG loading clocks it with tck_i,
+  // the CPU with clk_i. im_mode_i comes from the JTAG IR and is static while
+  // loading; load only with rst_i = 1, so that clk_core stands still when the
+  // IR switches (spec, I-Mem load procedure). Library clock mux cell
+  // (cc_clk_mux2, XFAB_CLKCELLS).
+  cc_clk_mux2 mem_ckmux (.clk0_i(clk_i), .clk1_i(tck_i), .sel_i(im_mode_i),
+                         .clk_o(mem_clk_s));
 
   // Load mode: only the JTAG write cycles access the macro.
   // Function mode: a read in every cycle, as the CPU fetch expects.

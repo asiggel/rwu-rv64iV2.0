@@ -26,7 +26,11 @@ Both chip variants (Table~\ref{tab:asChipVariants}) share the same Clock
 Generation Unit IP (\texttt{as\_cgu\_top} / \texttt{as\_cgucore}).
 The chip has a single external clock input, \texttt{clk\_i}, from which the
 CGU derives all internal clock domains using free-running counter-based
-dividers.
+dividers. Every divided clock leaves the CGU directly from a flip-flop (the
+registered compare \texttt{cnt < div/2}): a decoded counter value could
+glitch while the counter bits switch, and a glitch on a clock line is an
+extra clock edge. The registered output has the same waveform, delayed by one
+\texttt{clk\_i} cycle.
 There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
 
 \begin{table}[H]

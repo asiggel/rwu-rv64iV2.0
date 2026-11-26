@@ -24,7 +24,8 @@ module ir_decode (input logic                dr_shift_i,   // distribute it to t
                   output logic               im_upd_o,     // I-Mem
                   output logic               im_mode_o,    // I-Mem
                   output logic               sc01_clock_o, // Scan chain
-                  output logic               sc01_shift_o  // Scan chain
+                  output logic               sc01_shift_o, // Scan chain
+                  output logic               sc01_mode_o   // SCANTEST loaded (static)
                );
 
   logic       ext_o_s;
@@ -40,6 +41,9 @@ module ir_decode (input logic                dr_shift_i,   // distribute it to t
   assign {id_shift_o, id_clock_o, id_upd_o, id_mode_o} = id_o_s;
   assign {im_shift_o, im_clock_o, im_upd_o, im_mode_o} = im_o_s;
   assign sc01_shift_o = sc01_o_s;
+  // Selects the core clock (TCK in scan test) and stays valid while the IR
+  // holds SCANTEST -- unlike sc01_shift/sc01_clock, which follow the TAP state.
+  assign sc01_mode_o  = (ir_i == 8'd129);
 
   // chains: 0 - BY
   //         1 - ID

@@ -55,6 +55,8 @@ read_physical -lef $LEF_FILES
 set RTL_FILES [list \
   "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/as_pack.sv" \
   "$DESIGN_PATH/RWU_RV/RV_NoPipeline/src/asRegFile.sv" \
+  "$DESIGN_PATH/ip_clkcells/src/cc_clk_mux2.sv" \
+  "$DESIGN_PATH/ip_clkcells/src/cc_clk_gate.sv" \
   "$DESIGN_PATH/ip_dmem/src/asDMemBack.sv" \
   "$DESIGN_PATH/ip_dmem/src/asDMemFront.sv" \
   "$DESIGN_PATH/ip_dmem/src/asDMemCore.sv" \
@@ -98,10 +100,25 @@ set RTL_FILES [list \
 # 5. Read, elaborate, bind constraints
 # ------------------------------------------------------------------------
 # XFAB_SPRAM selects the SPRAM macros in as_imem / as_dmem_core, XFAB_PADS the
-# IO_CELLS_3V cells in cc_pad_* and the supply pads in cc_chip_top, instead of
-# the behavioural models. All cell names come from $XFAB_PATHS, so that no
-# X-FAB cell name is part of the repository.
+# IO_CELLS_3V cells in cc_pad_* and the supply pads in cc_chip_top,
+# XFAB_CLKCELLS the D_CELLS_HD clock mux and clock gate in cc_clk_mux2 /
+# cc_clk_gate, instead of the behavioural models. All cell and pin names come
+# from $XFAB_PATHS, so that no X-FAB name is part of the repository.
+# XFAB_DFT leaves the scan chain hookup in as_top_mem open for
+# connect_scan_chains (01b_rv64_syn.tcl).
 read_hdl -sv -define [list XFAB_SPRAM \
+                           XFAB_DFT \
+                           XFAB_CLKCELLS \
+                           XFAB_CLKMUX=$CLKMUX \
+                           XFAB_CLKMUX_I0=$CLKMUX_I0 \
+                           XFAB_CLKMUX_I1=$CLKMUX_I1 \
+                           XFAB_CLKMUX_S=$CLKMUX_S \
+                           XFAB_CLKMUX_Q=$CLKMUX_Q \
+                           XFAB_ICG=$ICG \
+                           XFAB_ICG_CK=$ICG_CK \
+                           XFAB_ICG_E=$ICG_E \
+                           XFAB_ICG_TE=$ICG_TE \
+                           XFAB_ICG_Q=$ICG_Q \
                            XFAB_IMEM_MACRO=$IMEM_MACRO \
                            XFAB_DMEM_MACRO=$DMEM_MACRO \
                            XFAB_PADS \
