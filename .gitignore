@@ -110,6 +110,7 @@ build/
 build_vlt/
 build_xcelium/
 build_genus/
+build_innovus/
 xrun.history
 xrun.key
 xcelium.d/

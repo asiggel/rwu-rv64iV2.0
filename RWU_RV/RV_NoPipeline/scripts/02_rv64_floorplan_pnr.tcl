@@ -16,15 +16,35 @@
 #
 # Before running:
 #   01b_rv64_syn.tcl must have written innovus/cc_chip_top.db. Libraries,
-#   LEF, MMMC and SDC come in with that DB (it references the X-FAB files
-#   from $XFAB_PATHS by absolute path), so this script needs no X-FAB path
-#   variable of its own -- the referenced files just have to be readable.
+#   LEF, MMMC and SDC come in with that DB.
+#   XFAB_PATHS = local X-FAB path file (NDA, not in git): this script takes
+#                the site, pad, corner and IO filler cell names from it
+#                (template: scripts/xh018_paths_template.tcl)
 #
 # Usage (same run directory as the Genus scripts, e.g. RV_NoPipeline/syn/genus):
 #   innovus -batch -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/02_rv64_floorplan_pnr.tcl
+# or with GUI / step by step / DRC + antenna summary:
+#   scripts/innovus/innovus_pnr.sh  (see its --help)
 #===============================================================================
 
 set DESIGN_TOP cc_chip_top
+
+if {![info exists ::env(XFAB_PATHS)] || ![file readable $::env(XFAB_PATHS)]} {
+  error "XFAB_PATHS must point to the local X-FAB path file (see scripts/xh018_paths_template.tcl)"
+}
+source $::env(XFAB_PATHS)
+
+# Optional stop point for step-by-step runs (scripts/innovus/innovus_pnr.sh
+# -s): fp | place | cts | route. Not set = full flow.
+if {![info exists STOP_AFTER]} { set STOP_AFTER route }
+proc as_stop_here {stage} {
+  global STOP_AFTER
+  if {$STOP_AFTER eq $stage} {
+    puts "AS-pnr: stopped after stage '$stage' (STOP_AFTER)."
+    return 1
+  }
+  return 0
+}
 
 # ------------------------------------------------------------------------
 # 1. Read the common DB checkpoint written by Genus (01b_rv64_syn.tcl)
@@ -39,19 +59,20 @@ set DIE_H       2600.0
 set CORE_SIZE   2086.0
 set IO_RING     257.0
 set PAD_W       60.0
-set CORNER_CELL CORNERP
+set CORNER_CELL $PAD_CORNER
 
 # floorPlan on this site/tech already reserves an implicit ~257um margin
 # on every side on top of whatever margin is given here -- verified
 # empirically (margin 0 -> core_bbox {257 257 2343 2343}, i.e. exactly the
 # intended core-to-die gap). Core size is given directly (-s) to avoid
 # relying on that implicit margin for the die-size (-d) form as well.
-floorPlan -site core_hd -s $CORE_SIZE $CORE_SIZE 0 0 0 0
+floorPlan -site $CORE_SITE -s $CORE_SIZE $CORE_SIZE 0 0 0 0
 
 # ------------------------------------------------------------------------
 # 3. Pad-ring placement (first-pass, netlist order -- TECH-06 open)
 # ------------------------------------------------------------------------
-set padCellNames {ICP ISP BT4P BBC4P VDDIPADP GNDIPADP VDDORPADP GNDORPADP}
+set padCellNames [list $PAD_IN $PAD_IN_ST $PAD_OUT $PAD_BIDIR \
+                        $PAD_VDD $PAD_GND $PAD_VDDO $PAD_GNDO]
 set padInsts {}
 foreach pc $padCellNames {
   foreach i [get_db insts -if ".base_cell.name==$pc"] {
@@ -115,7 +136,7 @@ addInst -cell $CORNER_CELL -inst IOCORNER_TL -physical -place_status fixed \
 # ------------------------------------------------------------------------
 # 5. IO-ring fillers (close remaining gaps on all 4 sides)
 # ------------------------------------------------------------------------
-set fillerCells {FILLER60P FILLER50P FILLER40P FILLER20P FILLER10P FILLER05P FILLER02P FILLER01P}
+set fillerCells $PAD_FILLERS
 foreach s {bottom top left right} {
   addIoFiller -cell $fillerCells -side $s -fillAnyGap
 }
@@ -125,6 +146,7 @@ foreach s {bottom top left right} {
 # ------------------------------------------------------------------------
 write_db ${DESIGN_TOP}_fp.db
 summaryReport -outfile ${DESIGN_TOP}_fp_summary.rpt
+if {[as_stop_here fp]} { return }
 
 # ------------------------------------------------------------------------
 # 7. Standard-cell / macro placement
@@ -133,6 +155,7 @@ place_design
 
 write_db ${DESIGN_TOP}_placed.db
 report_area    > ${DESIGN_TOP}_placed_area.rpt
+if {[as_stop_here place]} { return }
 
 # ------------------------------------------------------------------------
 # 8. Clock tree synthesis
@@ -142,6 +165,7 @@ ccopt_design
 
 write_db ${DESIGN_TOP}_cts.db
 report_timing -max_paths 10 > ${DESIGN_TOP}_cts_timing.rpt
+if {[as_stop_here cts]} { return }
 
 # ------------------------------------------------------------------------
 # 9. Routing

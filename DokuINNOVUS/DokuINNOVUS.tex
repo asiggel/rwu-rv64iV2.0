@@ -1,0 +1,747 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: RISC-V Place \& Route with Innovus}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Overview}
+
+\url{https://github.com/asiggel/rwu-rv64iV2.0}
+\end{frame}
+
+\renewcommand{\assubtitle}{What is Innovus?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item Cadence's place \& route tool: gate-level netlist $\rightarrow$ layout
+    \item Third step of the Cadence flow for the X-FAB XH018 tape-out:
+      Xcelium (RTL) $\rightarrow$ Genus (synthesis) $\rightarrow$ \textbf{Innovus (P\&R)}
+    \item Genus decides \emph{which} cells, Innovus decides \emph{where} they
+      go and \emph{how} they are wired
+    \item Four stages
+    \begin{itemize}
+      \item \textbf{fp}: floorplan: die and core size, pad ring
+      \item \textbf{place}: put every standard cell and macro onto the core area
+      \item \textbf{cts}: clock tree synthesis: buffer tree from the clock pin
+        to every flip-flop
+      \item \textbf{route}: draw the wires on the metal layers
+    \end{itemize}
+    \item Controlled by Tcl, like Genus; reads the Genus database directly
+    \item Design: RV\_NoPipeline, chip top \cmd{cc\_chip\_top}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Inputs and Outputs}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{In}                    & \\\hline
+    \cmd{build\_genus/innovus/cc\_chip\_top.db} & everything in one database:
+                                     netlist, Liberty, LEF, MMMC, SDC\\[1pt]
+    \cmd{02\_rv64\_floorplan\_pnr.tcl} & die size, pad ring, the P\&R steps\\[4pt]
+    \textbf{Out}                   & \\\hline
+    \cmd{cc\_chip\_top\_<stage>.db} & checkpoint after each stage
+                                     (open it again in the GUI)\\[1pt]
+    \cmd{*\_timing.rpt}            & timing after CTS and after routing\\[1pt]
+    \cmd{*\_drc.rpt}               & design rule violations (spacing, width, \dots)\\[1pt]
+    \cmd{*\_antenna.rpt}           & antenna violations\\[1pt]
+    \cmd{*\_connectivity.rpt}      & open or shorted nets\\[1pt]
+    \cmd{*\_summary.rpt}           & cell count, area, wire length per layer\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Not yet in the flow: power ring/stripes, GDSII export, signoff
+      (DRC/LVS with the X-FAB rule deck)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Chip in Numbers}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    die              & 2600\,$\times$\,2600\,\textmu m\\[2pt]
+    core             & 2086\,$\times$\,2086\,\textmu m\\[2pt]
+    IO ring          & 257\,\textmu m deep (= height of a pad cell), all four sides\\[2pt]
+    pads             & 26: inputs, outputs, bidirectional (GPIO), supply\\[2pt]
+    corners          & 4 corner cells, gaps closed with IO filler cells\\[2pt]
+    cell area (Genus)& about 3.04\,mm\textsuperscript{2} incl.\ SPRAM macros\\[2pt]
+    metal layers     & 4 (XH018, MET1 \dots\ top metal)\\[2pt]
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The chip is \emph{core limited}: the core decides the size,
+      26 pads would fit on a much smaller ring (mostly filler)
+    \item The I-Mem macro is the largest block: 16\,KiB instead of 32\,KiB
+      would save about 0.8\,mm\textsuperscript{2} (open item TECH-03)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Setup}
+\renewcommand{\astitle}{Setup}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Setup}
+\end{frame}
+
+\renewcommand{\assubtitle}{Check the Environment}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Work on the Cadence lab PC; the Cadence tools (release 2026/27)
+      are already in the \cmd{PATH}
+  \end{itemize}
+% VERIFY-LAB: install path and version string of Innovus 2026/27
+\begin{lstlisting}[style=sh]
+which innovus
+innovus -version
+\end{lstlisting}
+  \begin{itemize}
+    \item Synthesis must have run before:
+\begin{lstlisting}[style=sh]
+./scripts/genus/genus_syn.sh -b       # -> build_genus/innovus/cc_chip_top.db
+\end{lstlisting}
+    \item \cmd{XFAB\_PATHS} must be set, as for Genus: the flow takes the
+      site, pad, corner and IO filler cell names from it (NDA)
+    \item GUI: on the lab PC or in a VNC session. Layout over \cmd{ssh -X}
+      from home is very slow
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{NDA and Licenses}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The layout contains X-FAB cells and the X-FAB layer stack:
+      \textbf{never commit} anything from \cmd{build\_innovus/},
+      no screenshots of the layout outside the lab
+      (\cmd{.gitignore} blocks the directory)
+    \item Innovus needs a license as long as it runs, also an idle GUI:
+      close it when you are done (\cmd{exit})
+% VERIFY-LAB: feature name and number of Innovus licenses
+\begin{lstlisting}[style=sh]
+lmstat -c $CDS_LIC_FILE -a | grep -i innovus
+\end{lstlisting}
+    \item Run the flow once in batch mode and then \emph{look} at the
+      checkpoints in the GUI (\cmd{-{}-open}): the flow does not have to
+      run again for every look
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Scripts and Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  In \cmd{RWU\_RV/RV\_NoPipeline}:\\[3pt]
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{scripts/innovus/innovus\_pnr.sh}   & P\&R with GUI (default) or batch,
+                                              step by step, view checkpoints\\[2pt]
+    \cmd{scripts/02\_rv64\_floorplan\_pnr.tcl} & the Innovus flow itself\\[2pt]
+    \cmd{scripts/xh018\_mmmc.tcl}           & corners and views (came with the Genus DB)\\[2pt]
+    \cmd{build\_genus/innovus/}             & input: hand-off from Genus\\[2pt]
+    \cmd{build\_innovus/}                   & all results\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item \cmd{innovus\_pnr.sh} only \emph{calls} \cmd{02\_rv64\_floorplan\_pnr.tcl}
+    \item $\Rightarrow$ floorplan or flow changes are made \emph{only} in
+      the Tcl script
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Batch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{P\&R without GUI}
+\renewcommand{\astitle}{P\&R without GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Place \& route in batch mode}
+\end{frame}
+
+\renewcommand{\assubtitle}{Run}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/innovus/innovus_pnr.sh -b
+\end{lstlisting}
+% VERIFY-LAB: replace with the output of a real run
+\begin{lstlisting}[style=out]
+=== [innovus] 1/3 run 02_rv64_floorplan_pnr.tcl up to 'route' (batch) ...
+=== [innovus] 2/3 checkpoints
+  fp: cc_chip_top_fp.db
+  place: cc_chip_top_placed.db
+  cts: cc_chip_top_cts.db
+  route: cc_chip_top_routed.db
+=== [innovus] 3/3 result
+  worst setup slack: ...
+  drc:          ...
+  antenna:      ...
+  connectivity: ...
+PASS  place & route of cc_chip_top up to 'route'
+\end{lstlisting}
+  \begin{itemize}
+    \item Exit code: \cmd{0} = flow ran through, \cmd{1} = Innovus error or
+      missing checkpoint, \cmd{2} = wrong call / environment
+    \item PASS means: all stages ran. DRC and antenna violations are
+      reported, not judged: read the numbers!
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-b}, \cmd{-{}-batch}        & no GUI (default: Innovus GUI)\\[2pt]
+    \cmd{-s}, \cmd{-{}-stop STAGE}   & stop after \cmd{fp}, \cmd{place},
+                                       \cmd{cts} or \cmd{route} (default)\\[2pt]
+    \cmd{-o}, \cmd{-{}-open STAGE}   & run nothing, open the checkpoint of
+                                       \cmd{STAGE} in the GUI\\[2pt]
+    \cmd{-c}, \cmd{-{}-clean}        & delete \cmd{build\_innovus/} first\\[2pt]
+    \cmd{-h}, \cmd{-{}-help}         & help\\
+  \end{tabularx}
+  \vspace{6pt}
+  \begin{itemize}
+    \item Every run starts again from the Genus database; \cmd{-s} only
+      decides where it ends
+    \item A run deletes the old checkpoints and reports first:
+      what is in \cmd{build\_innovus/} always belongs to the last run
+    \item \cmd{-b -s fp}: try a floorplan change in a few seconds
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What Is in \texttt{build\_innovus/}?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{innovus} $\rightarrow$                & link to \cmd{build\_genus/innovus/} (input)\\[1pt]
+    \cmd{run.tcl}                              & generated: \cmd{STOP\_AFTER}, \cmd{source} the flow,
+                                                 checks, \cmd{exit} (batch)\\[1pt]
+    \cmd{run.log}, \cmd{run.logv}, \cmd{run.cmd} & log, verbose log, commands\\[1pt]
+    \cmd{cc\_chip\_top\_fp.db}                 & checkpoint: floorplan + pad ring\\[1pt]
+    \cmd{cc\_chip\_top\_placed.db}             & checkpoint: placed\\[1pt]
+    \cmd{cc\_chip\_top\_cts.db}                & checkpoint: clock tree\\[1pt]
+    \cmd{cc\_chip\_top\_routed.db}             & checkpoint: routed\\[1pt]
+    \cmd{*\_fp\_summary.rpt}, \cmd{*\_route\_summary.rpt} & design summary\\[1pt]
+    \cmd{*\_placed\_area.rpt}, \cmd{*\_final\_area.rpt}   & area\\[1pt]
+    \cmd{*\_cts\_timing.rpt}, \cmd{*\_final\_timing.rpt}  & worst paths\\[1pt]
+    \cmd{*\_drc.rpt}, \cmd{*\_antenna.rpt}, \cmd{*\_connectivity.rpt} & physical checks\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reading the Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    connectivity & \textbf{must} be clean: an open net is a broken chip\\[2pt]
+    timing       & now with real wires and a real clock tree: more precise
+                   than in Genus. Compare the slack with the Genus report\\[2pt]
+    DRC          & spacing, width, enclosure \dots\ of the drawn metal.
+                   For tape-out: 0\\[2pt]
+    antenna      & long wires collect charge during manufacturing and
+                   can destroy a gate oxide. Fix: diodes or a layer jump\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item State of the first run (November 2026, smoke test):
+    \begin{itemize}
+      \item connectivity clean, setup met, routing complete
+      \item about 2630 DRC and 159 antenna violations
+    \end{itemize}
+    \item Expected: no power ring and stripes yet, pad order not yet checked
+      against the IO databook (TECH-06). That is the next work
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GUI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{P\&R with GUI}
+\renewcommand{\astitle}{P\&R with GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Watching the chip grow}
+\end{frame}
+
+\renewcommand{\assubtitle}{Three Ways to See the Layout}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/innovus/innovus_pnr.sh                 # 1. whole flow in the GUI
+./scripts/innovus/innovus_pnr.sh -s place        # 2. stop after a stage
+./scripts/innovus/innovus_pnr.sh -o cts          # 3. open a checkpoint
+\end{lstlisting}
+  \begin{enumerate}
+    \item The window opens with the empty design; you watch the pad ring,
+      the placement, the clock tree and the wires appear.
+      The window stays open at the end
+    \item The flow ends after \cmd{fp}, \cmd{place} or \cmd{cts}: you
+      continue by hand in the console (next slides)
+    \item Fastest: nothing runs, the GUI shows a stage of the last run.
+      Best for comparing stages: \cmd{-o fp}, \cmd{-o place}, \dots
+  \end{enumerate}
+  \begin{itemize}
+    \item The terminal is the Innovus console; \cmd{exit} closes Innovus
+  \end{itemize}
+\end{block}
+\end{frame}
+
+% VERIFY-LAB: view names, menus and keys of the Innovus 2026/27 GUI
+\renewcommand{\assubtitle}{Finding Your Way in the Window}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item \textbf{Three views} (buttons top right):
+    \begin{itemize}
+      \item \emph{Floorplan view}: die, core, pads, macros
+      \item \emph{Amoeba view}: one coloured area per hierarchy
+        (\cmd{cpu}, \cmd{cgu}, \cmd{as\_jtag}, \dots): where did a block end up?
+      \item \emph{Physical view}: every cell and every wire
+    \end{itemize}
+    \item \textbf{Layer panel} (right): switch metal layers, cells, pins on
+      and off. Only one metal layer: you see its preferred direction
+    \item \textbf{Zoom}: mouse wheel or drag a box; key \cmd{f}: fit the whole die
+    \item \textbf{Select}: click a cell or wire; \cmd{q} shows its attributes
+      (name, master cell, net, layer)
+    \item \textbf{Find}: \emph{Edit $\rightarrow$ Find/Select Object}, e.g.\ all
+      instances of \cmd{core/cpu/*}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What to Look at, Stage by Stage}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{fp}    & die outline, core box, pad ring with corners and fillers,
+                  26 pads in netlist order. Rows for the standard cells\\[3pt]
+    \cmd{place} & the two SPRAM macros, the standard cells in rows.
+                  Amoeba view: is the CPU close to the memories?
+                  Where are the pads they talk to?\\[3pt]
+    \cmd{cts}   & clock tree buffers. Clock tree debugger:
+                  \emph{Clock $\rightarrow$ CCOpt Clock Tree Debugger}: tree from
+                  \cmd{clk\_i} through the CGU to every flip-flop\\[3pt]
+    \cmd{route} & all wires; switch the layers one by one.
+                  DRC markers: \emph{Tools $\rightarrow$ Violation Browser}\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Step by Step in the Console}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  After \cmd{innovus\_pnr.sh -s fp}, in the Innovus console:
+\begin{lstlisting}[style=sh]
+place_design                         # stage place
+report_area
+create_ccopt_clock_tree_spec         # stage cts
+ccopt_design
+report_timing -max_paths 5
+routeDesign                          # stage route
+report_timing -max_paths 5
+verify_connectivity -type all
+verify_drc                           # markers appear in the layout
+\end{lstlisting}
+  \begin{itemize}
+    \item The same commands, in the same order, as in
+      \cmd{02\_rv64\_floorplan\_pnr.tcl}
+    \item Watch the layout after each command
+    \item Nothing is saved: \cmd{write\_db my.db} if you want to keep it
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Following a Timing Path}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+report_timing -max_paths 1           # worst path, as text
+\end{lstlisting}
+% VERIFY-LAB: menu name of the timing debugger
+  \begin{itemize}
+    \item \emph{Timing $\rightarrow$ Debug Timing}: list of paths;
+      select one $\rightarrow$ it is highlighted in the layout
+    \item You see where the start and end flip-flops are placed and how
+      long the wire between them is
+    \item Typical findings: a path crosses the whole die to a pad,
+      or it runs into a macro pin on the far side
+    \item Compare with the Genus report: Genus estimated the wires,
+      Innovus has them
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Under the hood
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Under the Hood}
+\renewcommand{\astitle}{Under the Hood}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{The flow by hand}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) One Innovus Call}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+mkdir -p build_innovus && cd build_innovus
+ln -sfn ../build_genus/innovus innovus
+printf 'source ../scripts/02_rv64_floorplan_pnr.tcl\nexit\n' > run.tcl
+innovus -batch -files run.tcl -log run -overwrite < /dev/null
+\end{lstlisting}
+  \begin{itemize}
+    \item The flow reads \cmd{innovus/cc\_chip\_top.db} relative to the run
+      directory: hence the link to the Genus results
+    \item \cmd{-batch}: no window; without it the GUI opens
+    \item Stop point: \cmd{set STOP\_AFTER place} before the \cmd{source};
+      the flow then ends after writing \cmd{cc\_chip\_top\_placed.db}
+    \item \cmd{-log run}: \cmd{run.log}, \cmd{run.logv}, \cmd{run.cmd};
+      \cmd{-overwrite}: no numbered copies
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) Floorplan}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+read_db innovus/${DESIGN_TOP}.db
+floorPlan -site $CORE_SITE -s 2086.0 2086.0 0 0 0 0
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{-site}: the row type of the high-density standard cells
+      (name from \cmd{\$XFAB\_PATHS}, like all X-FAB cell names)
+    \item \cmd{-s}: size of the \emph{core}. On this site Innovus keeps a
+      margin of 257\,\textmu m on every side by itself: exactly the IO ring
+    \item Result: die 2600\,$\times$\,2600\,\textmu m with standard-cell rows
+      in the core
+    \item Found by trying: margin 0 gives a core box from 257 to 2343\,\textmu m.
+      Such things belong into a comment in the script
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) Pad Ring}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item The script collects all pad instances of the netlist
+      (by their pad cell type) and expects exactly 26
+    \item Distribution: blocks of 7/7/7/5 pads, bottom $\rightarrow$ right
+      $\rightarrow$ top $\rightarrow$ left, 60\,\textmu m pitch,
+      fixed (\cmd{placeInstance \dots\ -fixed}), rotated to face outwards
+    \item Corner cells: not in the netlist, added as physical-only
+      instances (\cmd{addInst -physical})
+    \item IO fillers (\cmd{addIoFiller}): close the gaps between the pads,
+      so that the supply rails in the ring are continuous
+    \item \textbf{First pass}: the order is the netlist order. The real
+      assignment (which pad where, supply pads, ESD, simultaneous switching)
+      comes from the IO databook (TECH-06)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) Placement, CTS, Routing}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+place_design                     ;  write_db cc_chip_top_placed.db
+create_ccopt_clock_tree_spec
+ccopt_design                     ;  write_db cc_chip_top_cts.db
+routeDesign                      ;  write_db cc_chip_top_routed.db
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{place\_design}: places macros and standard cells, optimizes
+      timing on the way
+    \item \cmd{create\_ccopt\_clock\_tree\_spec}: derives the clock trees from
+      the SDC (\cmd{clk\_i}, generated \cmd{clk\_core}, \cmd{tck\_i})
+    \item \cmd{ccopt\_design}: builds and balances the trees; after that the
+      clocks are \emph{propagated}: real delays instead of ideal clocks
+    \item \cmd{routeDesign}: global and detailed routing of all signal nets
+    \item Not yet in the flow: power planning before \cmd{place\_design},
+      post-route optimization, filler cells in the core, GDSII export
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{e) Physical Checks}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  Added by \cmd{innovus\_pnr.sh} after routing:
+\begin{lstlisting}[style=sh]
+verify_connectivity -type all > cc_chip_top_connectivity.rpt   # in the flow
+verify_drc -limit 100000 -report cc_chip_top_drc.rpt
+verifyProcessAntenna -report cc_chip_top_antenna.rpt
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{-limit}: by default the DRC stops after a few hundred
+      violations; the first pass has more
+    \item These are Innovus' own checks with the LEF rules. Signoff for
+      tape-out is done later with the X-FAB rule deck (DRC/LVS in a
+      physical verification tool)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Workflow
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Workflow}
+\renewcommand{\astitle}{Workflow}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Workflow}
+\end{frame}
+
+\renewcommand{\assubtitle}{From RTL to Layout}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/xcelium/xrun_regression.sh -c     # 1. does it work?
+./scripts/genus/genus_syn.sh -b -c          # 2. gates, area, timing
+./scripts/innovus/innovus_pnr.sh -b -c      # 3. layout
+./scripts/innovus/innovus_pnr.sh -o route   # 4. look at it
+\end{lstlisting}
+  \begin{itemize}
+    \item Each step reads the result of the step before; after an RTL
+      change all three run again
+    \item Steps 1--3 in batch mode, the GUI only for looking: saves
+      licenses and time
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Changing the Floorplan}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{enumerate}
+    \item Change \cmd{02\_rv64\_floorplan\_pnr.tcl}, e.g.\ \cmd{CORE\_SIZE}
+    \item Quick check, floorplan only:
+\begin{lstlisting}[style=sh]
+./scripts/innovus/innovus_pnr.sh -b -s fp
+./scripts/innovus/innovus_pnr.sh -o fp
+\end{lstlisting}
+    \item Then the whole flow: \cmd{innovus\_pnr.sh -b}
+    \item Compare: area utilization (\cmd{\_placed\_area.rpt}), slack,
+      DRC count
+  \end{enumerate}
+  \vspace{4pt}
+  \begin{itemize}
+    \item A smaller core is cheaper but harder to route: DRC violations
+      grow when the core gets too full
+    \item Die size and pad count are fixed in the spec (section 4.1.3):
+      change the spec first, then the script
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pitfalls
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Pitfalls}
+\renewcommand{\astitle}{Pitfalls}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Pitfalls}
+\end{frame}
+
+\renewcommand{\assubtitle}{No Genus Database}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+ERROR: .../build_genus/innovus/cc_chip_top.db not found
+       run ./scripts/genus/genus_syn.sh -b first
+\end{lstlisting}
+  \begin{itemize}
+    \item Synthesis has not run, or \cmd{build\_genus/} was deleted
+    \item Genus results elsewhere: \cmd{GENUS\_ROOT=/path/to/genus/run ./scripts/innovus/innovus\_pnr.sh}
+    \item X-FAB file not found while reading the database: the
+      \cmd{\$XFAB\_PATHS} files have moved since the synthesis
+      $\rightarrow$ run the synthesis again
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Pad Count}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+AS-pnr: expected 26 pad instances, found 24
+\end{lstlisting}
+  \begin{itemize}
+    \item A port was added to or removed from \cmd{cc\_chip\_top},
+      or Genus ran without \cmd{XFAB\_PADS}
+    \item The pad ring is planned for exactly 26 pads; a new pad changes
+      the ring: update the spec, the expected number and the pad list in
+      \cmd{02\_rv64\_floorplan\_pnr.tcl}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{GUI, Display and Licenses}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The GUI needs an X display; \cmd{innovus\_pnr.sh} stops with an
+      error if \cmd{\$DISPLAY} is empty
+    \item A layout with thousands of cells over \cmd{ssh -X} is unusable:
+      VNC or the lab PC
+    \item The GUI keeps its license until \cmd{exit}; a forgotten window
+      blocks a colleague
+    \item Do not run two flows in the same \cmd{build\_innovus/} at the same time
+    \item \cmd{-o} shows the \emph{last} run: after a \cmd{-s fp} run, the
+      later checkpoints are gone
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

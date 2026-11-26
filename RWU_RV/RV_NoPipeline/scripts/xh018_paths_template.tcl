@@ -45,3 +45,9 @@ set PAD_VDD   <core_supply_pad>
 set PAD_GND   <core_ground_pad>
 set PAD_VDDO  <io_supply_pad>
 set PAD_GNDO  <io_ground_pad>
+
+# Physical-only cells and the standard-cell site for Innovus
+# (02_rv64_floorplan_pnr.tcl)
+set CORE_SITE   <std_cell_site>              ;# row site of the HD standard cells
+set PAD_CORNER  <io_corner_cell>
+set PAD_FILLERS [list <io_filler_widest> ... <io_filler_narrowest>]  ;# widest first

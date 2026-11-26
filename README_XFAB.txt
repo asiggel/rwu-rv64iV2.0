@@ -119,8 +119,17 @@ Im selben Run-Verzeichnis wie Genus:
 
     innovus -batch -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/02_rv64_floorplan_pnr.tcl
 
+  Einfacher (aus RWU_RV/RV_NoPipeline, Ergebnisse in build_innovus/):
+
+    ./scripts/innovus/innovus_pnr.sh            (ganzer Flow in der GUI)
+    ./scripts/innovus/innovus_pnr.sh -s place   (Stopp nach fp/place/cts)
+    ./scripts/innovus/innovus_pnr.sh -o route   (Checkpoint nur ansehen)
+    ./scripts/innovus/innovus_pnr.sh -b         (batch, mit DRC/Antenna)
+
+  Ausfuehrliche Anleitung: DokuINNOVUS/DokuINNOVUS.pdf
+
   Ablauf: read_db innovus/cc_chip_top.db -> Floorplan (Die 2600x2600 um,
-  Core 2086x2086 um, IO-Ring 257 um) -> Pad-Ring (26 Pads, CORNERP,
+  Core 2086x2086 um, IO-Ring 257 um) -> Pad-Ring (26 Pads, Eckzellen,
   IO-Filler) -> place_design -> ccopt_design -> routeDesign.
   Checkpoints: cc_chip_top_fp.db, _placed.db, _cts.db, _routed.db
 
