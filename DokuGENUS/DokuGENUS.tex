@@ -1,0 +1,817 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: RISC-V Synthesis with Genus}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Overview}
+
+\url{https://github.com/asiggel/rwu-rv64iV2.0}
+\end{frame}
+
+\renewcommand{\assubtitle}{What is Genus?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item Cadence's logic synthesis tool: RTL $\rightarrow$ gate-level netlist
+      of real standard cells of one technology
+    \item Second step of the Cadence flow for the X-FAB XH018 tape-out:
+      Xcelium (RTL) $\rightarrow$ \textbf{Genus (synthesis)} $\rightarrow$ Innovus (P\&R)
+    \item Three synthesis steps
+    \begin{itemize}
+      \item \cmd{syn\_generic}: RTL $\rightarrow$ generic gates (AND, OR, FF, \dots),
+        technology independent
+      \item \cmd{syn\_map}: generic gates $\rightarrow$ cells of the X-FAB library
+      \item \cmd{syn\_opt}: optimize the mapped netlist for timing and area
+    \end{itemize}
+    \item Genus is controlled by Tcl, like Innovus;
+      the same database (\cmd{.db}) goes on to Innovus
+    \item Design: RV\_NoPipeline, chip top \cmd{cc\_chip\_top}
+      (pad ring + \cmd{as\_top\_mem})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Inputs and Outputs}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{In}           & \\\hline
+    RTL                   & the same SystemVerilog files as in the simulation,
+                            plus pad ring (\cmd{cc\_pad\_*}, \cmd{cc\_chip\_top})\\[1pt]
+    Liberty (\cmd{.lib})  & timing/power of every cell, per corner (slow/typ/fast)\\[1pt]
+    LEF                   & size and pins of cells and macros (physical view)\\[1pt]
+    capTbl / QRC          & wire parasitics per RC corner\\[1pt]
+    SDC                   & timing constraints: clocks, I/O delays, false paths\\[4pt]
+    \textbf{Out}          & \\\hline
+    \cmd{*\_syn.v}        & gate-level netlist (for Innovus and gate-level simulation)\\[1pt]
+    \cmd{*\_syn*.sdc}     & constraints, adapted to the netlist\\[1pt]
+    \cmd{*\_syn.sdf}      & cell delays for gate-level simulation\\[1pt]
+    \cmd{*.rpt}           & area, gates, timing, power, checks\\[1pt]
+    \cmd{innovus/*.db}    & hand-off database for Innovus\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Simulation vs.\ Synthesis}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lYY@{}}
+                     & \textbf{Xcelium}               & \textbf{Genus}\\\hline
+    question         & does the RTL work?             & does it fit, is it fast enough?\\
+    input            & RTL + testbench + program      & RTL + libraries + SDC\\
+    top module       & \cmd{tb\_rv64i}                & \cmd{cc\_chip\_top}\\
+    memories         & behavioural model              & SPRAM macro (\cmd{`define XFAB\_SPRAM})\\
+    pads             & none                           & IO\_CELLS\_3V (\cmd{`define XFAB\_PADS})\\
+    script           & \cmd{scripts/xcelium/}         & \cmd{scripts/genus/}\\
+    results          & \cmd{build\_xcelium/<test>/}   & \cmd{build\_genus/}\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Genus does \emph{not} check the function. Simulate first:
+      a regression that fails in Xcelium fails on silicon as well
+    \item \cmd{initial} blocks, \cmd{\$display}, delays \cmd{\#10}:
+      ignored or rejected by Genus. They belong into testbenches only
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Setup}
+\renewcommand{\astitle}{Setup}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Setup}
+\end{frame}
+
+\renewcommand{\assubtitle}{Check the Environment}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Work on the Cadence lab PC; the Cadence tools (release 2026/27)
+      are already in the \cmd{PATH}
+  \end{itemize}
+% VERIFY-LAB: install path and version string of Genus 26.1
+\begin{lstlisting}[style=sh]
+which genus
+# /eda/cadence/2026-27/RHELx86/GENUS_26.1.../bin/genus
+genus -version
+\end{lstlisting}
+  \begin{itemize}
+    \item GUI from home: \cmd{ssh -X} (or a VNC session), otherwise only batch mode
+    \item No RISC-V tool chain needed: synthesis does not run a program
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB Files and the NDA}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item The X-FAB libraries (cells, pads, SPRAM macros) are covered by a
+      \textbf{non-disclosure agreement}
+    \item Their location is in a \emph{local} Tcl file, never in git:
+\begin{lstlisting}[style=sh]
+export XFAB_PATHS=/path/to/X-FAB/xh018_paths.tcl     # bash
+setenv XFAB_PATHS /path/to/X-FAB/xh018_paths.tcl     # csh
+\end{lstlisting}
+    \item Template with all variables:
+      \cmd{scripts/xh018\_paths\_template.tcl}
+      (Liberty per corner, LEF, capTbl/QRC, macro and pad cell names)
+    \item Even the cell \emph{names} are not in the repository: the RTL gets them
+      as \cmd{`define}s from \cmd{\$XFAB\_PATHS}
+    \item \textbf{Never commit} anything from \cmd{build\_genus/}: netlist and
+      reports contain X-FAB cell names (\cmd{.gitignore} blocks the directory)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Technology: X-FAB XH018}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    process          & XH018, 4 metal layers, module LPMOS\\[2pt]
+    standard cells   & \cmd{D\_CELLS\_HD} (high density)\\[2pt]
+    pads             & \cmd{IO\_CELLS\_3V}\\[2pt]
+    memories         & SPRAM macros: I-Mem 8192$\times$32,
+                       D-Mem 1024$\times$64 with bit write mask\\[2pt]
+    corners          & slow 1.62\,V / 125\,\textdegree C (setup)\\
+                     & typ\,\, 1.80\,V / 25\,\textdegree C\\
+                     & fast 1.98\,V / $-$40\,\textdegree C (hold)\\[2pt]
+    clocks           & \cmd{clk\_i} 100\,MHz, \cmd{clk\_core} = \cmd{clk\_i}/80 = 1.25\,MHz,
+                       \cmd{tck\_i} $\le$ 25\,MHz\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Scripts and Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  In \cmd{RWU\_RV/RV\_NoPipeline}:\\[3pt]
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{scripts/genus/genus\_syn.sh}   & synthesis with GUI (default) or batch\\[2pt]
+    \cmd{scripts/00\_rv64\_elab.tcl}    & Genus step 1: libraries, RTL, elaborate\\[2pt]
+    \cmd{scripts/01b\_rv64\_syn.tcl}    & Genus step 2: synthesize, reports, outputs\\[2pt]
+    \cmd{scripts/xh018\_mmmc.tcl}       & corners and analysis views (MMMC)\\[2pt]
+    \cmd{scripts/as\_top\_mem*.sdc}     & timing constraints\\[2pt]
+    \cmd{build\_genus/}                 & all results\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item \cmd{genus\_syn.sh} only \emph{calls} the two Tcl scripts
+    \item $\Rightarrow$ a new RTL file is added \emph{only} in
+      \cmd{00\_rv64\_elab.tcl} (and in \cmd{sim/CMakeLists.txt} for the simulation)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Batch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Synthesis without GUI}
+\renewcommand{\astitle}{Synthesis without GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Synthesis in batch mode}
+\end{frame}
+
+\renewcommand{\assubtitle}{Run}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/genus/genus_syn.sh -b
+\end{lstlisting}
+% VERIFY-LAB: replace with the output of a real run (slack lines)
+\begin{lstlisting}
+=== [genus] 1/3 elaborate cc_chip_top in .../build_genus
+=== [genus] 2/3 synthesize (batch), log: .../build_genus/syn.log
+=== [genus] 3/3 result
+--- worst slack per setup view (negative = timing violated)
+  av_slow       ...
+  av_typ        ...
+  av_jtag_slow  ...
+--- reports: .../build_genus/cc_chip_top_{area,qor,timing_*}.rpt
+PASS  synthesis of cc_chip_top
+\end{lstlisting}
+  \begin{itemize}
+    \item Exit code: \cmd{0} = PASS, \cmd{1} = Genus error or missing output,
+      \cmd{2} = wrong call / environment
+    \item PASS means: synthesis ran through. Whether the timing is met,
+      the slack lines tell you
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-b}, \cmd{-{}-batch}   & no GUI (default: Genus GUI)\\[2pt]
+    \cmd{-e}, \cmd{-{}-elab}    & elaborate only: quick RTL check (syntax,
+                                  unresolved modules, latches)\\[2pt]
+    \cmd{-c}, \cmd{-{}-clean}   & delete \cmd{build\_genus/} first\\[2pt]
+    \cmd{-h}, \cmd{-{}-help}    & help\\
+  \end{tabularx}
+  \vspace{6pt}
+  \begin{itemize}
+    \item \cmd{-b -e} after an RTL change: does Genus still accept the RTL?
+      Much faster than a full synthesis
+    \item Elaboration always runs in batch mode, also with GUI
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What Is in \texttt{build\_genus/}?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{elab.tcl}, \cmd{syn.tcl}       & generated Tcl: \cmd{source} the step script, then \cmd{exit}\\[1pt]
+    \cmd{elab.log}, \cmd{syn.log}       & Genus log of each step (\cmd{.cmd}: the commands)\\[1pt]
+    \cmd{cc\_chip\_top\_elab.db}        & checkpoint after elaboration\\[1pt]
+    \cmd{cc\_chip\_top\_syn.db}         & checkpoint after synthesis\\[1pt]
+    \cmd{cc\_chip\_top\_syn.v}          & gate-level netlist\\[1pt]
+    \cmd{cc\_chip\_top\_syn.sdc}        & constraints mode \emph{func}\\[1pt]
+    \cmd{cc\_chip\_top\_syn\_jtag.sdc}  & constraints mode \emph{jtag\_load}\\[1pt]
+    \cmd{cc\_chip\_top\_syn.sdf}        & delays, slow corner\\[1pt]
+    \cmd{cc\_chip\_top\_*.rpt}          & check, timing\_intent, area, gates, clocks,
+                                          qor, power, timing\_<view>\\[1pt]
+    \cmd{innovus/cc\_chip\_top.db}      & hand-off to Innovus (\cmd{write\_db -common})\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reading the Reports}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{\_check.rpt}          & \textbf{first}: unresolved references must be 0.
+                                 Otherwise a module or macro is missing\\[2pt]
+    \cmd{\_timing\_intent.rpt} & unclocked registers, unconstrained ports:
+                                 holes in the SDC\\[2pt]
+    \cmd{\_area.rpt}           & cell area per hierarchy (CPU, I-Mem, D-Mem, \dots)\\[2pt]
+    \cmd{\_gates.rpt}          & which cells, how many\\[2pt]
+    \cmd{\_qor.rpt}            & summary: area, worst slack, cell count\\[2pt]
+    \cmd{\_timing\_<view>.rpt} & the 20 worst paths of a view\\[2pt]
+    \cmd{\_power.rpt}          & first power estimate (no switching activity)\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The I-Mem macro is the largest single block: the area report shows
+      how much the CPU itself needs
+    \item Last measured cell area of \cmd{cc\_chip\_top}: about 3.04\,mm\textsuperscript{2}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{A Timing Path}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item A path starts at a register (or input) and ends at a register (or output)
+    \item \textbf{Required} time: clock period $-$ setup time $-$ uncertainty
+    \item \textbf{Arrival} time: sum of all cell and wire delays along the path
+    \item \textbf{Slack} = required $-$ arrival
+    \begin{itemize}
+      \item slack $\ge 0$: met
+      \item slack $< 0$: violated $\rightarrow$ make the path shorter (RTL),
+        relax the constraint, or a faster corner/library
+    \end{itemize}
+    \item One report per \emph{view} = constraint mode $\times$ corner:
+  \end{itemize}
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{av\_slow}      & func, slow corner: the critical setup check\\
+    \cmd{av\_typ}       & func, typical corner: for information\\
+    \cmd{av\_jtag\_slow}& jtag\_load, slow corner: loading the I-Mem with \cmd{tck\_i}\\
+  \end{tabularx}
+  \begin{itemize}
+    \item Hold (\cmd{av\_fast}, \cmd{av\_jtag\_fast}) is fixed only after CTS in Innovus
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GUI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Synthesis with GUI}
+\renewcommand{\astitle}{Synthesis with GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Synthesis with the Genus GUI}
+\end{frame}
+
+\renewcommand{\assubtitle}{Start}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/genus/genus_syn.sh          # full synthesis, then GUI
+./scripts/genus/genus_syn.sh -e       # GUI with elaborated design
+\end{lstlisting}
+  \begin{itemize}
+    \item Elaboration runs in batch mode first (\cmd{elab.log})
+    \item Then Genus starts in the terminal, runs \cmd{syn\_gui.tcl} and
+      opens the GUI with \cmd{gui\_show}
+    \item The terminal becomes the Genus console (\cmd{@genus:root:}\dots\ prompt);
+      every command typed there acts on the design in the GUI
+    \item Without \cmd{-e}: the GUI shows the finished netlist, all reports
+      are written as in batch mode
+    \item With \cmd{-e}: nothing is synthesized yet; you go step by step
+      (next slides)
+    \item End: \cmd{exit} in the console
+  \end{itemize}
+\end{block}
+\end{frame}
+
+% VERIFY-LAB: console prompt, report_timing -lint in Genus 26.1
+\renewcommand{\assubtitle}{Step by Step (\texttt{-e})}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  In the Genus console, after \cmd{genus\_syn.sh -e}:
+\begin{lstlisting}[style=sh]
+check_design -unresolved          # all modules and macros found?
+report_timing -lint               # what is not constrained?
+syn_generic                       # -> generic gates
+report_area                       # how big, before mapping?
+syn_map                           # -> X-FAB cells
+report_timing -views av_slow      # worst path, slow corner
+syn_opt                           # optimize
+report_timing -views av_slow
+report_qor
+\end{lstlisting}
+  \begin{itemize}
+    \item After each step, look at the schematic in the GUI: generic
+      gates first, then real cells
+    \item Compare area and slack before and after \cmd{syn\_opt}
+    \item The design is not saved by these commands; for the outputs run
+      the full synthesis (without \cmd{-e}) or \cmd{-b}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+% VERIFY-LAB: menu and window names of the Genus 26.1 GUI
+\renewcommand{\assubtitle}{Working with the GUI}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item \textbf{Hierarchy:} the design browser shows \cmd{cc\_chip\_top}
+      $\rightarrow$ \cmd{core} $\rightarrow$ \cmd{cpu}, \cmd{cgu}, \cmd{as\_jtag}, \dots;
+      select an instance to see its schematic
+    \item \textbf{Schematic:} double click into a block to go down one level;
+      after \cmd{syn\_map} every symbol is an X-FAB cell
+    \item \textbf{Timing:} report a path in the console, then highlight it in
+      the schematic: you see which logic lies on the critical path
+    \item \textbf{RTL link:} from a cell or net back to the source line
+      (\cmd{hdl\_track\_filename\_row\_col} is switched on in
+      \cmd{00\_rv64\_elab.tcl})
+    \item Everything the GUI does is also a Tcl command; it appears in the
+      console and in \cmd{syn\_gui.cmd} $\rightarrow$ copy it into a script
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Useful Console Commands}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+report_timing -views av_slow -max_paths 5       # 5 worst paths
+report_timing -views av_jtag_slow                # JTAG load mode
+report_clocks                                    # clk_i, clk_core, tck_i?
+report_area                                      # area per hierarchy
+report_gates                                     # cell usage
+get_db hinsts core/*                             # sub-blocks of the core
+help syn_map                                     # short help
+man report_timing                                # full manual page
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{get\_db} reads attributes of the design database: the
+      Genus way of asking questions about the design
+    \item Hierarchy separator in Genus is \cmd{/}: \cmd{core/cgu/CGUCore}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Under the hood
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Under the Hood}
+\renewcommand{\astitle}{Under the Hood}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{The same steps by hand}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) Two Genus Calls}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+mkdir -p build_genus && cd build_genus
+printf 'source ../scripts/00_rv64_elab.tcl\nexit\n' > elab.tcl
+printf 'source ../scripts/01b_rv64_syn.tcl\nexit\n'  > syn.tcl
+genus -files elab.tcl -log elab -overwrite < /dev/null
+genus -files syn.tcl  -log syn  -overwrite < /dev/null
+\end{lstlisting}
+  \begin{itemize}
+    \item Genus runs the \cmd{-files} scripts and then waits for commands;
+      \cmd{exit} ends it
+    \item \cmd{< /dev/null}: if a script stops with an error, Genus does not
+      hang at its prompt
+    \item Both calls in the \emph{same} directory: \cmd{01b} reads the
+      checkpoint \cmd{cc\_chip\_top\_elab.db} written by \cmd{00}
+    \item \cmd{-log elab}: log file \cmd{elab.log}; \cmd{-overwrite}: no
+      \cmd{elab.log1}, \cmd{elab.log2}, \dots
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) Elaboration: \texttt{00\_rv64\_elab.tcl}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+source $::env(XFAB_PATHS)              # X-FAB file locations (NDA)
+read_mmmc $SCRIPT_DIR/xh018_mmmc.tcl   # libraries, corners, SDC, views
+read_physical -lef $LEF_FILES          # cell and macro sizes
+read_hdl -sv -define [list XFAB_SPRAM XFAB_IMEM_MACRO=... \
+                           XFAB_PADS  XFAB_PAD_IN=...  ...] $RTL_FILES
+elaborate cc_chip_top                  # build the hierarchy
+init_design                            # bind libraries + constraints
+check_design -unresolved
+write_db -all_root_attributes cc_chip_top_elab.db
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{XFAB\_SPRAM} / \cmd{XFAB\_PADS}: the RTL instantiates the
+      real macros and pad cells instead of the behavioural models
+      (\cmd{asIMem.sv}, \cmd{asDMemCore.sv}, \cmd{cc\_pad\_*.sv})
+    \item Macros and pads are \emph{black boxes}: Genus knows only their
+      pins and timing from the \cmd{.lib}
+    \item The file order follows the simulation: \cmd{as\_pack.sv} first
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) MMMC: Modes, Corners, Views}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+library set   libs_slow / libs_typ / libs_fast       (.lib per corner)
+rc corner     rc_max / rc_typ / rc_min               (capTbl + QRC)
+delay corner  dc_slow = libs_slow + rc_max   ...
+mode          func      = as_top_mem.sdc + as_top_mem_func.sdc
+              jtag_load = as_top_mem.sdc + as_top_mem_jtag.sdc
+view          av_slow = func + dc_slow   ...   av_jtag_fast
+setup views   av_slow av_typ av_jtag_slow
+hold views    av_fast av_jtag_fast
+\end{lstlisting}
+  \begin{itemize}
+    \item \emph{Multi-mode multi-corner}: every check in every combination
+      that matters, in one run
+    \item \emph{func}: the CPU runs, the I-Mem is clocked by \cmd{clk\_core}
+    \item \emph{jtag\_load}: JTAG loads the program, the I-Mem is clocked by
+      \cmd{tck\_i}, CPU in reset
+    \item The same \cmd{xh018\_mmmc.tcl} is used later by Innovus
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) Constraints (SDC)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+create_clock -name clk_i -period 10.000 [get_ports clk_i]
+create_clock -name tck_i -period 40.000 [get_ports tck_i]
+create_generated_clock -name clk_core -source [get_ports clk_i] \
+  -divide_by 80 [get_pins core/cgu/CGUCore/clk_core_o]
+set_case_analysis 0 [get_pins core/as_jtag/dr_cap_o]   # no scan clock
+set_clock_groups -asynchronous -group {clk_i clk_core} -group {tck_i}
+set_false_path -from [get_ports {rst_i trst_i}]
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{clk\_core}: the CGU divides by a counter, Genus must be told
+    \item \cmd{set\_case\_analysis}: fixes the scan bypass mux to the
+      functional clock, otherwise every path is also timed at 100\,MHz
+    \item \cmd{tck\_i} and the core clocks are asynchronous: no paths between them
+    \item The reset is asynchronous: no timing from \cmd{rst\_i}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{e) Synthesis: \texttt{01b\_rv64\_syn.tcl}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh]
+read_db cc_chip_top_elab.db
+set_db syn_generic_effort medium      # also syn_map_/syn_opt_, high = slower
+set_db [get_db hinsts core/cgu] .ungroup_ok false     # keep SDC pin names
+syn_generic
+syn_map
+syn_opt
+report_timing -views av_slow -max_paths 20 > cc_chip_top_timing_av_slow.rpt
+write_hdl                    > cc_chip_top_syn.v
+write_sdc -view av_slow      > cc_chip_top_syn.sdc
+write_sdf -view av_slow      > cc_chip_top_syn.sdf
+write_db -common -all_root_attributes innovus/cc_chip_top.db
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{ungroup\_ok false}: Genus may dissolve a hierarchy for better
+      optimization. Then \cmd{core/cgu/CGUCore/clk\_core\_o} is gone and the SDC
+      no longer finds its pin
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Workflow
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Workflow}
+\renewcommand{\astitle}{Workflow}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Workflow}
+\end{frame}
+
+\renewcommand{\assubtitle}{After an RTL Change}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{enumerate}
+    \item Simulate: \cmd{./scripts/xcelium/xrun\_regression.sh} must pass
+    \item Quick check that Genus accepts the RTL:
+\begin{lstlisting}[style=sh]
+./scripts/genus/genus_syn.sh -b -e
+grep -iE "latch|unresolved" build_genus/elab.log
+\end{lstlisting}
+    \item Full synthesis: \cmd{./scripts/genus/genus\_syn.sh -b}
+    \item Check: \cmd{\_check.rpt} clean, slack $\ge 0$ in all setup views,
+      area plausible compared to the last run
+    \item Critical path unclear? \cmd{./scripts/genus/genus\_syn.sh} (GUI)
+  \end{enumerate}
+  \vspace{4pt}
+  \begin{itemize}
+    \item A latch in the elaboration log almost always means an \cmd{always\_comb}
+      without default assignment (see the design guidelines)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Adding a New RTL File}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{enumerate}
+    \item \cmd{sim/CMakeLists.txt}: add it to \cmd{SOURCES\_SV}
+      (xsim, Verilator and Xcelium)
+    \item \cmd{scripts/00\_rv64\_elab.tcl}: add it to \cmd{RTL\_FILES},
+      at the same position as in the simulation
+\begin{lstlisting}
+  "$DESIGN_PATH/ip_mynew/src/cc_mynew.sv" \
+\end{lstlisting}
+    \item Simulate, then \cmd{genus\_syn.sh -b -e}
+  \end{enumerate}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Synthesis reads \emph{no} testbench and no simulation-only files
+    \item Nothing has to be changed in \cmd{scripts/genus/}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Next Step: Innovus}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline/build_genus
+innovus -batch -files ../scripts/02_rv64_floorplan_pnr.tcl
+\end{lstlisting}
+  \begin{itemize}
+    \item Innovus reads \cmd{innovus/cc\_chip\_top.db}: netlist, libraries,
+      LEF, MMMC and SDC in one file
+    \item Floorplan $\rightarrow$ pad ring $\rightarrow$ placement
+      $\rightarrow$ CTS $\rightarrow$ routing
+    \item After CTS the clock tree is real: timing becomes more precise,
+      hold can be fixed
+    \item Own documentation follows
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pitfalls
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Pitfalls}
+\renewcommand{\astitle}{Pitfalls}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Pitfalls}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB Paths}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+ERROR: XFAB_PATHS must point to the local X-FAB path file
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{XFAB\_PATHS} not set in this shell $\rightarrow$ \cmd{export} it
+      (or put it into your \cmd{.bashrc})
+  \end{itemize}
+\begin{lstlisting}
+X-FAB file not found: /.../xyz.lib
+\end{lstlisting}
+  \begin{itemize}
+    \item A path in your \cmd{xh018\_paths.tcl} is wrong: \cmd{00\_rv64\_elab.tcl}
+      checks every file before it reads anything
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Unresolved Modules}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{check\_design -unresolved} reports a module $\rightarrow$
+      Genus found neither RTL nor a library cell for it
+    \item Typical causes:
+    \begin{itemize}
+      \item new RTL file not in \cmd{RTL\_FILES}
+      \item wrong macro or pad cell name in \cmd{xh018\_paths.tcl}
+      \item \cmd{.lib} of a macro missing in \cmd{LIBS\_SLOW/TYP/FAST}
+    \end{itemize}
+    \item An unresolved module is synthesized as an empty box:
+      area and timing are then meaningless
+    \item \cmd{genus\_syn.sh} reports FAIL in this case
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{SDC Pins Not Found}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The SDC refers to hierarchical pins, e.g.\
+      \cmd{core/cgu/CGUCore/clk\_core\_o}, \cmd{core/as\_jtag/dr\_cap\_o}
+    \item Renamed an instance in the RTL? $\rightarrow$ update
+      \cmd{as\_top\_mem*.sdc} as well
+    \item Genus warns about an object that does not exist, and \emph{continues}:
+      the clock or case analysis is then simply missing
+    \item Symptoms: \cmd{clk\_core} missing in \cmd{\_clocks.rpt}, paths timed at
+      100\,MHz, many unclocked registers in \cmd{\_timing\_intent.rpt}
+    \item Therefore: read \cmd{\_clocks.rpt} and \cmd{\_timing\_intent.rpt}
+      after every RTL change in the clock or JTAG path
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Licenses, GUI and Display}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Genus needs a license as long as it runs, also an idle GUI:
+      close it when you are done (\cmd{exit})
+% VERIFY-LAB: feature name and number of Genus licenses
+\begin{lstlisting}[style=sh]
+lmstat -c $CDS_LIC_FILE -a | grep -i genus
+\end{lstlisting}
+    \item The GUI needs an X display (\cmd{ssh -X}, VNC);
+      \cmd{genus\_syn.sh} stops with an error if \cmd{\$DISPLAY} is empty
+    \item From home: batch mode (\cmd{-b}), then read the reports
+    \item Do not run two synthesis runs in the same \cmd{build\_genus/}
+      at the same time: both write the same files
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

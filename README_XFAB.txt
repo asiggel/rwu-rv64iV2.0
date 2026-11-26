@@ -94,6 +94,14 @@ $XFAB_PATHS gesetzt, beide Skripte im selben Verzeichnis):
                     und jtag_load), SDF, innovus/cc_chip_top.db
                     (write_db -common, Uebergabe an Innovus)
 
+  Einfacher (aus RWU_RV/RV_NoPipeline, Ergebnisse in build_genus/):
+
+    ./scripts/genus/genus_syn.sh          (Synthese, danach Genus-GUI)
+    ./scripts/genus/genus_syn.sh -e       (GUI mit elaboriertem Design)
+    ./scripts/genus/genus_syn.sh -b       (batch, mit Zusammenfassung)
+
+  Ausfuehrliche Anleitung: DokuGENUS/DokuGENUS.pdf
+
   Constraints: as_top_mem.sdc, as_top_mem_func.sdc, as_top_mem_jtag.sdc
   (clk_i 100 MHz, clk_core = clk_i/80 aus der CGU, tck_i asynchron).
 

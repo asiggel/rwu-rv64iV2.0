@@ -109,6 +109,7 @@ Thumbs.db
 build/
 build_vlt/
 build_xcelium/
+build_genus/
 xrun.history
 xrun.key
 xcelium.d/
