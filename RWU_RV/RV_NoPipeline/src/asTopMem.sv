@@ -183,6 +183,7 @@ module as_top_mem (input logic                       clk_i,
 
   as_cgu_top #(cgu_addr_width) 
          cgu (.clk_i(clk_i),
+              .clk_wb_i(clk_div_s),
               .rst_i(rst_i),
               .wbdAddr_i(dBusAddr_s[cgu_addr_width-1:0]),
               .wbdDat_i(dBusDataWr_s),

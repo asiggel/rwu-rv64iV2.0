@@ -504,7 +504,9 @@ are in the peripheral's own chapter/section as noted below each table.
 \noindent\footnotesize The CGU's clock-divider ratios
 (\texttt{clk\_core\_div}, \texttt{clk\_bus1\_div}, \texttt{clk\_bus2\_div},
 \texttt{clk\_qspi\_div}) are compile-time constants, not registers -- see
-the Clock Concept, Section~\ref{subsec:cguOverview}.
+the Clock Concept, Section~\ref{subsec:cguOverview}. The register
+interface runs on \texttt{clk\_div\_s} like the other slaves
+(Section~\ref{subsubsec:cguRegClock}).
 \normalsize
 \end{table}
 

@@ -5,7 +5,10 @@
 import as_pack::*;
 
 module as_cgu_top #(parameter cguaddr_width = 64)
-              (input  logic clk_i, // external clock (Zybo: 125 MHz)
+              (input  logic clk_i,    // external clock (Zybo: 125 MHz), drives the dividers only
+               // Clock of the Wishbone master (the CPU, clk_div_s). The bus side
+               // runs on it so that a CPU write does not cross into clk_i.
+               input  logic clk_wb_i,
                input  logic rst_i,
                // wishbone side
                input  logic [cguaddr_width-1:0] wbdAddr_i, // 4 Bit (=> 16 register)
@@ -23,7 +26,7 @@ module as_cgu_top #(parameter cguaddr_width = 64)
                output logic clk_core_o);
 
   // registers
-  logic [reg_width-1:0]      id_reg_s;      // CGU peripheral ID-register;                    address=00
+  logic [reg_width-1:0]      id_reg_r;      // CGU peripheral ID-register;                    address=00
 
   logic                      en_s;
   logic [cguaddr_width-1:0]  addr_s;
@@ -35,7 +38,7 @@ module as_cgu_top #(parameter cguaddr_width = 64)
   //--------------------------------------------
   as_slave_bpi #(cguaddr_width, reg_width) 
                             sGpioBpi(.rst_i(rst_i),               // general reset
-                                     .clk_i(clk_i),               // bus clock
+                                     .clk_i(clk_wb_i),            // bus clock
                                      .addr_o(addr_s),             // address to CGU kernel
                                      .dat_from_core_i(dataob_s),  // data from CGU kernel
                                      .dat_to_core_o(data_s),      // data to CGU kernel
@@ -67,20 +70,20 @@ module as_cgu_top #(parameter cguaddr_width = 64)
   // SFR: all other registers
   //--------------------------------------------
   // Peripheral ID: 64 bit, rw
-  always_ff @(posedge clk_i, posedge rst_i)
+  always_ff @(posedge clk_wb_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      id_reg_s        <= cgu_id_reg_addr_rst_c;
+      id_reg_r        <= cgu_id_reg_addr_rst_c;
     else
       if ( (en_s == 1) & (addr_s == cgu_id_reg_addr_offs_c[cguaddr_width-1:0]) )
-        id_reg_s      <= data_s;
+        id_reg_r      <= data_s;
   end
 
   // read internal (BPI) register or data from core
   always_comb
   begin
     case(addr_s)
-      cgu_id_reg_addr_offs_c[cguaddr_width-1:0]         : dataob_s = id_reg_s;
+      cgu_id_reg_addr_offs_c[cguaddr_width-1:0]         : dataob_s = id_reg_r;
       default                                           : dataob_s = 0; // should not happen
     endcase
   end

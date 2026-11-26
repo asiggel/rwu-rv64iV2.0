@@ -15,6 +15,7 @@
 %% Requires packages: tabularx, booktabs, float
 %%
 %% v0.1  2026-07-12  Claude-AI  Initial version -- RV_NoPipeline clock requirements
+%% v0.2  2026-11-26  Claude-AI  CGU register interface on clk_div_s (CLK-02)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -39,8 +40,9 @@ There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
   \hline
   \hline
   \texttt{clk\_core\_o} & \texttt{clk\_core\_div} = 80 &
-    CPU core, GPIO0, UART0, ICU0, D-Mem &
-    Functional clock for the CPU and almost all peripherals \\
+    CPU core, GPIO0, UART0, ICU0, D-Mem, CGU register interface &
+    Functional clock for the CPU and all Wishbone slaves
+    (as \texttt{clk\_div\_s}, Section~\ref{subsubsec:cguRegClock}) \\
   \hline
   \texttt{clk\_bus1\_o} & \texttt{clk\_bus1\_div} = 80 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
   \hline
@@ -79,8 +81,33 @@ In scan-test mode (\texttt{dr\_cap\_s}\,=\,1) the divider is bypassed and the
 CPU is clocked directly by the raw external \texttt{clk\_i}, so that an ATE
 tester can single-step or free-run the scan chain independently of the CGU
 divide ratio.
-The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
-\texttt{clk\_i}; only its divided outputs are subject to the bypass mux.
+The CGU dividers (\texttt{as\_cgucore}) always run on the undivided
+\texttt{clk\_i}; only their divided outputs are subject to the bypass mux.
+
+\subsubsection{CGU Register Clock}
+\label{subsubsec:cguRegClock}
+
+\texttt{as\_cgu\_top} has two clock inputs:
+\begin{itemize}
+  \item \texttt{clk\_i}: the external clock, drives only the divider
+    counters in \texttt{as\_cgucore}.
+  \item \texttt{clk\_wb\_i}: the clock of the Wishbone master. Both
+    variants connect \texttt{clk\_div\_s}. The slave BPI and the ID
+    register \texttt{id\_reg\_r} run on it.
+\end{itemize}
+The CGU register interface is therefore in the same clock domain as the CPU
+and the other Wishbone slaves. A write to the ID register takes effect with
+the \texttt{clk\_div\_s} edge that ends the bus cycle, as for GPIO0 or
+UART0.
+
+Up to 2026-11-25 the ID register was clocked by \texttt{clk\_i}. A CPU
+write then crossed from \texttt{clk\_core} into \texttt{clk\_i}: the
+register was enabled in each of the 80 \texttt{clk\_i} cycles of the write
+cycle, and in the first \texttt{clk\_i} cycle after it could still latch a
+partly switched bus value. The first STA of the routed design (Tempus,
+slow corner) reported this path with $-6.9$\,ns setup slack against the
+10\,ns \texttt{clk\_i} period. A multicycle constraint would only have
+hidden the hazard, so the register clock was changed instead (CLK-02).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Clock Requirements -- Variant A (RV\_NoPipeline)}
@@ -89,8 +116,10 @@ The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
 
 \subsubsection{Status}
 
-No X-FAB XH018 gate-level static timing analysis (STA) has been run yet for
-\texttt{RV\_NoPipeline}.
+A first X-FAB XH018 flow (Genus, Innovus, Tempus 26.1) ran on 2026-11-25
+for \texttt{RV\_NoPipeline}. The layout has no power grid yet, so its STA
+is a first pass, not a sign-off. It found the CGU register crossing
+described in Section~\ref{subsubsec:cguRegClock} (CLK-02).
 The Genus scripts target XH018 (TECH-02). The common constraint file
 \texttt{scripts/as\_top\_mem.sdc} implements the operating point of
 Table~\ref{tab:asNoPipelineClk}: \texttt{clk\_i} with 10\,ns, the generated
@@ -104,8 +133,7 @@ analysis on \texttt{im\_mode\_o} (TECH-05): \texttt{func}
 \texttt{tck\_i}, CPU in reset). In \texttt{jtag\_load} the I-Mem data
 register and the write strobe reach the macro within one TCK period, the TAP
 control signals (falling TCK edge) reach the data register cells within half
-a period. The SRAM wrappers instantiate the macros (TECH-01); the scripts
-have not been run yet.
+a period. The SRAM wrappers instantiate the macros (TECH-01).
 The recommendation below is therefore a conservative pre-STA target, not a
 timing-signed-off number.
 
@@ -169,6 +197,11 @@ timing-signed-off number.
 \end{itemize}
 
 \subsubsection{Open Items}
+
+\textbf{Closed (CLK-02, 2026-11-26):} the CGU register interface runs on
+\texttt{clk\_div\_s} (Section~\ref{subsubsec:cguRegClock}). There is no
+CPU path into the \texttt{clk\_i} domain left, so \texttt{as\_top\_mem.sdc}
+needs no exception between \texttt{clk\_core} and \texttt{clk\_i}.
 
 \textbf{Action (CLK-01):} Once I-Mem/D-Mem SRAM macros are integrated into
 the \texttt{RV\_NoPipeline} netlist, run Genus \texttt{report\_timing} for the views \texttt{av\_slow}

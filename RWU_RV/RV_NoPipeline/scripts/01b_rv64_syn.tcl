@@ -26,8 +26,11 @@ set_db syn_generic_effort medium
 set_db syn_map_effort     medium
 set_db syn_opt_effort     medium
 
-# The SDC files refer to core/cgu/CGUCore and core/as_jtag pins.
+# The SDC files refer to core/cgu/CGUCore and core/as_jtag pins. Genus 26.1
+# ungroups core/cgu unless told not to, which renames the pin to
+# core/cgu_CGUCore/clk_core_o and breaks as_top_mem.sdc on the netlist.
 set_db [get_db hinsts core]             .ungroup_ok false
+set_db [get_db hinsts core/cgu]         .ungroup_ok false
 set_db [get_db hinsts core/cgu/CGUCore]  .ungroup_ok false
 set_db [get_db hinsts core/as_jtag]      .ungroup_ok false
 

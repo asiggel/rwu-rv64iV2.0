@@ -36,6 +36,9 @@ set_case_analysis 0 [get_pins core/as_jtag/dr_cap_o]
 # functional crossing in either mode.
 set_clock_groups -asynchronous -group {clk_i clk_core} -group {tck_i}
 
+# The CGU bus side (BPI, id_reg_r) runs on clk_div_s like the other
+# Wishbone slaves, so CPU accesses to the CGU stay inside clk_core.
+
 set_clock_uncertainty -setup 0.300 [all_clocks]
 set_clock_uncertainty -hold  0.100 [all_clocks]
 set_clock_transition 0.200 [all_clocks]

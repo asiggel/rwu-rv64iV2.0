@@ -14,6 +14,7 @@
 %% Requires packages: tabularx, booktabs, float
 %%
 %% v0.1  2026-07-12  Claude-AI  Initial version -- RV_NoPipeline clock requirements
+%% v0.2  2026-11-26  Claude-AI  CGU register interface on clk_div_s
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -38,8 +39,9 @@ There is no PLL: every derived clock is an integer division of \texttt{clk\_i}.
   \hline
   \hline
   \texttt{clk\_core\_o} & \texttt{clk\_core\_div} = 80 &
-    CPU core, GPIO0, UART0, ICU0, Scratchpad, D-/I-Cache &
-    Functional clock for the CPU and almost all peripherals \\
+    CPU core, GPIO0, UART0, ICU0, Scratchpad, D-/I-Cache, CGU register interface &
+    Functional clock for the CPU and all Wishbone slaves
+    (as \texttt{clk\_div\_s}, Section~\ref{subsubsec:cguRegClock}) \\
   \hline
   \texttt{clk\_bus1\_o} & \texttt{clk\_bus1\_div} = 80 & Reserved & Not currently consumed in \texttt{as\_top\_mem} \\
   \hline
@@ -77,8 +79,19 @@ In scan-test mode (\texttt{dr\_cap\_s}\,=\,1) the divider is bypassed and the
 CPU is clocked directly by the raw external \texttt{clk\_i}, so that an ATE
 tester can single-step or free-run the scan chain independently of the CGU
 divide ratio.
-The CGU itself (\texttt{as\_cgu\_top}) always runs on the undivided
-\texttt{clk\_i}; only its divided outputs are subject to the bypass mux.
+The CGU dividers (\texttt{as\_cgucore}) always run on the undivided
+\texttt{clk\_i}; only their divided outputs are subject to the bypass mux.
+
+\subsubsection{CGU Register Clock}
+\label{subsubsec:cguRegClock}
+
+\texttt{as\_cgu\_top} has two clock inputs: \texttt{clk\_i} drives only
+the divider counters, \texttt{clk\_wb\_i} the slave BPI and the ID
+register. Both variants connect \texttt{clk\_wb\_i} to
+\texttt{clk\_div\_s}, so the CGU register interface is in the clock
+domain of the CPU and the other Wishbone slaves. Up to 2026-11-25 the ID
+register was clocked by \texttt{clk\_i}; a CPU write then crossed into
+the \texttt{clk\_i} domain (found by the first XH018 STA of Variant~A).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Clock Requirements -- Variant B}
