@@ -1,0 +1,26 @@
+# SimVision command file -- loaded by xrun_single.sh in GUI mode.
+# Opens a waveform window with the signals needed to follow a test program:
+# clock/reset, the CPU FSM, PC and instruction register, the register file
+# write-back and the GPIO check the testbench uses for PASS/FAIL.
+#
+# Students: add further signals via Design Browser -> right click ->
+# "Send to Waveform Window", then File -> Save Command Script to keep them.
+
+window new WaveWindow -name "RV64I" -geometry 1400x800+0+0
+
+waveform add -using "RV64I" -signals {
+  simulator::tb_rv64i.clk_s
+  simulator::tb_rv64i.rst_s
+  simulator::tb_rv64i.DUT.cpu.state_s
+  simulator::tb_rv64i.DUT.cpu.PC_instr_r
+  simulator::tb_rv64i.DUT.cpu.ir_s
+  simulator::tb_rv64i.DUT.cpu.instr_commit_s
+  simulator::tb_rv64i.DUT.cpu.regfile_data_w_s
+  simulator::tb_rv64i.cs_s
+  simulator::tb_rv64i.gpio_s
+}
+
+waveform format -using "RV64I" -radix %x [waveform find -using "RV64I" -name {*PC_instr_r*}]
+waveform format -using "RV64I" -radix %x [waveform find -using "RV64I" -name {*ir_s*}]
+waveform format -using "RV64I" -radix %x [waveform find -using "RV64I" -name {*regfile_data_w_s*}]
+waveform format -using "RV64I" -radix %x [waveform find -using "RV64I" -name {*gpio_s*}]

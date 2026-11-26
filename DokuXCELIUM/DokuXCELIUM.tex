@@ -1,0 +1,834 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: RISC-V Simulation with Xcelium}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Overview}
+
+\url{https://github.com/asiggel/rwu-rv64iV2.0}
+\end{frame}
+
+\renewcommand{\assubtitle}{What is Xcelium?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Cadence's industrial logic simulator (SystemVerilog, VHDL, mixed signal)
+    \item The simulator of the Cadence flow we use for the X-FAB XH018 tape-out:
+      Xcelium (RTL) $\rightarrow$ Genus (synthesis) $\rightarrow$ Innovus (P\&R)
+    \item \cmd{xrun}: \emph{one} command that runs three tools in a row
+    \begin{itemize}
+      \item \cmd{xmvlog}: compile the SystemVerilog sources
+      \item \cmd{xmelab}: elaborate (build the design hierarchy, snapshot)
+      \item \cmd{xmsim}: simulate the snapshot
+    \end{itemize}
+    \item \cmd{SimVision}: the graphical debugger and waveform viewer
+    \item Same RTL, same testbenches, same assembler tests as in the
+      xsim/Verilator flow (see \emph{SoC1\&2: Tool Chain})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Three Simulators, One Testbench}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lYYY@{}}
+                     & \textbf{xsim} & \textbf{Verilator} & \textbf{Xcelium}\\\hline
+    compile          & \cmd{xvlog}   & \cmd{verilator -{}-cc} & \cmd{xrun} \\
+    elaborate        & \cmd{xelab}   & C++ compiler       & (all in one)\\
+    simulate         & \cmd{xsim}    & \cmd{./Vtb\_rv64i} & \\
+    waveforms        & Vivado GUI    & GTKWave            & SimVision\\
+    flow             & CMake         & CMake              & shell scripts\\
+                     &               &                    & \cmd{scripts/xcelium/}\\
+    license          & free          & free (open source) & Cadence, \textbf{only 2!}\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item All three read \cmd{riscvtest.mem} and write \cmd{error.txt}
+      in the current directory
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Setup}
+\renewcommand{\astitle}{Setup}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Setup}
+\end{frame}
+
+\renewcommand{\assubtitle}{Check the Environment}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Work on the Cadence lab PC (RHEL 8); the Cadence tools are
+      already in the \cmd{PATH}
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+which xrun simvision
+# /eda/cadence/2026-27/RHELx86/XCELIUM_26.03.006/tools/bin/64bit/xrun
+# /eda/cadence/2026-27/RHELx86/XCELIUM_26.03.006/tools/bin/64bit/simvision
+xrun -version
+# TOOL:  xrun(64)  26.03-s006
+which riscv64-unknown-linux-gnu-as cmake
+# /opt/riscv/bin/riscv64-unknown-linux-gnu-as
+# /usr/bin/cmake
+\end{lstlisting}
+  \begin{itemize}
+    \item RISC-V binutils and CMake are still needed: the assembler tests are
+      translated exactly as in the CMake flow
+    \item GUI from home: \cmd{ssh -X} (or a VNC session), otherwise only batch mode
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Licenses: Only Two for Everybody}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The RWU license server has \textbf{2} Xcelium simulation licenses
+      for \emph{all} users at the same time
+\begin{lstlisting}[style=sh]
+lmstat -c $CDS_LIC_FILE -a | grep "Users of Xcelium_S"
+# Users of Xcelium_Safety_Sim:  (Total of 1 license issued; ...)
+# Users of Xcelium_Single_Core: (Total of 1 license issued; ...)
+\end{lstlisting}
+    \item A license is held from the start of \cmd{xmsim} until it ends
+    \item \textbf{An open SimVision window keeps its license!}\\
+      Close SimVision when you are done
+    \item The scripts call \cmd{xrun -licqueue}: if both licenses are taken,
+      the simulation waits instead of failing
+    \item Without \cmd{-licqueue}:
+\begin{lstlisting}
+xmsim: *F,NOLICN: Unable to checkout license for the simulation.
+\end{lstlisting}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Scripts and Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  In \cmd{RWU\_RV/RV\_NoPipeline}:\\[3pt]
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{scripts/xcelium/xrun\_single.sh}     & one test case, with GUI (default) or batch\\[2pt]
+    \cmd{scripts/xcelium/xrun\_regression.sh} & all test cases in batch mode + report\\[2pt]
+    \cmd{scripts/xcelium/waves.svcf}          & SimVision command file: waveform window with the most important signals\\[2pt]
+    \cmd{build\_xcelium/<test>/}              & all results of one test\\[2pt]
+    \cmd{build\_xcelium/regression.txt}       & regression report\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The scripts take the RTL file list from \cmd{sim/CMakeLists.txt}
+      and the test table from \cmd{CMakeLists.txt}
+    \item $\Rightarrow$ a new test or a new RTL file is added \emph{only} in CMake,
+      both flows pick it up
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Single test, batch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Single Test without GUI}
+\renewcommand{\astitle}{Single Test without GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Single test case in batch mode}
+\end{frame}
+
+\renewcommand{\assubtitle}{Run}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/xcelium/xrun_single.sh --list       # all test names
+./scripts/xcelium/xrun_single.sh -b instr38ld
+\end{lstlisting}
+\begin{lstlisting}
+=== [instr38ld] 1/3 assemble .../rv64Sim/instr38ld.asm
+=== [instr38ld] 2/3 xrun (batch) in .../build_xcelium/instr38ld
+=== [instr38ld] 3/3 result
+PASS  instr38ld
+\end{lstlisting}
+  \begin{itemize}
+    \item Test name = name of the \cmd{.asm} file in \cmd{rv64Sim/} without extension
+    \item Exit code: \cmd{0} = PASS, \cmd{1} = FAIL, \cmd{2} = wrong call / tool error
+    \item Takes about one second (plus waiting time for a license)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-b}, \cmd{-{}-batch}        & no GUI (default: SimVision)\\[2pt]
+    \cmd{-w}, \cmd{-{}-waves}        & batch only: record all signals into
+                                       \cmd{waves.shm} to look at them later\\[2pt]
+    \cmd{-t S}, \cmd{-{}-timeout S}  & batch only: abort after \cmd{S} seconds
+                                       (default 300, includes waiting for a license)\\[2pt]
+    \cmd{-l}, \cmd{-{}-list}         & list all tests\\[2pt]
+    \cmd{-h}, \cmd{-{}-help}         & help\\
+  \end{tabularx}
+  \vspace{6pt}
+  \begin{itemize}
+    \item Why a timeout? A test ends with \cmd{\$stop} once the testbench has decided.
+      A broken program that never reaches the check would run forever.
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What Is in \texttt{build\_xcelium/<test>/}?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{asm/}, \cmd{asm.log}  & assembler build (\cmd{rv64i.o}, \cmd{rv64i.elf}, \cmd{rv64i.mem})\\[2pt]
+    \cmd{riscvtest.mem}        & memory image, read by \cmd{\$readmemh}\\[2pt]
+    \cmd{rtl\_files.f}         & file list for xrun (generated)\\[2pt]
+    \cmd{run.tcl}              & Tcl commands for \cmd{xmsim} (generated)\\[2pt]
+    \cmd{xrun.cmd}             & the complete xrun command line\\[2pt]
+    \cmd{xrun.log}             & log of compile, elaborate and simulation\\[2pt]
+    \cmd{error.txt}            & verdict of the testbench: \cmd{Test ok} / \cmd{Test fail}\\[2pt]
+    \cmd{xcelium.d/}           & compiled library and snapshot\\[2pt]
+    \cmd{waves.shm/}           & waveform database (GUI or \cmd{-w} only)\\[2pt]
+    \cmd{cds.lib}              & empty library definition file (see Pitfalls)\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Expected Output and Evaluation}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+grep -E "^CS|succeeded|stopped" build_xcelium/instr38ld/xrun.log
+\end{lstlisting}
+\begin{lstlisting}
+CS #1: gpio=0x26  expected=0x26
+Simulation ld succeeded
+Simulation stopped via $stop(1) at time 18110 NS + 0
+\end{lstlisting}
+  \cmd{error.txt}: \cmd{11/26/2026 - ld: Test ok}
+  \footnotesize
+  \begin{itemize}
+    \item The testbench checks the GPIO value at every CS pulse:
+    \begin{itemize}
+      \item GPIO == \cmd{EXPECTED} $\rightarrow$ ``Test ok'' in \cmd{error.txt}
+      \item no match after 20 CS pulses $\rightarrow$ ``Test fail''
+    \end{itemize}
+    \item The script deletes \cmd{error.txt} before every run, so it only
+      contains the result of the last run (unlike the CMake flow)
+    \item PASS only if \cmd{error.txt} says ``Test ok'' \emph{and}
+      \cmd{xrun.log} contains no \cmd{*E} or \cmd{*F} message
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Waveforms without GUI Session}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+./scripts/xcelium/xrun_single.sh -b -w instr30beq
+simvision build_xcelium/instr30beq/waves.shm &
+\end{lstlisting}
+  \begin{itemize}
+    \item The simulation runs in batch mode and records everything into \cmd{waves.shm}
+    \item SimVision then only \emph{views} the database (post-processing):
+      no Xcelium license, only a viewer license (\cmd{Affirma\_sim\_analysis\_env}, 11 of them)
+    \item Good choice when the licenses are scarce: simulate briefly,
+      then debug as long as you like
+    \item No live interaction (no breakpoints, no \cmd{run} / \cmd{continue})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Single test, GUI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Single Test with GUI}
+\renewcommand{\astitle}{Single Test with GUI}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Single test case with SimVision}
+\end{frame}
+
+\renewcommand{\assubtitle}{Start}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/xcelium/xrun_single.sh instr38ld
+\end{lstlisting}
+  \begin{itemize}
+    \item Without \cmd{-b} the script calls \cmd{xrun -gui}
+    \item SimVision opens: \emph{Console}, \emph{Design Browser} and a waveform
+      window \emph{RV64I} (from \cmd{waves.svcf})
+    \item \cmd{run.tcl} switches on recording of all signals and starts \cmd{run}
+    \item The simulation stops at the \cmd{\$stop} of the testbench:
+\begin{lstlisting}
+Simulation ld succeeded
+Simulation stopped via $stop(1) at time 18110 NS + 0
+xcelium>
+\end{lstlisting}
+    \item The terminal is blocked until SimVision is closed;
+      only then the script prints PASS/FAIL
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Waveform Window \emph{RV64I}}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{clk\_s}, \cmd{rst\_s}                    & testbench clock and reset\\[2pt]
+    \cmd{DUT.cpu.state\_s}                        & CPU FSM: \cmd{FETCH0\_ST}, \cmd{FETCH1\_ST},
+                                                    \cmd{EXEC\_ST}, \cmd{EXECLD\_ST}\\[2pt]
+    \cmd{DUT.cpu.PC\_instr\_r}                    & PC of the instruction in the instruction register\\[2pt]
+    \cmd{DUT.cpu.ir\_s}                           & instruction register (compare with \cmd{objdump})\\[2pt]
+    \cmd{DUT.cpu.instr\_commit\_s}                & instruction is finished in this cycle\\[2pt]
+    \cmd{DUT.cpu.regfile\_data\_w\_s}             & value written into the register file\\[2pt]
+    \cmd{cs\_s}, \cmd{gpio\_s}                    & GPIO chip select and value: the testbench's PASS/FAIL check\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Buses are shown in hexadecimal
+    \item Disassembly for comparison:\\
+      \cmd{riscv64-unknown-linux-gnu-objdump -d build\_xcelium/<test>/asm/rv64i.elf}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Working with SimVision}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item \textbf{More signals:} Design Browser $\rightarrow$ select instance
+      (e.g.\ \cmd{DUT.cpu}) $\rightarrow$ select signals $\rightarrow$
+      \emph{Send to Waveform Window}
+    \item Because \cmd{run.tcl} records \emph{all} signals, new signals show
+      their complete history immediately
+    \item \textbf{Zoom:} \emph{View $\rightarrow$ Zoom} or the zoom buttons
+      of the waveform window; drag in the time axis
+    \item \textbf{Radix:} right click on a signal $\rightarrow$ \emph{Radix} (hex, dec, ASCII \dots)
+    \item \textbf{Source code:} right click on a signal $\rightarrow$
+      show it in the Source Browser / trace its drivers
+    \item \textbf{Keep your signal set:} \emph{File $\rightarrow$ Save Command Script}
+      (\cmd{.svcf}), later \emph{File $\rightarrow$ Source Command Script}
+    \item \textbf{After an RTL change:} \emph{Simulation $\rightarrow$ Reinvoke Simulator}
+      recompiles and restarts without closing the window
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Simulator Console}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  The \cmd{xcelium>} prompt in the SimVision console accepts Tcl commands:
+\begin{lstlisting}[style=sh]
+reset                          # back to time 0
+stop -create -condition {#tb_rv64i.DUT.cpu.PC_instr_r == 'h10}
+                               # breakpoint: stop when PC == 0x10
+run                            # until breakpoint or $stop
+value tb_rv64i.DUT.cpu.PC_instr_r
+# 64'h0000000000000010
+stop -delete *                 # remove all breakpoints
+run 1us                        # simulate 1 us more
+\end{lstlisting}
+  \begin{itemize}
+    \item \textbf{After the \cmd{\$stop} of the testbench} never type a plain
+      \cmd{run}: the clocks keep running, it never ends (Stop button).
+      Use \cmd{run 1us} or \cmd{reset}
+    \item The same commands can be written into \cmd{run.tcl} for batch mode
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Under the hood
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Under the Hood}
+\renewcommand{\astitle}{Under the Hood}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{The same steps by hand}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) Assembler Program $\rightarrow$ Memory Image}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+mkdir -p build_xcelium/instr38ld && cd build_xcelium/instr38ld
+cmake -DASM_FILE=$PWD/../../rv64Sim/instr38ld.asm -S ../../rv64Sim -B asm
+cmake --build asm --target mem
+cp asm/rv64i.mem riscvtest.mem
+\end{lstlisting}
+  \begin{itemize}
+    \item Reuses \cmd{rv64Sim/CMakeLists.txt}: \cmd{as} $\rightarrow$ \cmd{ld} $\rightarrow$
+      \cmd{objcopy -O verilog} $\rightarrow$ \cmd{sed}
+      (details: \emph{SoC1\&2: Tool Chain})
+    \item The memory image has one 32-bit instruction per line:
+\begin{lstlisting}
+10000113
+01811113
+02600213
+\end{lstlisting}
+    \item Its name must be \cmd{riscvtest.mem}, in the directory where xrun runs
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) File List}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{rtl\_files.f}: one file per line, in compile order
+\begin{lstlisting}
+/.../RWU_RV/RV_NoPipeline/src/as_pack.sv
+/.../RWU_RV/RV_NoPipeline/src/asRegFile.sv
+/.../ip_dmem/src/asDMemBack.sv
+...
+/.../ip_icu/src/cc_icu_top.sv
+/.../RWU_RV/RV_NoPipeline/src/asTopMem.sv
+/.../RWU_RV/RV_NoPipeline/tb/tb_rv64i_instr.sv
+\end{lstlisting}
+  \begin{itemize}
+    \item Generated from \cmd{SOURCES\_SV} in \cmd{sim/CMakeLists.txt}
+    \item \cmd{as\_pack.sv} first: all other files \cmd{import as\_pack::*}
+    \item Last line: the testbench. All \cmd{tb\_rv64i\_*.sv} contain a module
+      \cmd{tb\_rv64i}, so exactly one of them may be compiled
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) Which Testbench, Which Plusargs?}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  Same rule as \cmd{CMakeLists.txt}:
+  \begin{itemize}
+    \item Test listed in \cmd{INSTR\_TB\_CONFIG} $\rightarrow$
+      \cmd{tb/tb\_rv64i\_instr.sv} plus two plusargs
+\begin{lstlisting}
+"instr38ld"        "ld"          "38"
+     -> +TEST_NAME=ld +EXPECTED=38
+\end{lstlisting}
+    \item Otherwise $\rightarrow$ \cmd{tb/tb\_rv64i\_<test>.sv}, no plusargs\\
+      (\cmd{readgpioid}, \cmd{uart\_tx}, \cmd{uart\_rx}, \cmd{instr99scantest},
+      \cmd{instr99loadimem})
+    \item The testbench reads them with \cmd{\$value\$plusargs}
+      at run time: one compiled testbench for 59 tests
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) The xrun Call (Batch)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+: > cds.lib
+rm -f error.txt
+printf 'run\nexit\n' > run.tcl
+xrun -sv -define LOGIC_SV -timescale 1ns/1ps -cdslib ./cds.lib \
+     -f rtl_files.f -top tb_rv64i -access +rwc -licqueue \
+     -nowarn MEMODR -nowarn CUVWSP \
+     -input run.tcl -l xrun.log +TEST_NAME=ld +EXPECTED=38
+cat error.txt
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{run} simulates until \cmd{\$stop}, \cmd{exit} then ends \cmd{xmsim}
+    \item Without \cmd{exit} the simulator would wait at the \cmd{xcelium>} prompt
+    \item Copy the exact line of your last run from \cmd{xrun.cmd}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) xrun Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-sv}                    & sources are SystemVerilog\\[1pt]
+    \cmd{-define LOGIC\_SV}      & same macro as \cmd{xvlog -d LOGIC\_SV} / \cmd{verilator -DLOGIC\_SV}\\[1pt]
+    \cmd{-timescale 1ns/1ps}     & default for files without own \cmd{`timescale} (e.g.\ \cmd{as\_pack.sv})\\[1pt]
+    \cmd{-cdslib ./cds.lib}      & use the local, empty \cmd{cds.lib} instead of \cmd{\textasciitilde/cds.lib}\\[1pt]
+    \cmd{-f rtl\_files.f}        & read the file list\\[1pt]
+    \cmd{-top tb\_rv64i}         & top module of the simulation\\[1pt]
+    \cmd{-access +rwc}           & read/write/connectivity access to all signals
+                                   (needed for probes and the GUI; makes the simulation slower)\\[1pt]
+    \cmd{-licqueue}              & wait for a free license\\[1pt]
+    \cmd{-nowarn MEMODR}         & \cmd{\$readmemh} order warning (harmless here)\\[1pt]
+    \cmd{-nowarn CUVWSP}         & unconnected output port of the DUT (intended)\\[1pt]
+    \cmd{-input run.tcl}         & Tcl commands for \cmd{xmsim}\\[1pt]
+    \cmd{-l xrun.log}            & log file\\[1pt]
+    \cmd{+TEST\_NAME=\dots}      & plusargs: passed unchanged to the simulation\\[1pt]
+    \cmd{-gui}                   & start SimVision\\[1pt]
+    \cmd{-simvisargs "\dots"}    & arguments for SimVision, here \cmd{-input waves.svcf}\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{e) The xrun Call (GUI)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{run.tcl}:
+\begin{lstlisting}[style=sh]
+database -open waves -shm -default   # waveform database waves.shm
+probe -create tb_rv64i -all -depth all -memories
+                                     # record every signal of the design
+run
+\end{lstlisting}
+\begin{lstlisting}[style=sh]
+xrun <same options as batch> -input run.tcl \
+     -gui -simvisargs "-input ../../scripts/xcelium/waves.svcf"
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{run.tcl} goes to the simulator, \cmd{waves.svcf} to SimVision
+    \item \cmd{-w} in batch mode uses the same \cmd{run.tcl} plus \cmd{exit}
+    \item Warning \cmd{*W,PRLDYN} (dynamic objects, e.g.\ \cmd{string}
+      in the testbench, are not recorded) is harmless
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{f) Three Steps instead of xrun}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{xrun} is a front end. The same can be done in three steps, like with xsim:
+\begin{lstlisting}[style=sh]
+mkdir -p xcelium.d/worklib            # xrun does these three lines itself
+echo "DEFINE worklib ./xcelium.d/worklib" > cds.lib
+echo "DEFINE WORK worklib" > hdl.var
+xmvlog -sv -define LOGIC_SV -f rtl_files.f
+xmelab -timescale 1ns/1ps -access +rwc tb_rv64i
+xmsim  -licqueue -input run.tcl tb_rv64i +TEST_NAME=ld +EXPECTED=38
+\end{lstlisting}
+  \begin{itemize}
+    \item Without a work library: \cmd{xmvlog: *F,NOWORK: no working library defined}
+    \item \cmd{xrun} additionally checks timestamps: after an RTL change only
+      the changed files are recompiled, nothing to clean by hand
+    \item In the X-FAB flow, \cmd{scripts/01a\_rv64\_sim.tcl} is the
+      RTL simulation step before synthesis (\cmd{01b\_rv64\_syn.tcl})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Regression
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Regression}
+\renewcommand{\astitle}{Regression}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Regression}
+\end{frame}
+
+\renewcommand{\assubtitle}{Run All Tests}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/xcelium/xrun_regression.sh -c
+\end{lstlisting}
+\begin{lstlisting}
+=== Xcelium regression: 64 tests, timeout 300s
+PASS  instr99scantest         0s
+PASS  instr99loadimem         1s
+PASS  readgpioid              0s
+...
+PASS  instr60ebreak           1s
+
+Passed: 64 / 64   Failed: 0   Time: 28s
+Regression PASSED
+Report: .../build_xcelium/regression.txt
+\end{lstlisting}
+  \begin{itemize}
+    \item Batch only; a regression with GUI makes no sense
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options and Variants}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-c}, \cmd{-{}-clean}        & delete \cmd{build\_xcelium/} first\\[2pt]
+    \cmd{-t S}, \cmd{-{}-timeout S}  & timeout per test in seconds (default 300)\\[2pt]
+    \cmd{<test> \dots}               & run only these tests\\
+  \end{tabularx}
+\begin{lstlisting}[style=sh]
+# only the branch tests
+./scripts/xcelium/xrun_regression.sh instr30beq instr31bne instr32blt \
+                                     instr33bge instr34bltu instr35bgeu
+# use the exit code (= number of failed tests) in a script
+./scripts/xcelium/xrun_regression.sh && echo "all fine"
+\end{lstlisting}
+  \begin{itemize}
+    \item Tests run one after the other, on purpose: two licenses for everybody
+    \item The CMake/xsim flow writes \cmd{./regression.txt}, Xcelium writes
+      \cmd{build\_xcelium/regression.txt}: both can coexist
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What Happens}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+xrun_regression.sh
+  |-- xrun_single.sh --list            -> ASM_TESTS from CMakeLists.txt
+  |-- for every test:
+  |     xrun_single.sh --batch <test>   > build_xcelium/<test>/run.log
+  |       assemble -> rtl_files.f -> xrun -> error.txt -> exit code
+  |-- one PASS/FAIL line per test      -> build_xcelium/regression.txt
+  `-- summary, exit code = number of FAIL
+\end{lstlisting}
+  \begin{itemize}
+    \item A FAIL line names the \cmd{run.log} of the test; from there
+      \cmd{xrun.log} and \cmd{error.txt} in the same directory
+    \item Debug a failing test with the GUI:\\
+      \cmd{./scripts/xcelium/xrun\_single.sh <test>}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Adding a New Test}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{enumerate}
+    \item Write \cmd{rv64Sim/instr61mytest.asm}; at the end the program writes
+      a known value to the GPIO
+    \item \cmd{CMakeLists.txt}: add the name to \cmd{ASM\_TESTS}
+    \item \cmd{CMakeLists.txt}: add a line to \cmd{INSTR\_TB\_CONFIG}
+\begin{lstlisting}
+"instr61mytest"    "mytest"      "61"
+\end{lstlisting}
+      (or write an own testbench \cmd{tb/tb\_rv64i\_instr61mytest.sv})
+    \item Test it, first alone, then in the regression:
+\begin{lstlisting}[style=sh]
+./scripts/xcelium/xrun_single.sh instr61mytest
+./scripts/xcelium/xrun_regression.sh
+\end{lstlisting}
+  \end{enumerate}
+  Nothing has to be changed in \cmd{scripts/xcelium/}; the CMake flow
+  knows the new test as well.
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pitfalls
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Pitfalls}
+\renewcommand{\astitle}{Pitfalls}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Pitfalls}
+\end{frame}
+
+\renewcommand{\assubtitle}{Licenses}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Simulation hangs before time 0, \cmd{xrun.log} ends with
+\begin{lstlisting}
+Trying to check out license...
+\end{lstlisting}
+      $\rightarrow$ both licenses are in use, \cmd{-licqueue} is waiting
+    \item Who has them?
+\begin{lstlisting}[style=sh]
+lmstat -c $CDS_LIC_FILE -f Xcelium_Single_Core
+lmstat -c $CDS_LIC_FILE -f Xcelium_Safety_Sim
+\end{lstlisting}
+    \item In batch mode the timeout (\cmd{-t}) also counts the waiting time
+      $\rightarrow$ FAIL with ``timeout'' in \cmd{error.txt}
+    \item Most frequent cause: a forgotten SimVision window. Close it!
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{\textasciitilde/cds.lib} and DLCPTH Warnings}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+xrun: *W,DLCPTH (/home/<user>/cds.lib,3): cds.lib Invalid path
+      '/home/<user>/venu_1' (cds.lib command ignored).
+\end{lstlisting}
+  \begin{itemize}
+    \item Without \cmd{-cdslib}, every Cadence tool also reads \cmd{\textasciitilde/cds.lib}
+    \item Virtuoso writes its libraries there; old or deleted libraries
+      produce these warnings in every xrun step
+    \item The scripts therefore pass an empty local \cmd{cds.lib};
+      for xrun by hand: also use \cmd{-cdslib ./cds.lib}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Batch Mode, \texttt{\$stop} and the Prompt}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The testbenches end with \cmd{\$stop}, not \cmd{\$finish}
+    \item \cmd{\$stop} only \emph{halts} \cmd{xmsim}; it then waits at the prompt:
+\begin{lstlisting}
+Simulation stopped via $stop(1) at time 18110 NS + 0
+xcelium>
+\end{lstlisting}
+    \item In the GUI that is what we want (look at the waveforms)
+    \item A plain \cmd{run} after that never ends (free-running clocks):
+      use \cmd{run 1us}, \cmd{reset} or the Stop button
+    \item In batch mode \cmd{run.tcl} must end with \cmd{exit},
+      otherwise the regression hangs
+    \item The exit code of xrun says nothing about PASS/FAIL;
+      only \cmd{error.txt} counts (same as with xsim and Verilator)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{GUI and Display}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item SimVision needs an X display. Over SSH:
+\begin{lstlisting}[style=sh]
+ssh -X <user>@<lab-pc>
+echo $DISPLAY          # must not be empty
+\end{lstlisting}
+    \item SimVision over \cmd{ssh -X} from home is slow; better:
+      \cmd{-b -w} on the lab PC, then \cmd{simvision waves.shm}
+      in a VNC session, or copy \cmd{waves.shm} to a PC with SimVision
+    \item Hierarchy names in Tcl and \cmd{.svcf} files use dots:
+      \cmd{tb\_rv64i.DUT.cpu.PC\_instr\_r}; in \cmd{.svcf} with the prefix
+      \cmd{simulator::} (live) or \cmd{waves::} (database)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}
