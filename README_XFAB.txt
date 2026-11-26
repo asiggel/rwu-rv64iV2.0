@@ -63,7 +63,7 @@ RV_NoPipeline (aus RWU_RV/RV_NoPipeline):
   - Der RWU-Lizenzserver hat nur 2 Xcelium-Lizenzen fuer ALLE Nutzer;
     -licqueue wartet auf eine freie Lizenz. Eine offene SimVision-GUI
     haelt ihre Lizenz, bis sie geschlossen wird.
-  - Ausfuehrliche Anleitung: DokuXCELIUM/DokuXCELIUM.pdf
+  - Ausfuehrliche Anleitung: 01_DokuXCELIUM/DokuXCELIUM.pdf
 
 
 --------------------------------------------------------------------------------
@@ -100,7 +100,7 @@ $XFAB_PATHS gesetzt, beide Skripte im selben Verzeichnis):
     ./scripts/genus/genus_syn.sh -e       (GUI mit elaboriertem Design)
     ./scripts/genus/genus_syn.sh -b       (batch, mit Zusammenfassung)
 
-  Ausfuehrliche Anleitung: DokuGENUS/DokuGENUS.pdf
+  Ausfuehrliche Anleitung: 02_DokuGENUS/DokuGENUS.pdf
 
   Constraints: as_top_mem.sdc, as_top_mem_func.sdc, as_top_mem_jtag.sdc
   (clk_i 100 MHz, clk_core = clk_i/80 aus der CGU, tck_i asynchron).
@@ -126,7 +126,7 @@ Im selben Run-Verzeichnis wie Genus:
     ./scripts/innovus/innovus_pnr.sh -o route   (Checkpoint nur ansehen)
     ./scripts/innovus/innovus_pnr.sh -b         (batch, mit DRC/Antenna)
 
-  Ausfuehrliche Anleitung: DokuINNOVUS/DokuINNOVUS.pdf
+  Ausfuehrliche Anleitung: 03_DokuINNOVUS/DokuINNOVUS.pdf
 
   Ablauf: read_db innovus/cc_chip_top.db -> Floorplan (Die 2600x2600 um,
   Core 2086x2086 um, IO-Ring 257 um) -> Pad-Ring (26 Pads, Eckzellen,
