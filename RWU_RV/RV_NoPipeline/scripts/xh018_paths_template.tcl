@@ -88,6 +88,17 @@ set ENDCAP_CELL      ""
 set STREAM_MAP <innovus_stream_out.map>
 set GDS_FILES  [list <D_CELLS_HD.gds> <IO_CELLS_3V.gds> <imem.gds> <dmem.gds>]
 set GDS_UNIT   1000                           ;# database units per um
+set LABEL_LAYER <top_metal>                   ;# pad labels for LVS (02c)
+set PAD_PIN     PAD                           ;# bond pin of the IO cells
+
+# Physical verification (05_rv64_pv.tcl, scripts/pv/pv.sh): rule decks of
+# the PDK for ONE tool, their #DEFINE switches (metal stack, options), the
+# CDL netlists of the cells for LVS
+set PV_TOOL     pegasus                       ;# pegasus | calibre
+set DRC_RULES   [list <drc_rule_deck> <antenna_rule_deck>]  ;# one run each
+set LVS_RULES   <lvs_rule_deck>               ;# LVS incl. ERC checks
+set PV_SWITCHES [list]                        ;# e.g. metal-stack switch
+set CDL_FILES   [list <D_CELLS_HD.cdl> <IO_CELLS_3V.cdl> <imem.cdl> <dmem.cdl>]
 
 # Verilog simulation models for the gate-level simulation (scripts/gatesim):
 # standard cells, I/O cells, I-Mem macro, D-Mem macro. Plain file paths, no

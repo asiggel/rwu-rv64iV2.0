@@ -707,15 +707,14 @@ write_stream cc_chip_top.gds -map_file $STREAM_MAP -merge $GDS_FILES \
              -unit $GDS_UNIT -mode ALL -structure_name cc_chip_top
 \end{lstlisting}
   \begin{itemize}
-    \item Innovus knows the cells only as abstracts (LEF): it writes the
-      wires, vias and cell placements
-    \item \cmd{-merge} copies the full layout of every cell from the X-FAB
-      GDS files: standard cells, IO cells, SPRAM macros
-    \item \cmd{-map\_file}: LEF layer $\rightarrow$ GDS layer/datatype, from
-      the PDK
+    \item Innovus writes wires, vias and placements (it knows the cells only
+      as LEF); \cmd{-merge} adds the full cell layouts from the X-FAB GDS
+    \item \cmd{-map\_file}: LEF layer $\rightarrow$ GDS layer (PDK)
     \item \cmd{cc\_chip\_top\_gds.rpt}: cells used in the design but found
       in none of the GDS files -- must be 0, else the GDS has empty boxes
-    \item Next: DRC and LVS with the X-FAB rule decks
+    \item Before: one text label per pad (port name or VDD/GND/VDDO/GNDO)
+      on \cmd{LABEL\_LAYER}, for LVS
+    \item Next: DRC and LVS with the X-FAB rule decks (\cmd{scripts/pv})
   \end{itemize}
 \end{block}
 \end{frame}

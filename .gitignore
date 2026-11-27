@@ -115,6 +115,7 @@ build_gatesim/
 build_quantus/
 build_sta/
 build_lec/
+build_pv/
 xrun.history
 xrun.key
 xcelium.d/

@@ -1,0 +1,464 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: Physical Verification: DRC, LVS, ERC}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+
+
+
+
+\begin{document}
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+
+\renewcommand{\assubtitle}{The Last Checks Before Tape-out}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{check} & \textbf{question}\\\hline
+    DRC & does the layout obey the manufacturing rules of XH018: widths,
+          spacings, enclosures, densities, antenna ratios?\\
+    LVS & is the layout the circuit of the netlist: same devices, same
+          connections, same ports?\\
+    ERC & electrical rules: floating gates, wells not tied to a supply,
+          shorts between supplies\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Input: the \emph{merged GDS}, the full layout incl.\ all cells,
+      not the LEF abstracts Innovus works with
+    \item Rules: the X-FAB rule decks (runsets) -- the fab only accepts a
+      GDS that passes \emph{its} decks
+    \item Innovus \cmd{verify\_drc} only knows the LEF rules of the routing
+      layers: a hint, not a sign-off
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Which Tool?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The PDK decides: X-FAB ships rule decks for certain tools
+    \begin{itemize}
+      \item \textbf{Pegasus} (Cadence, PVL decks; also reads PVS decks)
+      \item \textbf{Calibre} (Siemens, SVRF decks)
+      \item Assura (Cadence, older, inside Virtuoso)
+    \end{itemize}
+    \item The lab runs Cadence tools: Pegasus first. Calibre needs its
+      own licence
+    \item The scripts support both: \cmd{PV\_TOOL} in \cmd{\$XFAB\_PATHS}
+      or \cmd{pv.sh -t calibre}
+    \item Find out in the lab which decks the PDK has:
+      \cmd{ls} in the PDK tree, directories named after the tools
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Where in the Flow?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{step} & \textbf{result}\\\hline
+    Innovus, stage \cmd{gds}  & \cmd{cc\_chip\_top.gds} (merged, with pad
+                                labels), \cmd{cc\_chip\_top\_lvs.v}\\
+    \textbf{DRC}              & result count per deck: must be 0\\
+    \textbf{LVS + ERC}        & CORRECT, 0 ERC results\\
+    fix                       & in Innovus (or the RTL), new GDS, again\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item STA, LEC and GLS check the logic and the timing; DRC/LVS check
+      the geometry. All of them must pass on the \emph{same} layout
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Inputs
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Inputs}
+\renewcommand{\astitle}{Inputs}
+
+\renewcommand{\assubtitle}{From Innovus}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{cc\_chip\_top.gds} (\cmd{02c\_rv64\_gds.tcl}):
+      \cmd{write\_stream -merge} with the GDS of standard cells, IO cells
+      and SPRAM macros; \cmd{cc\_chip\_top\_gds.rpt} must show
+      \cmd{missing: 0}
+    \item Pad labels: one text per pad at its centre on
+      \cmd{LABEL\_LAYER}: the port name, or \cmd{VDD}/\cmd{GND}/\cmd{VDDO}/
+      \cmd{GNDO} on supply pads (list: \cmd{cc\_chip\_top\_labels.txt}).
+      LVS uses them to match ports and supply nets
+    \item \cmd{cc\_chip\_top\_lvs.v} (\cmd{02b}): netlist \emph{with} supply
+      ports and physical-only cells (fillers, corners) -- LVS compares
+      device by device
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{From the PDK: \texttt{\$XFAB\_PATHS}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+set PV_TOOL     pegasus                  ;# pegasus | calibre
+set DRC_RULES   [list <drc_deck> <antenna_deck>]   ;# one run each
+set LVS_RULES   <lvs_deck>               ;# incl. ERC checks
+set PV_SWITCHES [list]                   ;# #DEFINE switches of the decks
+set CDL_FILES   [list <D_CELLS_HD.cdl> <IO_CELLS_3V.cdl> \
+                      <imem.cdl> <dmem.cdl>]
+set LABEL_LAYER <top_metal>              ;# pad labels (02c)
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{PV\_SWITCHES}: the decks cover several process options; the
+      switches select ours (4 metals, LPMOS, top-metal thickness). The
+      names are in the header of each deck
+    \item \cmd{CDL\_FILES}: transistor netlists of the cells; the SPRAM
+      CDL comes with the memory compiler
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Scripts
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Scripts}
+\renewcommand{\astitle}{Scripts}
+
+\renewcommand{\assubtitle}{Control Files Instead of Edited Decks}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The X-FAB decks are never changed (NDA, and a changed deck is no
+      longer the fab's sign-off)
+    \item \cmd{05\_rv64\_pv.tcl} (tclsh) writes small control files into
+      \cmd{build\_pv/}: inputs, report names, switches, then
+      \cmd{include} of the deck
+    \begin{itemize}
+      \item \cmd{drc\_1.ctl}, \cmd{drc\_2.ctl}, \dots: one per deck in
+        \cmd{DRC\_RULES}
+      \item \cmd{lvs.ctl}: LVS with ERC
+    \end{itemize}
+    \item Same idea as \cmd{quantus.ccl}: the build directory holds the
+      X-FAB paths, the repository only the generator
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{lvs.ctl} for Pegasus}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+layout_path "<...>/cc_chip_top.gds" gdsii;
+layout_primary "cc_chip_top";
+schematic_path "<D_CELLS_HD.cdl>" cdl;     // one line per CDL file
+schematic_path "<...>/cc_chip_top_lvs.v" verilog;
+schematic_primary "cc_chip_top";
+report_lvs "lvs.report" -replace;
+results_db -erc "erc.results" -ascii;
+report_summary -erc "erc.summary" -replace;
+lvs_power_name "VDD" "VDDO";
+lvs_ground_name "GND" "GNDO";
+#DEFINE <switch>
+include "<lvs_deck>";
+\end{lstlisting}
+  \begin{itemize}
+    \item Pegasus reads the Verilog netlist directly, the cells as CDL
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{lvs.ctl} for Calibre}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+LAYOUT PATH "<...>/cc_chip_top.gds"
+LAYOUT PRIMARY "cc_chip_top"
+LAYOUT SYSTEM GDSII
+SOURCE PATH "cc_chip_top_lvs.sp"        // from v2lvs
+SOURCE PRIMARY "cc_chip_top"
+SOURCE SYSTEM SPICE
+LVS REPORT "lvs.report"
+ERC RESULTS DATABASE "erc.results" ASCII
+LVS POWER NAME "VDD" "VDDO"
+LVS GROUND NAME "GND" "GNDO"
+#DEFINE <switch>
+INCLUDE "<lvs_deck>"
+\end{lstlisting}
+  \begin{itemize}
+    \item Calibre wants SPICE: \cmd{pv.sh} first runs
+      \cmd{v2lvs -v cc\_chip\_top\_lvs.v -s <cdl> \dots\ -s0 GND -s1 VDD}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Running}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/innovus/innovus_pnr.sh -b     # up to stage gds
+./scripts/pv/pv.sh                      # DRC + LVS/ERC, PV_TOOL
+./scripts/pv/pv.sh -m drc -j 8          # DRC only, 8 CPUs
+./scripts/pv/pv.sh -m lvs -t calibre    # LVS with Calibre
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+=== [pv] DRC drc_1 (pegasus)
+    <drc_deck>: N DRC result(s)
+=== [pv] DRC drc_2 (pegasus)
+    <antenna_deck>: N DRC result(s)
+=== [pv] LVS + ERC (pegasus)
+    LVS: CORRECT
+    ERC: 0 result(s) (erc.summary)
+PASS  physical verification of cc_chip_top (all, pegasus)
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DRC
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{DRC}
+\renewcommand{\astitle}{DRC}
+
+\renewcommand{\assubtitle}{Reading the Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{drc\_<n>.summary}: count per rule. Sort by count: a few rules
+      usually cause most results
+    \item \cmd{drc\_<n>.results}: every result with its coordinates
+    \item Look at them on the layout:
+    \begin{itemize}
+      \item Calibre: \cmd{calibre -rve drc\_1.results} (with Virtuoso or
+        DESIGNrev)
+      \item Pegasus: Pegasus DesignReview, or load the results into
+        Innovus as markers (violation browser) -- VERIFY-LAB
+    \end{itemize}
+    \item Many results in one rule, all at the macros or the pads? Then
+      it is a cell or a merge problem, not the routing
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Typical First-Run Results}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{rule type} & \textbf{fix}\\\hline
+    metal density    & metal fill (Innovus \cmd{add\_metal\_fill} or the
+                       X-FAB fill deck), not yet in the flow\\
+    antenna          & Innovus: antenna diodes / layer jumping in routing
+                       (\cmd{route\_design} with antenna fixing)\\
+    well/implant gaps & missing core fillers or well taps
+                       (\cmd{CORE\_FILLERS}, \cmd{WELLTAP\_CELL})\\
+    at the macros    & stripes over the SPRAM: blocked layers, or halo
+                       too small\\
+    at the pads      & IO fillers/corners, pad spacing (TECH-06)\\
+    empty cells      & \cmd{cc\_chip\_top\_gds.rpt}: a GDS file missing in
+                       the merge\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% LVS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{LVS and ERC}
+\renewcommand{\astitle}{LVS and ERC}
+
+\renewcommand{\assubtitle}{How LVS Works}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \textbf{Extraction}: from the layout geometry LVS recognizes
+      the devices (transistors, diodes, resistors) and the nets connecting
+      them
+    \item \textbf{Source}: the netlist is expanded down to the same
+      devices via the cell CDL
+    \item \textbf{Compare}: both graphs are matched, starting from the
+      labelled nets (ports, supplies)
+    \item Result \cmd{CORRECT}: same devices, same connections, same
+      ports. Otherwise a list of mismatches in \cmd{lvs.report}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Typical Mismatches}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{symptom} & \textbf{cause}\\\hline
+    ports not found      & pad labels missing or on the wrong layer
+                           (\cmd{LABEL\_LAYER}, deck's text layer)\\
+    VDD and GND merged   & a short in the power grid -- first check
+                           \cmd{cc\_chip\_top\_pg\_connectivity.rpt}\\
+    open supply net      & a row, macro or pad not connected to the ring\\
+    extra devices        & physical-only cells missing in the LVS netlist
+                           (\cmd{-include\_phys\_insts})\\
+    unknown cell         & CDL of a cell missing in \cmd{CDL\_FILES}\\
+    VDDO vs.\ VDD        & IO cells: core and IO supply pins in the wrong
+                           \cmd{PG\_PINS\_*} list\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item ERC (\cmd{erc.summary}) often points to the same root cause as
+      an LVS mismatch: fix LVS first
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Open points
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open Points}
+\renewcommand{\astitle}{Open Points}
+
+\renewcommand{\assubtitle}{VERIFY-LAB: Not Yet Run}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Which decks the PDK has, and their switches
+    \item Whether the X-FAB decks already set layout/source paths
+      themselves (then use the deck's variables instead of the control
+      file statements)
+    \item PVL statement names for Pegasus, the \cmd{pegasus}/\cmd{calibre}
+      command lines
+    \item Summary and report wording that \cmd{pv.sh} looks for
+    \item Pad labels: \cmd{add\_text} in Innovus, the text layer in the
+      stream map, the text layer the LVS deck expects
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB NDA}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item GDS, CDL, rule decks, control files, reports: all contain X-FAB
+      data or names
+    \item \cmd{build\_innovus/} and \cmd{build\_pv/} are in
+      \cmd{.gitignore}: never commit them, never copy them out of the lab
+    \item The GDS goes to X-FAB only through the official tape-out
+      channel
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Before Tape-out}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item DRC 0, LVS CORRECT, ERC 0 -- on the final GDS
+    \item STA, LEC and the post-route GLS on the same layout
+    \item Metal fill, antenna fixing, post-route optimization in Innovus
+    \item Pad order and supply pads checked (TECH-06), seal ring and
+      logo as X-FAB requires
+    \item X-FAB's own tape-out checks (their DRC run on the submitted GDS)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

@@ -101,9 +101,14 @@ Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
     CORE_FILLERS  LEF der Standardzellen: CLASS CORE SPACER
     STREAM_MAP, GDS_FILES  PDK-Baum: .../gds/*.gds, Stream-Map im
               Innovus-/Encounter-Techfile-Verzeichnis (*.map, *streamOut*)
-    DRC/LVS   gleich mitnotieren: welche Runsets liegen im PDK
-              (Pegasus, PVS, Calibre, Assura)? Bestimmt das Tool fuer
-              den naechsten Schritt.
+    DRC/LVS   welche Runsets liegen im PDK (Pegasus/PVS, Calibre,
+              Assura)? -> PV_TOOL; Deck-Dateien -> DRC_RULES (Haupt-DRC,
+              Antenna) und LVS_RULES; Schalter im Kopf der Decks
+              (#DEFINE / #IFDEF: Metallstapel, Optionen) -> PV_SWITCHES
+    CDL_FILES CDL-Netzlisten der Zellbibliotheken (.../cdl/, .../lvs/),
+              SPRAM-CDL aus dem Memory-Compiler-Paket
+    LABEL_LAYER  Layer fuer die Pad-Labels: der Text-Layer des Top-
+              Metalls, den das LVS-Deck fuer Ports erwartet
 
 Schritt 2: Synthese mit Scan-Insertion (DFT-01, Boundary Scan DFT-02)
 
@@ -197,6 +202,18 @@ Schritt 8: Formale Aequivalenz (Conformal LEC, Abschnitt 3d, 06_DokuLEC)
   _unmapped.rpt (not-mapped ansehen). Alle Scan-FFs non-equivalent ->
   Constraint auf core/as_jtag/sc01_shift_o greift nicht (Pin-Name).
 
+Schritt 9: DRC, LVS, ERC (Abschnitt 3e, 07_DokuPV)
+  Braucht den Innovus-Lauf bis zur Stufe gds (Schritt 3).
+
+      ./scripts/pv/pv.sh -m drc        (erst DRC, Decks aus DRC_RULES)
+      ./scripts/pv/pv.sh -m lvs        (LVS mit ERC)
+      ./scripts/pv/pv.sh -t calibre    (falls nur Calibre-Decks)
+  Pruefen: build_pv/drc_<n>.summary (Zahl pro Regel), lvs.report
+  (CORRECT), erc.summary. Erster Lauf: viele DRC-Ergebnisse sind
+  normal (Metal-Fill und Antenna-Fixing fehlen noch). Beim LVS zuerst
+  Ports/Supplies: fehlen die Pad-Labels oder liegen sie auf dem falschen
+  Layer (cc_chip_top_labels.txt, LABEL_LAYER)?
+
 Mit Claude im Labor
   Claude kann die Schritte ausfuehren und die Logs/Reports auswerten. Dazu
   Claude auf diesen Abschnitt hinweisen ("README_XFAB.txt, Abschnitt 1a").
@@ -205,8 +222,8 @@ Mit Claude im Labor
   und Dateinamen ausschliesslich in die lokale $XFAB_PATHS-Datei ein;
   Auszuege hoechstens in ein temporaeres Verzeichnis ausserhalb des
   Repositorys. Vor einem Commit "git status" pruefen: build_genus/,
-  build_innovus/, build_quantus/, build_sta/, build_lec/, build_gatesim/
-  und build_xcelium/ sind gesperrt (.gitignore), Netzliste, SPEF und SDF
+  build_innovus/, build_quantus/, build_sta/, build_lec/, build_pv/,
+  build_gatesim/ und build_xcelium/ sind gesperrt (.gitignore), Netzliste, SPEF und SDF
   enthalten X-FAB-Zellnamen.
 
 
@@ -405,6 +422,28 @@ Aus RWU_RV/RV_NoPipeline, nach Synthese (und fuer syn2pnr nach P&R):
   - -g: Dofile, das Genus mit write_do_lec schreibt (01b_rv64_syn.tcl;
     fehlt es, erzeugt lec.sh es aus cc_chip_top_syn.db).
   - Noch nie mit echtem Conformal gelaufen: VERIFY-LAB in 06_DokuLEC.
+
+
+--------------------------------------------------------------------------------
+3e. Physikalische Verifikation: DRC, LVS, ERC (Pegasus oder Calibre)
+--------------------------------------------------------------------------------
+
+Aus RWU_RV/RV_NoPipeline, nach Innovus bis zur Stufe gds:
+
+    ./scripts/pv/pv.sh [-m drc|lvs|all] [-t pegasus|calibre] [-j N]
+                                        -> build_pv/
+
+  Ausfuehrliche Anleitung: 07_DokuPV/DokuPV.pdf
+
+  - Eingaben: build_innovus/cc_chip_top.gds (gemergt, mit Pad-Labels
+    fuer Ports und Supplies), cc_chip_top_lvs.v (mit Supply-Ports und
+    Physical-only-Zellen), CDL der Zellen (CDL_FILES).
+  - 05_rv64_pv.tcl schreibt Steuerdateien (drc_<n>.ctl, lvs.ctl): Ein-
+    gaben, Reports, #DEFINE-Schalter, dann include des X-FAB-Decks. Die
+    Decks selbst werden nie veraendert.
+  - Pegasus liest die Verilog-Netzliste direkt; fuer Calibre wandelt
+    v2lvs sie vorher in SPICE (cc_chip_top_lvs.sp).
+  - Noch nie gelaufen: VERIFY-LAB in 07_DokuPV.
 
 
 --------------------------------------------------------------------------------
@@ -740,6 +779,9 @@ Erledigt:
   scripts/sta, 05_DokuSTA), Constraint-Modus scan; im Labor offen
   Formale Aequivalenz vorbereitet: Conformal LEC (scripts/lec,
   06_DokuLEC), RTL->Genus und Genus->Innovus; im Labor offen
+  Power-Grid, Core-Filler, GDS-Merge mit Pad-Labels (Innovus) und
+  DRC/LVS/ERC (scripts/pv, Pegasus oder Calibre, 07_DokuPV) vorbereitet;
+  im Labor offen
 
 Offen:
   TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
@@ -748,9 +790,8 @@ Offen:
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
   Power-Grid/Filler/GDS im Labor laufen lassen (Abschnitt 1a, Schritt 3),
   DRC/Antenna bereinigen, Post-Route-Optimierung, Scan-Reorder in Innovus,
-  ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7), DRC/LVS/ERC
-  (Pegasus o. a., je nach Runsets im PDK), LEC-Lauf (Abschnitt 1a,
-  Schritt 8)
+  ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7),
+  LEC-Lauf (Schritt 8), DRC/LVS/ERC-Lauf (Schritt 9), Metal-Fill
 
 AS:
 RTL Simulation ist gemacht (xrun), Synthese mit scanpath insertion ist gemacht (genus), place&route ist genacht (innovus), gatelevel simulation ist gemacht (xrun).
