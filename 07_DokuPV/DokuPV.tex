@@ -332,10 +332,10 @@ PASS  physical verification of cc_chip_top (all, pegasus)
   \footnotesize
   \begin{tabularx}{\linewidth}{@{}lY@{}}
     \textbf{rule type} & \textbf{fix}\\\hline
-    metal density    & metal fill (Innovus \cmd{add\_metal\_fill} or the
-                       X-FAB fill deck), not yet in the flow\\
-    antenna          & Innovus: antenna diodes / layer jumping in routing
-                       (\cmd{route\_design} with antenna fixing)\\
+    metal density    & fill in Innovus (\cmd{FILL\_LAYERS}) too sparse,
+                       or X-FAB wants its own fill deck\\
+    antenna          & left over after the router's fixing: more diodes,
+                       check \cmd{ANTENNA\_CELL}, LEF antenna data\\
     well/implant gaps & missing core fillers or well taps
                        (\cmd{CORE\_FILLERS}, \cmd{WELLTAP\_CELL})\\
     at the macros    & stripes over the SPRAM: blocked layers, or halo
@@ -443,7 +443,8 @@ PASS  physical verification of cc_chip_top (all, pegasus)
   \begin{itemize}
     \item DRC 0, LVS CORRECT, ERC 0 -- on the final GDS
     \item STA, LEC and the post-route GLS on the same layout
-    \item Metal fill, antenna fixing, post-route optimization in Innovus
+    \item Post-route optimization in Innovus (metal fill and antenna
+      fixing are in the flow)
     \item Pad order and supply pads checked (TECH-06), seal ring and
       logo as X-FAB requires
     \item X-FAB's own tape-out checks (their DRC run on the submitted GDS)

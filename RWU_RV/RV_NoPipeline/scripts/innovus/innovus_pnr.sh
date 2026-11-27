@@ -14,7 +14,8 @@
 #                       fp     floorplan, pad ring, SRAM macros, power grid
 #                       place  standard cells placed
 #                       cts    clock tree built
-#                       route  all wires routed, core fillers, netlists
+#                       route  all wires routed (antenna fixing), core
+#                              fillers, metal fill, netlists
 #                       gds    merged GDS for DRC/LVS
 #   -o, --open STAGE  do not run anything: open the checkpoint of STAGE in
 #                     the GUI (needs an earlier run up to that stage)
@@ -210,7 +211,7 @@ if [ "$STAGE" = "route" ] || [ "$STAGE" = "gds" ]; then
   for f in "${DESIGN_TOP}_routed.v" "${DESIGN_TOP}_routed.def" "${DESIGN_TOP}_lvs.v"; do
     if [ -s "$f" ]; then echo "  hand-off:     $f"; else echo "  hand-off:     $f missing"; RC=1; fi
   done
-  for r in drc antenna connectivity pg_connectivity; do
+  for r in drc antenna density connectivity pg_connectivity; do
     line="$(grep -iE 'total|violation' "${DESIGN_TOP}_$r.rpt" 2>/dev/null | tail -1 | sed 's/^ *//')"
     printf '  %-17s %s\n' "$r:" "${line:-see ${DESIGN_TOP}_$r.rpt}"
   done

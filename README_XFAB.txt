@@ -68,6 +68,9 @@ Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
                                   (z. B. funktionales Modell), sonst leer
   Neu fuer Power-Grid, Filler und GDS (Innovus, 02a/02c):
     CORE_FILLERS                  Filler der D_CELLS_HD (breiteste zuerst)
+    ANTENNA_CELL                  Antennen-Diode der D_CELLS_HD (LEF:
+                                  CLASS CORE ANTENNACELL)
+    FILL_LAYERS                   Metalle mit Dichteregeln (alle vier)
     PG_PINS_VDD/_GND              Supply-Pin-Namen ALLER Zellen am Core-
                                   Netz: Standardzellen, Kernseite der
                                   IO-Zellen, SPRAM-Makros
@@ -99,6 +102,9 @@ Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
                 grep -n -B3 'USE POWER\|USE GROUND' <std_cells.lef> <io_cells.lef> <imem.lef>
     PG_LAYER_* Technologie-LEF: LAYER ... TYPE ROUTING, Reihenfolge
     CORE_FILLERS  LEF der Standardzellen: CLASS CORE SPACER
+    ANTENNA_CELL  LEF der Standardzellen: CLASS CORE ANTENNACELL
+    Metal-Fill: steht im PDK ein eigenes Fill-Deck (Pegasus/Calibre)?
+              Dann verlangt X-FAB evtl. dieses statt add_metal_fill.
     STREAM_MAP, GDS_FILES  PDK-Baum: .../gds/*.gds, Stream-Map im
               Innovus-/Encounter-Techfile-Verzeichnis (*.map, *streamOut*)
     DRC/LVS   welche Runsets liegen im PDK (Pegasus/PVS, Calibre,
@@ -140,7 +146,9 @@ Schritt 3: Place & Route mit Power-Grid, Core-Fillern und GDS
     - GUI (-o fp): Core-Ring, Stripes, Rails; Makros mit Halo; die
       Supply-Pads mit dem Ring verbunden
     - cc_chip_top_pg_connectivity.rpt: keine Opens auf VDD/GND
-    - DRC-/Antenna-Zahl gegen den Smoke-Test (2630/159) vergleichen
+    - DRC-/Antenna-Zahl gegen den Smoke-Test (2630/159) vergleichen;
+      Antenna sollte jetzt (Dioden beim Routing) fast 0 sein
+    - cc_chip_top_density.rpt: Mindestdichte pro Layer erreicht
     - cc_chip_top_gds.rpt: "missing: 0" (sonst fehlt eine GDS-Datei)
   Danach Schritte 5-8 (Quantus, Tempus, GLS, LEC) auf dem neuen Layout.
   Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01),
@@ -326,8 +334,10 @@ Im selben Run-Verzeichnis wie Genus:
   Core 2016x2016 um, 35 um Rand fuer den Power-Ring, IO-Ring 257 um) ->
   Pad-Ring (26 Pads, Eckzellen, IO-Filler) -> SPRAM-Makros fest platziert
   -> Power-Grid (02a_rv64_power.tcl: Global Connect, Core-Ring, Stripes,
-  route_special) -> place_design -> ccopt_design -> routeDesign ->
-  Core-Filler -> Netzlisten/DEF (02b) -> GDS mit Merge (02c).
+  route_special) -> place_design -> ccopt_design -> routeDesign (mit
+  Antenna-Fixing: Layerwechsel + Dioden ANTENNA_CELL) -> Core-Filler ->
+  Metal-Fill (FILL_LAYERS, Dichtereport) -> Netzlisten/DEF (02b) ->
+  GDS mit Merge (02c).
   Checkpoints: cc_chip_top_fp.db, _placed.db, _cts.db, _routed.db
   Uebergabe: _routed.v, _routed.def, _lvs.v (mit Supply-Ports und
   Physical-only-Zellen), cc_chip_top.gds
@@ -789,9 +799,10 @@ Offen:
   TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
   Power-Grid/Filler/GDS im Labor laufen lassen (Abschnitt 1a, Schritt 3),
-  DRC/Antenna bereinigen, Post-Route-Optimierung, Scan-Reorder in Innovus,
+  Antenna-Fixing und Metal-Fill pruefen, Post-Route-Optimierung,
+  Scan-Reorder in Innovus,
   ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7),
-  LEC-Lauf (Schritt 8), DRC/LVS/ERC-Lauf (Schritt 9), Metal-Fill
+  LEC-Lauf (Schritt 8), DRC/LVS/ERC-Lauf (Schritt 9)
 
 AS:
 RTL Simulation ist gemacht (xrun), Synthese mit scanpath insertion ist gemacht (genus), place&route ist genacht (innovus), gatelevel simulation ist gemacht (xrun).

@@ -339,6 +339,7 @@ PASS  place & route of cc_chip_top up to 'gds'
     \cmd{*\_cts\_timing.rpt}, \cmd{*\_final\_timing.rpt}  & worst paths\\[1pt]
     \cmd{*\_drc.rpt}, \cmd{*\_antenna.rpt}, \cmd{*\_connectivity.rpt} & physical checks\\[1pt]
     \cmd{*\_pg\_connectivity.rpt}             & power grid after \cmd{route\_special}\\[1pt]
+    \cmd{*\_density.rpt}                      & metal density after fill\\[1pt]
     \cmd{*\_routed.v/.def}, \cmd{*\_lvs.v}     & hand-off netlists, layout\\[1pt]
     \cmd{cc\_chip\_top.gds}, \cmd{*\_gds.rpt}  & merged GDS, cells missing in the merge\\
   \end{tabularx}
@@ -599,6 +600,7 @@ routeDesign                      ;  write_db cc_chip_top_routed.db
     \item \cmd{ccopt\_design}: builds and balances the trees; after that the
       clocks are \emph{propagated}: real delays instead of ideal clocks
     \item \cmd{routeDesign}: global and detailed routing of all signal nets
+    \item Before \cmd{routeDesign}: antenna fixing switched on (see g)
     \item Not yet in the flow: post-route optimization
   \end{itemize}
 \end{block}
@@ -678,7 +680,51 @@ route_special -nets {VDD GND} -connect {core_pin pad_pin block_pin}
 \end{block}
 \end{frame}
 
-\renewcommand{\assubtitle}{g) Core Fillers and Hand-off}
+\renewcommand{\assubtitle}{g) Antenna Fixing}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+set_db route_design_detail_fix_antenna      true
+set_db route_design_antenna_diode_insertion true
+set_db route_design_antenna_cell_name       $ANTENNA_CELL
+routeDesign
+\end{lstlisting}
+  \begin{itemize}
+    \item During manufacturing a long wire collects charge before the
+      upper metal connects it to a diffusion; the charge can break the
+      gate oxide it ends on
+    \item Rule: wire area / gate area below a limit per layer (LEF
+      \cmd{ANTENNA*} data, X-FAB antenna deck)
+    \item Fix 1: change to a higher layer near the gate (short pieces)
+    \item Fix 2: an antenna diode next to the gate drains the charge
+    \item Check: \cmd{cc\_chip\_top\_antenna.rpt}; sign-off is the antenna
+      deck in \cmd{scripts/pv}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{h) Metal Fill}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+add_metal_fill -layers $FILL_LAYERS            ;# after the core fillers
+check_metal_density -report cc_chip_top_density.rpt
+\end{lstlisting}
+  \begin{itemize}
+    \item Chemical-mechanical polishing (CMP) needs an even metal density:
+      every layer needs a minimum (and maximum) share of metal per window
+    \item Fill = unconnected dummy metal in the empty areas
+    \item Before the export: Quantus sees the fill (extra capacitance), the
+      GDS carries it
+    \item Some foundries want their own fill deck (Pegasus/Calibre) instead:
+      VERIFY-LAB, then this step goes
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{i) Core Fillers and Hand-off}
 \begin{frame}[fragile]
 \frametitle{\astitle}
 \begin{block}{\assubtitle}
@@ -698,7 +744,7 @@ write_netlist -include_pg_ports -include_phys_insts ${DESIGN_TOP}_lvs.v
 \end{block}
 \end{frame}
 
-\renewcommand{\assubtitle}{h) Merged GDS (\texttt{02c\_rv64\_gds.tcl})}
+\renewcommand{\assubtitle}{j) Merged GDS (\texttt{02c\_rv64\_gds.tcl})}
 \begin{frame}[fragile]
 \frametitle{\astitle}
 \begin{block}{\assubtitle}
@@ -719,7 +765,7 @@ write_stream cc_chip_top.gds -map_file $STREAM_MAP -merge $GDS_FILES \
 \end{block}
 \end{frame}
 
-\renewcommand{\assubtitle}{i) Physical Checks}
+\renewcommand{\assubtitle}{k) Physical Checks}
 \begin{frame}[fragile]
 \frametitle{\astitle}
 \begin{block}{\assubtitle}

@@ -69,6 +69,8 @@ set CORE_SITE   <std_cell_site>              ;# row site of the HD standard cell
 set PAD_CORNER  <io_corner_cell>
 set PAD_FILLERS [list <io_filler_widest> ... <io_filler_narrowest>]  ;# widest first
 set CORE_FILLERS [list <core_filler_widest> ... <core_filler_narrowest>] ;# D_CELLS_HD fillers, widest first
+set ANTENNA_CELL <antenna_diode_cell>         ;# D_CELLS_HD antenna diode (router inserts it)
+set FILL_LAYERS  [list <metal1> <metal2> <metal3> <top_metal>] ;# layers with density rules
 
 # Power grid (02a_rv64_power.tcl). Supply pin names of ALL cells per net:
 # standard cells, IO cells (core side and IO side), SPRAM macros
