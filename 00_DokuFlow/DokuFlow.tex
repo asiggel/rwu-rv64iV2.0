@@ -1,0 +1,117 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: RISC-V Design Flow -- Overview}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\renewcommand{\astitle}{Design Flow}
+\renewcommand{\assubtitle}{Steps in Run Order}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}l@{\hspace{4pt}}l@{\hspace{4pt}}l@{\hspace{4pt}}l@{\hspace{4pt}}Y@{}}
+    & \textbf{what} & \textbf{tool} & \textbf{program} & \textbf{remark}\\\hline
+    01 & RTL simulation    & Xcelium   & \cmd{xrun}    & tests on the RTL\\
+    02 & synthesis + DFT   & Genus     & \cmd{genus}   & netlist, scan chain\\
+    03 & place \& route    & Innovus   & \cmd{innovus} & up to routing\\
+    04 & gate-level sim    & Xcelium   & \cmd{xrun}    & Genus netlist\\
+    05 & post-route        & Innovus   & \cmd{innovus} & hold fix, fill, GDS\\
+    06 & RC extraction     & Quantus   & \cmd{quantus} & SPEF\\
+    06 & sign-off STA      & Tempus    & \cmd{tempus}  & slack, SDF\\
+    04 & post-route GLS    & Xcelium   & \cmd{xrun}    & with Tempus SDF\\
+    07 & equivalence       & Conformal & \cmd{lec}     & RTL $\equiv$ netlists\\
+    08 & DRC, LVS, ERC     & Pegasus   & \cmd{pegasus} & X-FAB rule decks\\
+       &                   & (Calibre) & (\cmd{calibre}) & alternative\\
+  \end{tabularx}
+  \vspace{4pt}
+
+  First column = HowTo folder \cmd{xy\_Doku*}. A tool used again later
+  gets a later number; 04 runs again once the layout SDF exists.
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Scripts}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  In \cmd{RWU\_RV/RV\_NoPipeline}, all in batch mode:
+\begin{lstlisting}[style=sh]
+./scripts/xcelium/xrun_regression.sh -c     # 01
+./scripts/genus/genus_syn.sh -b -c          # 02
+./scripts/innovus/innovus_pnr.sh -b -c      # 03
+./scripts/gatesim/gatesim.sh -r -s          # 04
+./scripts/innovus/innovus_post.sh -b        # 05
+./scripts/quantus/quantus_rcx.sh            # 06
+./scripts/sta/sta.sh -b                     # 06
+./scripts/gatesim/gatesim.sh -r -p -s       # 04, after layout
+./scripts/lec/lec.sh                        # 07
+./scripts/pv/pv.sh                          # 08
+\end{lstlisting}
+  Steps 02--08 need \cmd{\$XFAB\_PATHS} and run only in the lab
+  (checklist: \cmd{README\_XFAB.txt}, section 1a).
+\end{block}
+\end{frame}
+
+\end{document}
