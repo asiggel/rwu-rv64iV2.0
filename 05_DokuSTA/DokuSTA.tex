@@ -1,0 +1,651 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: Sign-off Timing with Quantus and Tempus}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+
+\renewcommand{\assubtitle}{Where in the Flow?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}llY@{}}
+    \textbf{step} & \textbf{tool / script} & \textbf{result}\\\hline
+    RTL simulation      & xrun, \cmd{scripts/xcelium/}   & functionally correct RTL\\
+    synthesis + DFT     & Genus, \cmd{scripts/genus/}    & netlist, scan chain\\
+    gate-level sim      & xrun, \cmd{scripts/gatesim/}   & netlist ok\\
+    place \& route      & Innovus, \cmd{scripts/innovus/} & layout, \cmd{\_routed.v/.def}\\
+    \textbf{RC extraction} & \textbf{Quantus}, \cmd{scripts/quantus/} & SPEF per RC corner\\
+    \textbf{sign-off STA}  & \textbf{Tempus}, \cmd{scripts/sta/}      & slack per view, SDF\\
+    post-route GLS      & xrun, \cmd{gatesim.sh -p -s}   & netlist with real delays\\
+    physical verification & Pegasus/Calibre             & DRC, LVS, ERC\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item This deck: the two bold steps, always in this order
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Why Extraction First?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item A path delay is cell delay + wire delay
+    \item Tempus computes the cell delays from the Liberty tables, but it
+      does \emph{not} know the wires: their resistance and capacitance
+      come from the layout
+    \item Quantus reads the routed layout (DEF + LEF) and the process
+      description (\cmd{qrcTechFile}) and writes the RC network of every
+      net into a \emph{SPEF} file
+    \item Without SPEF Tempus can only estimate the wires -- that is what
+      Genus does before the layout, not a sign-off
+    \item The timing reports inside Innovus use a fast internal
+      extraction; good for optimization, not accurate enough for sign-off
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Data Flow}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{file} & \textbf{from $\rightarrow$ to}\\\hline
+    \cmd{cc\_chip\_top\_routed.def} & Innovus $\rightarrow$ Quantus (layout)\\
+    \cmd{cc\_chip\_top\_routed.v}   & Innovus $\rightarrow$ Tempus, GLS (netlist with clock tree)\\
+    LEF, \cmd{qrcTechFile} per corner & PDK $\rightarrow$ Quantus\\
+    \cmd{cc\_chip\_top\_rc\_\{max,typ,min\}.spef} & Quantus $\rightarrow$ Tempus\\
+    Liberty per corner, SDC         & PDK, \cmd{scripts/} $\rightarrow$ Tempus\\
+    \cmd{cc\_chip\_top\_sta\_\{func,scan\}.sdf} & Tempus $\rightarrow$ GLS\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Build directories: \cmd{build\_innovus/}, \cmd{build\_quantus/},
+      \cmd{build\_sta/} -- all in \cmd{.gitignore} (X-FAB NDA)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Setup}
+\renewcommand{\astitle}{Setup}
+
+\renewcommand{\assubtitle}{Prerequisites}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Cadence environment with \cmd{innovus}, \cmd{quantus},
+      \cmd{tempus} in the \cmd{PATH}
+    \item Place \& route done:
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/innovus/innovus_pnr.sh -b     # -> build_innovus/
+\end{lstlisting}
+    \item \cmd{\$XFAB\_PATHS} (X-FAB NDA, never in git) already holds what
+      Genus needs; used here:
+\begin{lstlisting}[style=sh]
+set LEF_FILES [list <tech.lef> <std_cells.lef> ...]
+set QRC_MAX <QRC-Max/qrcTechFile>     ;# also _TYP, _MIN
+set LIBS_SLOW [list ...]              ;# also _TYP, _FAST
+set QRC_LAYERMAP [list]   ;# new, optional: LEF/QRC layer pairs
+\end{lstlisting}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Hand-off from Innovus}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{02\_rv64\_floorplan\_pnr.tcl} ends with
+      \cmd{02b\_rv64\_export.tcl}:
+    \begin{itemize}
+      \item \cmd{write\_netlist cc\_chip\_top\_routed.v}: logic incl. the
+        CTS buffers, without fillers and corner cells
+      \item \cmd{write\_def -floorplan -netlist -routing
+        cc\_chip\_top\_routed.def}
+    \end{itemize}
+    \item P\&R ran before this step existed? No new P\&R run needed:
+      \cmd{quantus\_rcx.sh} finds \cmd{cc\_chip\_top\_routed.db} and runs
+      \cmd{02b\_rv64\_export.tcl} on it
+    \item The netlist must be the routed one: the Genus netlist has no
+      clock tree, its clock skew would be wrong
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Quantus
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{RC Extraction}
+\renewcommand{\astitle}{RC Extraction}
+
+\renewcommand{\assubtitle}{RC Corners}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lllY@{}}
+    \textbf{RC corner} & \textbf{QRC file} & \textbf{temp.} & \textbf{used with}\\\hline
+    \cmd{rc\_max} & \cmd{QRC\_MAX} & 125\,$^\circ$C & slow cells: setup (\cmd{dc\_slow})\\
+    \cmd{rc\_typ} & \cmd{QRC\_TYP} & 25\,$^\circ$C  & typical, reported only\\
+    \cmd{rc\_min} & \cmd{QRC\_MIN} & $-40$\,$^\circ$C & fast cells: hold (\cmd{dc\_fast})\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Same names as \cmd{create\_rc\_corner} in
+      \cmd{xh018\_mmmc.tcl}: Tempus maps each SPEF to its corner by name
+    \item Metal thickness, width and dielectric vary with the process: max
+      = largest RC, min = smallest
+    \item Extraction type \cmd{rc\_coupled}: the coupling capacitances
+      between neighbouring wires are kept separately -- Tempus needs them
+      for crosstalk (SI)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Standalone Quantus: Generated Files}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Quantus reads a command file (CCL), not Tcl;
+      \cmd{03a\_rv64\_quantus.tcl} runs in \cmd{tclsh} and writes into
+      \cmd{build\_quantus/}:
+    \begin{itemize}
+      \item \cmd{qrc/rc\_max/qrcTechFile} etc.: links to the X-FAB files
+      \item \cmd{lib.defs}: one line \cmd{DEFINE xh018 <dir>/qrc}, the
+        corners are the subdirectories
+      \item \cmd{quantus.ccl}: the run
+    \end{itemize}
+    \item The links rename the X-FAB corners to \cmd{rc\_max}\ldots: the
+      SPEF files come out as \cmd{cc\_chip\_top\_rc\_max.spef}, no X-FAB
+      name in any script
+    \item The generated files hold X-FAB paths: build directory only
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Standalone Quantus: \texttt{quantus.ccl}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+input_db -type def \
+    -design_file "<...>/cc_chip_top_routed.def" \
+    -lef_file_list "<tech.lef>" "<std_cells.lef>" ...
+process_technology \
+    -technology_library_file "<...>/lib.defs" \
+    -technology_name "xh018" \
+    -technology_corner "rc_max" "rc_typ" "rc_min" \
+    -temperature 125 25 -40
+extract \
+    -selection "all" \
+    -type "rc_coupled"
+output_setup \
+    -file_name "cc_chip_top" \
+    -compressed false
+output_db -type spef
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item With \cmd{QRC\_LAYERMAP} set, an \cmd{extraction\_setup
+      -technology\_layer\_map} block is added
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Alternative: Quantus Engine inside Innovus}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{03a\_rv64\_rcx\_innovus.tcl}, option \cmd{-i}:
+\begin{lstlisting}[style=sh]
+read_db cc_chip_top_routed.db
+set_db extract_rc_engine       post_route
+set_db extract_rc_effort_level signoff   ;# = Quantus
+set_db extract_rc_coupled      true
+extract_rc
+foreach rc {rc_max rc_typ rc_min} {
+  write_parasitics -rc_corner $rc -spef_file cc_chip_top_${rc}.spef
+}
+\end{lstlisting}
+    \item Takes the QRC files from the MMMC of the Innovus DB: no CCL, no
+      \cmd{lib.defs}, no layer map
+    \item Same SPEF names: Tempus does not care which way was used
+    \item Use it if the standalone run fails, or to compare both
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Running the Extraction}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+./scripts/quantus/quantus_rcx.sh        # standalone Quantus
+./scripts/quantus/quantus_rcx.sh -i     # engine inside Innovus
+./scripts/quantus/quantus_rcx.sh -c     # clean build_quantus/ first
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+=== [quantus] 1/3 hand-off from .../build_innovus
+=== [quantus] 2/3 standalone Quantus in .../build_quantus
+=== [quantus] 3/3 result
+  cc_chip_top_rc_max.spef     NNNNN nets
+  cc_chip_top_rc_typ.spef     NNNNN nets
+  cc_chip_top_rc_min.spef     NNNNN nets
+PASS  RC extraction of cc_chip_top (quantus), next: ./scripts/sta/sta.sh -b
+\end{lstlisting}
+  \begin{itemize}
+    \item Check: the three net counts are equal, no \cmd{ERROR} in
+      \cmd{quantus.log} (\cmd{rcx.log} with \cmd{-i})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Tempus
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Static Timing Analysis}
+\renewcommand{\astitle}{Static Timing Analysis}
+
+\renewcommand{\assubtitle}{Constraint Modes}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}llY@{}}
+    \textbf{mode} & \textbf{SDC} & \textbf{situation}\\\hline
+    \cmd{func}      & \cmd{as\_top\_mem\_func.sdc} & CPU runs on \cmd{clk\_core} (1.25\,MHz)\\
+    \cmd{jtag\_load} & \cmd{as\_top\_mem\_jtag.sdc} & JTAG loads the I-Mem, macro on \cmd{tck\_i}\\
+    \cmd{scan}      & \cmd{as\_top\_mem\_scan.sdc} & SCANTEST: core on \cmd{tck\_i} (25\,MHz)\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item All three on top of \cmd{as\_top\_mem.sdc} (clocks, I/O, false
+      paths); each mode file fixes \cmd{sc01\_mode\_o} and
+      \cmd{im\_mode\_o} with \cmd{set\_case\_analysis}
+    \item \cmd{scan} is new and only in the STA
+      (\cmd{xh018\_mmmc\_sta.tcl}): Genus must not upsize the core logic
+      for a 40\,ns capture that is not needed in operation
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Analysis Views}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lllY@{}}
+    \textbf{view} & \textbf{mode} & \textbf{corner} & \textbf{check}\\\hline
+    \cmd{av\_slow}      & func      & slow + rc\_max & setup\\
+    \cmd{av\_typ}       & func      & typ + rc\_typ  & setup (info)\\
+    \cmd{av\_jtag\_slow} & jtag\_load & slow + rc\_max & setup\\
+    \cmd{av\_scan\_slow} & scan      & slow + rc\_max & setup\\
+    \cmd{av\_fast}      & func      & fast + rc\_min & hold\\
+    \cmd{av\_jtag\_fast} & jtag\_load & fast + rc\_min & hold\\
+    \cmd{av\_scan\_fast} & scan      & fast + rc\_min & hold\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Setup = data too late: slow cells, high RC, 125\,$^\circ$C
+    \item Hold = data too early: fast cells, low RC, $-40$\,$^\circ$C
+    \item Tempus analyses all views in one run
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Why a Scan Mode?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item In SCANTEST all scan flip-flops run on \cmd{tck\_i}, through
+      \cmd{scan\_ckgate} and \cmd{core\_ckmux}
+    \item \textbf{Shift}: flip-flop $\rightarrow$ flip-flop with no logic
+      in between. The data path is short, so clock skew alone can break
+      \emph{hold} -- the classic scan problem
+    \item \textbf{Capture}: the functional logic, at 25\,MHz instead of
+      1.25\,MHz
+    \item Rules for \cmd{av\_scan\_*}:
+    \begin{itemize}
+      \item hold violations: must be 0 (the chain would not shift)
+      \item setup violations: only limit the TCK of SCANTEST; the tester
+        may capture with a slower clock
+    \end{itemize}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{03b\_rv64\_sta.tcl}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+read_mmmc    $SCRIPT_DIR/xh018_mmmc_sta.tcl
+read_netlist $NETLIST -top cc_chip_top
+init_design
+foreach rc {rc_max rc_typ rc_min} {
+  read_spef -rc_corner $rc $SPEF_DIR/cc_chip_top_${rc}.spef
+}
+set_db timing_analysis_type ocv      ;# on-chip variation
+set_db timing_analysis_cppr both     ;# common path pessimism removal
+set_db delaycal_enable_si   true     ;# crosstalk (--no-si: off)
+check_timing -verbose    > sta_check_timing.rpt
+report_timing -late  -view av_slow -max_paths 20 > sta_setup_av_slow.rpt
+report_timing -early -view av_fast -max_paths 20 > sta_hold_av_fast.rpt
+report_constraint -all_violators > sta_violators.rpt
+write_sdf -min_view av_fast -max_view av_slow cc_chip_top_sta_func.sdf
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item \cmd{report\_timing} runs for every setup and hold view
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{OCV, CPPR, SI}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \textbf{OCV}: launch and capture clock path may be on
+      different parts of the die; Tempus takes the late delay for one and
+      the early delay for the other
+    \item \textbf{CPPR}: up to the branch point both clock paths run
+      through the \emph{same} buffers -- that part cannot be early and
+      late at once. CPPR gives this pessimism back; without it, hold
+      shows false violations
+    \item \textbf{SI}: a neighbouring net switching at the same time
+      slows a transition down or speeds it up. Needs the coupling
+      capacitances of \cmd{rc\_coupled}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Running the STA}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+./scripts/sta/sta.sh -b        # batch, summary
+./scripts/sta/sta.sh           # Tempus shell stays open
+./scripts/sta/sta.sh -b --no-si
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+=== [tempus] 2/2 result
+  check view            worst slack [ns]
+  setup av_slow         ...
+  setup av_typ          ...
+  setup av_jtag_slow    ...
+  setup av_scan_slow    ...
+  hold  av_fast         ...
+  hold  av_jtag_fast    ...
+  hold  av_scan_fast    ...
+  violators (timing + DRV): N line(s) in sta_violators.rpt
+  SDF: cc_chip_top_sta_func.sdf
+  SDF: cc_chip_top_sta_scan.sdf
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item A negative slack is marked \cmd{VIOLATED}, exit code 1
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reading the Reports}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{sta\_check\_timing.rpt} first: unconstrained endpoints,
+      clocks that do not reach a flip-flop, combinational loops.
+      Expected: reset pins (false path), asynchronous GPIO/UART paths
+    \item \cmd{sta\_coverage.rpt}: which checks are analysed in which
+      view -- a mode with almost nothing analysed means a wrong
+      \cmd{set\_case\_analysis} or a renamed pin
+    \item \cmd{sta\_setup/hold\_<view>.rpt}: per path the launch clock,
+      the cells and wires with their delays, the capture clock and
+      \emph{slack = required $-$ arrival}
+    \item \cmd{sta\_violators.rpt}: also DRV --
+      \cmd{max\_transition}, \cmd{max\_capacitance}, \cmd{max\_fanout}:
+      slow edges are a reliability problem even if the timing is met
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Interactive Queries}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{./scripts/sta/sta.sh} without \cmd{-b}: after the run the
+      Tempus prompt stays open
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+report_timing -late  -view av_slow -to   core/cpu/...    ;# one endpoint
+report_timing -early -view av_scan_fast -max_paths 5
+report_timing -late  -view av_slow -path_type full_clock ;# clock path too
+report_clocks
+report_case_analysis                       ;# which pins are fixed
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{-path\_type full\_clock} shows the clock tree in the path:
+      the place to look for skew in a hold violation
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{What If It Fails?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{symptom} & \textbf{fix}\\\hline
+    hold, all views   & post-route hold fixing in Innovus
+                        (\cmd{opt\_design -post\_route -hold}), then
+                        export, extract, STA again\\
+    hold, only scan   & same; check the clock gate/mux skew between
+                        \cmd{tck\_i} and the core clock tree\\
+    setup, func       & 800\,ns budget -- a violation means a wrong
+                        constraint, not a slow path: check the clock\\
+    setup, only scan  & slower TCK for SCANTEST capture, note it\\
+    no paths in a view & pin names in the SDC changed in the netlist
+                        (ungroup) -- \cmd{check\_timing}\\
+    DRV               & \cmd{opt\_design -post\_route -drv} in Innovus\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The P\&R script has no post-route optimization step yet
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GLS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Post-Route GLS}
+\renewcommand{\astitle}{Post-Route Gate-Level Simulation}
+
+\renewcommand{\assubtitle}{With the Tempus SDF}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+./scripts/gatesim/gatesim.sh -b -p instr06addi   # routed netlist
+./scripts/gatesim/gatesim.sh -r -p -s            # SDF max (setup)
+./scripts/gatesim/gatesim.sh -r -p -s -m         # SDF min (hold)
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{-p}: \cmd{build\_innovus/cc\_chip\_top\_routed.v} instead
+      of the Genus netlist, results in \cmd{build\_gatesim/postroute/}
+    \item \cmd{-s}: \cmd{build\_sta/cc\_chip\_top\_sta\_func.sdf}, for the
+      test \cmd{scan} the \cmd{\_sta\_scan.sdf}
+    \item \cmd{-m}: min delays (fast corner); default max (slow corner)
+    \item STA says \emph{whether} the timing is met; the GLS with SDF
+      shows that the design works with these delays and that the
+      constraints describe what the testbench does
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Open points
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open Points}
+\renewcommand{\astitle}{Open Points}
+
+\renewcommand{\assubtitle}{VERIFY-LAB: Not Yet Run with the Real Tools}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Quantus CCL syntax and the SPEF names with three corners
+      (expected \cmd{<file\_name>\_<corner>.spef})
+    \item Layer names LEF vs. \cmd{qrcTechFile}: \cmd{QRC\_LAYERMAP}
+      needed?
+    \item \cmd{tempus -stylus} with \cmd{-files}/\cmd{-log}, the Stylus
+      names \cmd{read\_netlist -top}, \cmd{delaycal\_enable\_si}
+    \item \cmd{set\_analysis\_view} called twice (\cmd{xh018\_mmmc.tcl},
+      then \cmd{xh018\_mmmc\_sta.tcl}): the second must win
+    \item \cmd{write\_def}/\cmd{write\_netlist} options in Innovus 26.1
+    \item Worst-slack summary via \cmd{report\_timing -collection}: if it
+      prints \cmd{n/a}, read the reports
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB NDA}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item DEF, SPEF, SDF, reports and the generated \cmd{quantus.ccl} and
+      \cmd{lib.defs} contain X-FAB cell names and paths
+    \item \cmd{build\_innovus/}, \cmd{build\_quantus/}, \cmd{build\_sta/}
+      are in \cmd{.gitignore}: never commit them, never copy them out of
+      the lab
+    \item Check \cmd{git status} before every commit
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Next Steps}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Formal equivalence with Conformal LEC: RTL $\leftrightarrow$
+      Genus netlist $\leftrightarrow$ Innovus netlist (scan mode
+      constrained off)
+    \item Physical verification: DRC, LVS, ERC with the runsets the
+      X-FAB PDK provides (Pegasus, PVS, Calibre or Assura); GDS merge
+      with standard cells, pads and SRAM macros
+    \item Before tape-out: power ring/stripes, pad order (TECH-06), and
+      this STA again on the final layout
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

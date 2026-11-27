@@ -24,7 +24,8 @@
 #   1. link the Genus hand-off build_genus/innovus/cc_chip_top.db
 #   2. run ../02_rv64_floorplan_pnr.tcl up to STAGE (batch or GUI)
 #   3. after routing: DRC, antenna check, connectivity -> reports
-#   4. batch: evaluate errors, checkpoints, timing, violation counts
+#   4. batch: evaluate errors, checkpoints, timing, violation counts,
+#      hand-off cc_chip_top_routed.v / .def for scripts/quantus, scripts/sta
 #
 # Run scripts/genus/genus_syn.sh first. All results go to build_innovus/.
 #
@@ -137,7 +138,8 @@ ln -sfn "$GENUS_ROOT/innovus" innovus
 
 # Checkpoints and reports of this stage and all later ones are stale now
 # (write_db writes a directory per checkpoint)
-rm -rf "${DESIGN_TOP}"_{fp,placed,cts,routed}.db "${DESIGN_TOP}"_*.rpt
+rm -rf "${DESIGN_TOP}"_{fp,placed,cts,routed}.db "${DESIGN_TOP}"_*.rpt \
+       "${DESIGN_TOP}"_routed.{v,def}
 
 # ------------------------------------------------------------------------
 # 2./3. Generated run script: flow up to STAGE, checks after routing
@@ -201,6 +203,9 @@ if [ -n "$TIMING" ]; then
   echo "  worst setup slack: ${slack:-no slack line found in $TIMING}"
 fi
 if [ "$STAGE" = "route" ]; then
+  for f in "${DESIGN_TOP}_routed.v" "${DESIGN_TOP}_routed.def"; do
+    if [ -s "$f" ]; then echo "  hand-off:     $f"; else echo "  hand-off:     $f missing"; RC=1; fi
+  done
   for r in drc antenna connectivity; do
     line="$(grep -iE 'total|violation' "${DESIGN_TOP}_$r.rpt" 2>/dev/null | tail -1 | sed 's/^ *//')"
     printf '  %-13s %s\n' "$r:" "${line:-see ${DESIGN_TOP}_$r.rpt}"

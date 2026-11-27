@@ -157,14 +157,18 @@ described in Section~\ref{subsubsec:cguRegClock} (CLK-02).
 The Genus scripts target XH018 (TECH-02). The common constraint file
 \texttt{scripts/as\_top\_mem.sdc} implements the operating point of
 Table~\ref{tab:asNoPipelineClk}: \texttt{clk\_i} with 10\,ns, the generated
-clock \texttt{clk\_core} (\texttt{-divide\_by 80}) on the CGU output, the
-scan clock multiplexer fixed to functional mode by case analysis on
-\texttt{sc01\_mode\_o}, and \texttt{tck\_i} with 40\,ns, asynchronous to the
-core clocks. Two constraint modes fix the I-Mem clock multiplexer by case
-analysis on \texttt{im\_mode\_o} (TECH-05): \texttt{func}
-(\texttt{as\_top\_mem\_func.sdc}, I-Mem on \texttt{clk\_div\_s}) and
-\texttt{jtag\_load} (\texttt{as\_top\_mem\_jtag.sdc}, I-Mem on
-\texttt{tck\_i}, CPU in reset). In \texttt{jtag\_load} the I-Mem data
+clock \texttt{clk\_core} (\texttt{-divide\_by 80}) on the CGU output, and
+\texttt{tck\_i} with 40\,ns, asynchronous to the core clocks. Two constraint
+modes fix the scan clock multiplexer (\texttt{sc01\_mode\_o}\,=\,0) and the
+I-Mem clock multiplexer by case analysis on \texttt{im\_mode\_o} (TECH-05):
+\texttt{func} (\texttt{as\_top\_mem\_func.sdc}, I-Mem on
+\texttt{clk\_div\_s}) and \texttt{jtag\_load} (\texttt{as\_top\_mem\_jtag.sdc},
+I-Mem on \texttt{tck\_i}, CPU in reset). The sign-off STA in Tempus
+(\texttt{scripts/sta}, after the Quantus extraction) adds a third mode
+\texttt{scan} (\texttt{as\_top\_mem\_scan.sdc}, \texttt{sc01\_mode\_o}\,=\,1,
+core on \texttt{tck\_i}) that Genus and Innovus do not optimize for: hold
+in scan shift must be met, a setup violation in capture only lowers the TCK
+of SCANTEST. In \texttt{jtag\_load} the I-Mem data
 register and the write strobe reach the macro within one TCK period, the TAP
 control signals (falling TCK edge) reach the data register cells within half
 a period. The SRAM wrappers instantiate the macros (TECH-01).

@@ -8,7 +8,7 @@
 #   setenv XFAB_PATHS /path/to/X-FAB/xh018_paths.tcl     (csh)
 #   export XFAB_PATHS=/path/to/X-FAB/xh018_paths.tcl     (bash)
 #
-# 00_rv64_elab.tcl and xh018_mmmc.tcl only use the variables below.
+# The scripts in scripts/ only use the variables below.
 #
 # Process variant for Variant A: 4 metal layers (MET1..MET3 + top metal),
 # module LPMOS -- must match the SPRAM macros.
@@ -31,6 +31,10 @@ set CAPTBL_MIN <min.capTbl>
 set QRC_MAX    <QRC-Max/qrcTechFile>
 set QRC_TYP    <QRC-Typ/qrcTechFile>
 set QRC_MIN    <QRC-Min/qrcTechFile>
+# Standalone Quantus (03a_rv64_quantus.tcl) only: pairs "LEF layer" "QRC
+# layer" when the names in the technology LEF and the qrcTechFile differ;
+# empty when they match (Innovus maps them itself)
+set QRC_LAYERMAP [list]
 
 # SPRAM macro cell names (I-Mem 8192x32, D-Mem 1024x64 with bit write mask)
 set IMEM_MACRO <imem_macro_name>

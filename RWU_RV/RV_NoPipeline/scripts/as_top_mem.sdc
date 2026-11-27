@@ -4,6 +4,8 @@
 # Constraint modes (xh018_mmmc.tcl) = this file + one mode file:
 #   func      as_top_mem_func.sdc   CPU runs, I-Mem clocked by clk_div_s
 #   jtag_load as_top_mem_jtag.sdc   JTAG loads the I-Mem, macro clocked by tck_i
+#   scan      as_top_mem_scan.sdc   SCANTEST, core clocked by tck_i (STA only,
+#                                   xh018_mmmc_sta.tcl)
 #
 # Operating point (spec, Section "Clock Concept", tab:asNoPipelineClk):
 #   clk_i       100 MHz external
@@ -25,11 +27,9 @@ create_clock -name tck_i -period 40.000 [get_ports tck_i]
 create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
   [get_pins core/cgu/CGUCore/clk_core_o]
 
-# Functional mode: the scan clock mux core_ckmux (cc_clk_mux2) selects
-# clk_core. With JTAG SCANTEST (sc01_mode_o = 1) it selects tck_i, gated by
-# scan_ckgate; that path is only used in scan test.
-set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o]
-# The I-Mem clock mux (core/as_jtag/im_mode_o) is fixed per mode in the mode file.
+# The scan clock mux core_ckmux (cc_clk_mux2) selects clk_core, with JTAG
+# SCANTEST (sc01_mode_o = 1) tck_i gated by scan_ckgate. sc01_mode_o and the
+# I-Mem clock mux (core/as_jtag/im_mode_o) are fixed per mode in the mode file.
 
 # Boundary scan (core/bscan, cc_bscan): transparent in both modes. EXTEST and
 # INTEST switch the pin and core-input muxes to the TCK-clocked update

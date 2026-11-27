@@ -16,9 +16,18 @@
 #   -b, --batch     no GUI (default: SimVision GUI)
 #   -r, --regress   all tests one after another, batch; summary in
 #                   build_gatesim/regression.txt
-#   -s, --sdf       annotate the Genus SDF (cc_chip_top_syn.sdf, slow corner)
-#                   and run the timing checks; default: functional, no
-#                   specify blocks (-nospecify)
+#   -s, --sdf       annotate the SDF and run the timing checks; default:
+#                   functional, no specify blocks (-nospecify).
+#                   Synthesis netlist: Genus SDF (cc_chip_top_syn.sdf, slow
+#                   corner). With -p: Tempus SDF with the Quantus
+#                   parasitics (build_sta/cc_chip_top_sta_func.sdf, for the
+#                   test 'scan' _sta_scan.sdf), max delays = slow corner
+#   -p, --postroute post-route netlist from Innovus
+#                   (build_innovus/cc_chip_top_routed.v, with the clock
+#                   tree) instead of the Genus netlist; results in
+#                   build_gatesim/postroute/
+#   -m, --min       with -p -s: min delays of the SDF (fast corner, hold
+#                   check) instead of the max delays (slow corner, setup)
 #   -u, --unit      unit delay instead of zero delay (-delay_mode unit), for
 #                   races in the clock mux/clock gate cells without SDF
 #   --rtl           reference run: the same testbench on the RTL of
@@ -44,7 +53,12 @@
 #                  optionally VLOG_DEFINES (template:
 #                  scripts/xh018_paths_template.tcl)
 #
-# Results in build_gatesim/<test>/ (xrun.log, error.txt, waves.shm).
+#   post-route (-p): build_innovus/cc_chip_top_routed.v, with -s
+#                  build_sta/cc_chip_top_sta_{func,scan}.sdf (scripts/sta);
+#                  the scan chain length still comes from build_genus/
+#
+# Results in build_gatesim/<test>/ (xrun.log, error.txt, waves.shm), with -p
+# in build_gatesim/postroute/<test>/.
 # Licenses: like xrun_single.sh, -licqueue waits for one of the 2 licenses.
 #
 # Exit code: 0 = test(s) ok, 1 = test failed, 2 = usage/tool error
@@ -62,10 +76,14 @@ TB_FILE="$PROJECT_ROOT/tb/gls/tb_gls_chip.sv"
 MODE="gui"
 REGRESS=0
 SDF=0
+POSTROUTE=0
+MTM="MAXIMUM"
 UNIT=0
 RTL=0
 SCANLEN=""
 NETDIR="$PROJECT_ROOT/build_genus"
+INNOVUS_ROOT="${INNOVUS_ROOT:-$PROJECT_ROOT/build_innovus}"
+STA_ROOT="${STA_ROOT:-$PROJECT_ROOT/build_sta}"
 WAVES=0
 TIMEOUT=1800
 CLEAN=0
@@ -86,6 +104,8 @@ while [ $# -gt 0 ]; do
     -b|--batch)   MODE="batch" ;;
     -r|--regress) REGRESS=1; MODE="batch" ;;
     -s|--sdf)     SDF=1 ;;
+    -p|--postroute) POSTROUTE=1 ;;
+    -m|--min)     MTM="MINIMUM" ;;
     -u|--unit)    UNIT=1 ;;
     --rtl)        RTL=1 ;;
     -L|--scanlen) shift; SCANLEN="${1:?--scanlen needs a value}" ;;
@@ -101,6 +121,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ "$POSTROUTE" -eq 1 ] && [ "$RTL" -eq 1 ]; then
+  echo "ERROR: --postroute and --rtl exclude each other" >&2; exit 2
+fi
+if [ "$MTM" = "MINIMUM" ] && { [ "$POSTROUTE" -eq 0 ] || [ "$SDF" -eq 0 ]; }; then
+  echo "ERROR: --min needs --postroute and --sdf (only the Tempus SDF has min delays)" >&2; exit 2
+fi
+[ "$POSTROUTE" -eq 1 ] && BUILD_ROOT="$BUILD_ROOT/postroute"
+
 [ "$CLEAN" -eq 1 ] && rm -rf "$BUILD_ROOT"
 mkdir -p "$BUILD_ROOT"
 
@@ -114,7 +142,9 @@ if [ "$REGRESS" -eq 1 ]; then
   done
   REPORT="$BUILD_ROOT/regression.txt"
   KIND="netlist"; [ "$RTL" -eq 1 ] && KIND="RTL reference"
+  [ "$POSTROUTE" -eq 1 ] && KIND="post-route netlist"
   [ "$SDF" -eq 1 ] && KIND="$KIND, SDF"
+  [ "$POSTROUTE" -eq 1 ] && [ "$SDF" -eq 1 ] && KIND="$KIND $MTM"
   echo "=== RV64I GATE-LEVEL REGRESSION ($KIND)  $(date '+%Y-%m-%d %H:%M') ===" > "$REPORT"
   NFAIL=0
   for t in $(list_tests); do
@@ -125,7 +155,7 @@ if [ "$REGRESS" -eq 1 ]; then
       printf 'PASS  %-20s %5ss\n' "$t" "$(( $(date +%s) - t0 ))" | tee -a "$REPORT"
     else
       printf 'FAIL  %-20s %5ss  -> %s\n' "$t" "$(( $(date +%s) - t0 ))" \
-        "build_gatesim/$t/run.log" | tee -a "$REPORT"
+        "${BUILD_ROOT#$PROJECT_ROOT/}/$t/run.log" | tee -a "$REPORT"
       NFAIL=$((NFAIL + 1))
     fi
   done
@@ -246,9 +276,15 @@ else
     echo "ERROR: XFAB_PATHS must point to the local X-FAB path file" >&2
     exit 2
   fi
-  NETLIST="$NETDIR/${DESIGN_TOP}_syn.v"
+  if [ "$POSTROUTE" -eq 1 ]; then
+    NETLIST="$INNOVUS_ROOT/${DESIGN_TOP}_routed.v"
+    HINT="./scripts/innovus/innovus_pnr.sh -b or ./scripts/quantus/quantus_rcx.sh"
+  else
+    NETLIST="$NETDIR/${DESIGN_TOP}_syn.v"
+    HINT="./scripts/genus/genus_syn.sh -b"
+  fi
   if [ ! -r "$NETLIST" ]; then
-    echo "ERROR: netlist $NETLIST not found (./scripts/genus/genus_syn.sh -b)" >&2
+    echo "ERROR: netlist $NETLIST not found ($HINT)" >&2
     exit 2
   fi
   mapfile -t MODELS < <(xfab_var VLOG_MODELS)
@@ -268,16 +304,22 @@ else
   done < <(xfab_var VLOG_DEFINES)
   KIND="netlist $NETLIST"
   if [ "$SDF" -eq 1 ]; then
-    SDF_FILE="$NETDIR/${DESIGN_TOP}_syn.sdf"
+    if [ "$POSTROUTE" -eq 0 ]; then
+      SDF_FILE="$NETDIR/${DESIGN_TOP}_syn.sdf"
+    elif [ "$TEST" = "scan" ]; then
+      SDF_FILE="$STA_ROOT/${DESIGN_TOP}_sta_scan.sdf"
+    else
+      SDF_FILE="$STA_ROOT/${DESIGN_TOP}_sta_func.sdf"
+    fi
     if [ ! -r "$SDF_FILE" ]; then echo "ERROR: $SDF_FILE not found" >&2; exit 2; fi
     cat > sdf.cmd <<EOF
 SDF_FILE    = "$SDF_FILE",
 SCOPE       = tb_gls.DUT,
-MTM_CONTROL = "MAXIMUM",
+MTM_CONTROL = "$MTM",
 LOG_FILE    = "sdf.log";
 EOF
     SIM_ARGS+=(-sdf_cmd_file sdf.cmd)
-    KIND="$KIND + SDF"
+    KIND="$KIND + SDF ($MTM)"
   else
     # Functional: no specify path delays and no timing checks
     SIM_ARGS+=(-nospecify)

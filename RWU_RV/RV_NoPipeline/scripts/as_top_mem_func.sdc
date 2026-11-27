@@ -6,4 +6,5 @@
 # (= clk_core in functional mode) and read in every cycle.
 #===============================================================================
 
+set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o]
 set_case_analysis 0 [get_pins core/as_jtag/im_mode_o]

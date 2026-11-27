@@ -2,7 +2,8 @@
 # 02_rv64_floorplan_pnr.tcl
 #
 # Innovus script: floorplan, pad-ring placement, standard-cell placement,
-# CTS and routing for cc_chip_top (X-FAB XH018).
+# CTS and routing for cc_chip_top (X-FAB XH018). Writes the routed netlist and
+# DEF for Quantus, Tempus and the post-route gate-level simulation.
 #
 # FIRST-PASS SMOKE TEST (spec section 4.1.3 / TECH-06 still open):
 #   - The 26 pad-ring cells are placed in plain netlist order around the
@@ -180,3 +181,8 @@ verify_connectivity -type all > ${DESIGN_TOP}_connectivity.rpt
 report_area                   > ${DESIGN_TOP}_final_area.rpt
 report_timing -max_paths 20   > ${DESIGN_TOP}_final_timing.rpt
 write_db ${DESIGN_TOP}_routed.db
+
+# ------------------------------------------------------------------------
+# 11. Hand-off to sign-off: routed netlist + DEF (02b_rv64_export.tcl)
+# ------------------------------------------------------------------------
+source [file join [file dirname [file normalize [info script]]] 02b_rv64_export.tcl]

@@ -113,6 +113,39 @@ Schritt 4: Gate-Level-Simulation (Abschnitt 3b, 04_DocuGateSim)
       ./scripts/gatesim/gatesim.sh -r                     (alle, ~62 Tests)
       ./scripts/gatesim/gatesim.sh -r -s                  (alle, mit SDF)
 
+Schritt 5: RC-Extraktion (Quantus, Abschnitt 3c, 05_DokuSTA)
+  $XFAB_PATHS: QRC_MAX/_TYP/_MIN muessen auf die qrcTechFile-Dateien
+  zeigen (stehen schon drin, Genus/Innovus nutzen sie). Neu und optional:
+    QRC_LAYERMAP   Paare "LEF-Layer" "QRC-Layer", nur falls die Layer-
+                   namen im Technologie-LEF und im qrcTechFile verschieden
+                   sind (Quantus meldet dann unbekannte Layer); sonst leer
+  Innovus vor dem 27.11.2026 gelaufen: Netzliste und DEF fehlen noch, das
+  Skript schreibt sie selbst aus cc_chip_top_routed.db (kein neuer P&R-Lauf).
+
+      ./scripts/quantus/quantus_rcx.sh            (Quantus standalone)
+      ./scripts/quantus/quantus_rcx.sh -i         (Alternative: Quantus-
+                                                   Engine in Innovus)
+  Pruefen: drei SPEF-Dateien cc_chip_top_rc_{max,typ,min}.spef, Netzzahl
+  plausibel (alle drei gleich), keine ERROR im Log. Schlaegt der
+  Standalone-Lauf fehl (CCL-Syntax, Layer-Mapping -- VERIFY-LAB), mit -i
+  weitermachen und den Fehler notieren.
+
+Schritt 6: Sign-off-STA (Tempus)
+
+      ./scripts/sta/sta.sh -b       (batch: Worst Slack pro View)
+      ./scripts/sta/sta.sh          (Tempus-Shell bleibt offen)
+  Pruefen: build_sta/sta_check_timing.rpt (keine unbeschraenkten
+  Endpunkte ausser den bekannten: Reset, asynchrone Pins), Hold in allen
+  Views >= 0 (Pflicht, vor allem av_scan_fast = Scan-Shift), Setup in
+  av_slow/av_jtag_slow >= 0. Setup in av_scan_slow < 0 begrenzt nur den
+  TCK im SCANTEST (Capture langsamer takten), kein Fehler am Chip.
+  sta_violators.rpt: max_transition/max_capacitance (DRV) ansehen.
+
+Schritt 7: Post-Route-Gate-Level-Simulation mit Tempus-SDF
+
+      ./scripts/gatesim/gatesim.sh -r -p -s       (Slow-Corner, Setup)
+      ./scripts/gatesim/gatesim.sh -r -p -s -m    (Fast-Corner, Hold)
+
 Mit Claude im Labor
   Claude kann die Schritte ausfuehren und die Logs/Reports auswerten. Dazu
   Claude auf diesen Abschnitt hinweisen ("README_XFAB.txt, Abschnitt 1a").
@@ -121,8 +154,9 @@ Mit Claude im Labor
   und Dateinamen ausschliesslich in die lokale $XFAB_PATHS-Datei ein;
   Auszuege hoechstens in ein temporaeres Verzeichnis ausserhalb des
   Repositorys. Vor einem Commit "git status" pruefen: build_genus/,
-  build_innovus/, build_gatesim/ und build_xcelium/ sind gesperrt
-  (.gitignore), Netzliste und SDF enthalten X-FAB-Zellnamen.
+  build_innovus/, build_quantus/, build_sta/, build_gatesim/ und
+  build_xcelium/ sind gesperrt (.gitignore), Netzliste, SPEF und SDF
+  enthalten X-FAB-Zellnamen.
 
 
 --------------------------------------------------------------------------------
@@ -258,6 +292,38 @@ build_gatesim/<test>/:
     Layout, Slow-Corner) und Timing-Checks. Bei Races an den Taktzellen
     ohne SDF: -u (Unit Delay).
   - Ausfuehrliche Anleitung: 04_DocuGateSim/DocuGateSim.pdf
+
+
+--------------------------------------------------------------------------------
+3c. Sign-off-Timing: RC-Extraktion (Quantus) und STA (Tempus)
+--------------------------------------------------------------------------------
+
+Aus RWU_RV/RV_NoPipeline, nach Place & Route (build_innovus/):
+
+    ./scripts/quantus/quantus_rcx.sh [-i]    -> build_quantus/*.spef
+    ./scripts/sta/sta.sh [-b] [--no-si]      -> build_sta/sta_*.rpt, *.sdf
+    ./scripts/gatesim/gatesim.sh -r -p -s [-m]   (Post-Route-GLS)
+
+  Ausfuehrliche Anleitung: 05_DokuSTA/DokuSTA.pdf
+
+  - Reihenfolge: erst Extraktion, dann STA. Tempus rechnet die Leitungs-
+    verzoegerungen nicht selbst, es liest die RC-Werte aus der SPEF.
+  - Innovus schreibt am Ende cc_chip_top_routed.v (Netzliste mit Clock-
+    Tree, ohne Filler) und cc_chip_top_routed.def (02b_rv64_export.tcl).
+  - Quantus: 03a_rv64_quantus.tcl erzeugt im Build-Verzeichnis die CCL-
+    Datei, lib.defs und qrc/rc_{max,typ,min}/ (Links auf die X-FAB-
+    qrcTechFiles); die Corner heissen damit wie die RC-Corner in
+    xh018_mmmc.tcl. -i: 03a_rv64_rcx_innovus.tcl, Quantus-Engine in
+    Innovus (effort signoff), gleiche SPEF-Namen.
+  - Tempus: 03b_rv64_sta.tcl mit xh018_mmmc_sta.tcl = xh018_mmmc.tcl plus
+    Constraint-Modus scan (as_top_mem_scan.sdc, nur fuer die STA, Genus
+    optimiert nicht darauf). OCV + CPPR, SI (Crosstalk) an.
+    Setup: av_slow av_typ av_jtag_slow av_scan_slow
+    Hold:  av_fast av_jtag_fast av_scan_fast
+  - SDF fuer die GLS: cc_chip_top_sta_func.sdf und _sta_scan.sdf
+    (min = Fast-, max = Slow-Corner).
+  - Noch nie mit echtem Quantus/Tempus gelaufen: VERIFY-LAB-Punkte in den
+    Skripten und in 05_DokuSTA.
 
 
 --------------------------------------------------------------------------------
@@ -587,18 +653,63 @@ Erledigt:
   JTAG     TDO-Enable einen Takt zu spaet (erstes Bit jedes Scans am Pin
            verloren) -- korrigiert 27.11.2026, gefunden mit der Pin-
            Testbench der Gate-Level-Simulation
-  Gate-Level-Simulation vorbereitet (scripts/gatesim, 04_DocuGateSim),
-  RTL-Referenz gelaufen; Netzliste im Labor offen
+  Gate-Level-Simulation (scripts/gatesim, 04_DocuGateSim), im Labor mit
+  der Netzliste gelaufen
+  Sign-off-Timing vorbereitet: Quantus + Tempus (scripts/quantus,
+  scripts/sta, 05_DokuSTA), Constraint-Modus scan; im Labor offen
 
 Offen:
   TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
            ca. 0,8 mm^2)
   TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
-  Power-Ring/-Stripes, DRC/Antenna bereinigen, Gate-Level-Simulation
-  der Netzliste, Scan-Reorder in Innovus, ATPG, SRAM-BIST, Signoff
-  (Abschnitt 5, Schritte 5-10)
+  Power-Ring/-Stripes, DRC/Antenna bereinigen, Scan-Reorder in Innovus,
+  ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7), DRC/LVS/ERC
+  (Pegasus o. a., je nach Runsets im PDK), formale Aequivalenz (Conformal
+  LEC)
 
+AS:
+RTL Simulation ist gemacht (xrun), Synthese mit scanpath insertion ist gemacht (genus), place&route ist genacht (innovus), gatelevel simulation ist gemacht (xrun).
+ihenfolge und Tools
+
+┌───────────────────┬────────────────────────────────┬─────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│      Schritt      │          Cadence-Tool          │                 Eingabe                 │                                                  Zweck                                                  │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 1. RC-Extraktion  │ Quantus                        │ DEF aus Innovus und die                 │ Erzeugt die SPEF mit den echten Leitungs-RCs.                                                           │
+│                   │                                │ Technologiedatei aus dem PDK            │                                                                                                         │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 2. STA            │ Tempus                         │ Netzliste, SPEF, Liberty aller Corner   │ Signoff für Setup und Hold. Laufen müssen der Funktionsmodus und der Scanmodus (SCANTEST, TCK) sowie    │
+│                   │                                │ (ss/tt/ff) und die SDC                  │ der JTAG-Takt. Danach gibt Tempus die Signoff-SDF für die Gate-Level-Simulation aus.                    │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 3. Formale        │ Conformal LEC                  │ RTL, die Genus-Netzliste und die        │ Siehe unten.                                                                                            │
+│ Äquivalenz        │                                │ Innovus-Netzliste                       │                                                                                                         │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 4. GDS-Merge      │ Innovus streamOut oder         │ Die GDS der Standardzellen, der         │ Fügt alles zum Chip-GDS zusammen.                                                                       │
+│                   │ Virtuoso                       │ IO-Zellen und der SPRAM-Makros          │                                                                                                         │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 5. DRC, LVS, ERC  │ Pegasus, alternativ Calibre    │ Die Regeldateien (Runsets) aus dem      │ Das ERC steckt meist mit im LVS-Runset. Für das LVS braucht man eine Netzliste mit Power-Pins und       │
+│                   │ (Siemens) oder Assura          │ X-FAB-PDK                               │ physischen Zellen (Innovus saveNetlist mit Power-Pins und Physical Cells).                              │
+├───────────────────┼────────────────────────────────┼─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ optional          │ Voltus                         │                                         │ IR-Drop, Elektromigration, Leistung                                                                     │
+└───────────────────┴────────────────────────────────┴─────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Welches Tool du für DRC und LVS nimmst, entscheidet das PDK, nicht die Cadence-Lizenz. X-FAB liefert die Regeldateien nicht für jedes Tool. Prüf im Labor zuerst, welche Runsets im PDK-Verzeichnis liegen (Pegasus, PVS, Assura oder Calibre), und dann mit which quantus tempus lec pegasus voltus, welche Tools installiert sind. Das Europractice-Paket enthält diese Tools in der Regel. Für das LVS musst du die SPRAM-Makros als Black Box behandeln oder deren CDL vom SRAM-Compiler einbinden.
+
+Formale Verifikation ohne Jasper
+
+1. Äquivalenzprüfung mit Conformal LEC (Empfehlung)
+
+Conformal LEC ist ein eigenes Cadence-Tool und hat mit Jasper nichts zu tun. Das ist die formale Prüfung, die im Signoff wirklich gebraucht wird.
+- Geprüft wird RTL gegen die Genus-Netzliste und die Genus-Netzliste gegen die Innovus-Netzliste. Damit ist bewiesen, dass Synthese, Scan-Insertion, CTS und Optimierung die Funktion nicht verändert haben.
+- Genus schreibt dir mit write_do_lec das passende Dofile.
+- Wegen der Scan-Insertion muss im Funktionsvergleich der Scanmodus abgeschaltet sein: SCANTEST aus und das Scan-Enable auf 0 per Pin-Constraint. Sonst meldet LEC Unterschiede an den Scan-Flipflops.
+
+2. Eigenschaftsprüfung (Model Checking) mit Open Source
+
+Das ersetzt Jasper für Ausbildungszwecke recht gut:
+- SymbiYosys (Yosys mit SMT-Solvern wie Boolector oder Yices) prüft SVA-Properties (assert, assume, cover) per Bounded Model Checking oder vollständigem Beweis. Für SystemVerilog brauchst du das Plugin yosys-slang oder vorher sv2v, weil der eingebaute Yosys-Parser nur einen Teil von SV versteht.
+- Gut geeignet sind kleine Blöcke: das TAP-FSM gegen IEEE 1149.1, der Speicher-Arbiter (keine zwei Grants gleichzeitig), FIFO, UART und CGU.
+- riscv-formal (YosysHQ) prüft den ganzen RV64I-Kern formal gegen die ISA. Dafür muss der Kern die RVFI-Schnittstelle bekommen, einen Trace-Port nur für die Verifikation. Das ist mehr Aufwand, aber für einen eigenen RISC-V-Kern der eigentliche Gewinn. Gerade die Pipeline-Variante B mit Forwarding und Hazards hat genau die Fehler, die Simulation leicht übersieht.
 
 ================================================================================
  Kontakt

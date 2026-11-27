@@ -13,4 +13,5 @@
 # groups in as_top_mem.sdc; the core is in reset during loading.
 #===============================================================================
 
+set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o]
 set_case_analysis 1 [get_pins core/as_jtag/im_mode_o]
