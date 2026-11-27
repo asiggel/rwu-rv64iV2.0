@@ -84,6 +84,7 @@ if [ ! -f "$ASM_FILE" ]; then
   exit 2
 fi
 
+# Tests if xrun and cmake is installed
 for tool in xrun cmake; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "ERROR: '$tool' not in PATH (Cadence environment loaded?)" >&2
