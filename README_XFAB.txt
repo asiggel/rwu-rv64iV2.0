@@ -66,6 +66,21 @@ Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
                                   IO_CELLS_3V, I-Mem-Makro, D-Mem-Makro
     VLOG_DEFINES                  Defines, die die Zellmodelle brauchen
                                   (z. B. funktionales Modell), sonst leer
+  Neu fuer Power-Grid, Filler und GDS (Innovus, 02a/02c):
+    CORE_FILLERS                  Filler der D_CELLS_HD (breiteste zuerst)
+    PG_PINS_VDD/_GND              Supply-Pin-Namen ALLER Zellen am Core-
+                                  Netz: Standardzellen, Kernseite der
+                                  IO-Zellen, SPRAM-Makros
+    PG_PINS_VDDO/_GNDO            Supply-Pins der IO-Seite der IO-Zellen
+    PG_LAYER_H, PG_LAYER_V        Metall fuer die waagrechten Ringseiten
+                                  (z. B. 3. Metall) und Top-Metall
+                                  (senkrechte Ringseiten + Stripes)
+    WELLTAP_CELL/_INTERVAL,       nur wenn die Bibliothek Well-Taps/
+    ENDCAP_CELL                   Endcaps verlangt (Databook), sonst ""
+    STREAM_MAP                    Innovus-Stream-Layer-Map aus dem PDK
+    GDS_FILES                     GDS der D_CELLS_HD, IO_CELLS_3V und der
+                                  beiden SPRAM-Makros
+    GDS_UNIT                      Datenbankeinheiten pro um (meist 1000)
 
   Wo man die Namen findet (Pfade aus LIBS_TYP / LEF_FILES der Datei):
     ICG       Liberty: Zelle mit  clock_gating_integrated_cell : "latch_posedge..."
@@ -80,6 +95,15 @@ Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
                 grep -n -B2 'CLASS PAD\|CLASS ENDCAP\|CORNER' <io_cells.lef>
     VLOG_*    im PDK-Baum der Zellbibliotheken, meist .../verilog/*.v;
               die SPRAM-Modelle liegen im Memory-Compiler-Paket
+    PG_PINS_* LEF: Pins mit USE POWER / USE GROUND
+                grep -n -B3 'USE POWER\|USE GROUND' <std_cells.lef> <io_cells.lef> <imem.lef>
+    PG_LAYER_* Technologie-LEF: LAYER ... TYPE ROUTING, Reihenfolge
+    CORE_FILLERS  LEF der Standardzellen: CLASS CORE SPACER
+    STREAM_MAP, GDS_FILES  PDK-Baum: .../gds/*.gds, Stream-Map im
+              Innovus-/Encounter-Techfile-Verzeichnis (*.map, *streamOut*)
+    DRC/LVS   gleich mitnotieren: welche Runsets liegen im PDK
+              (Pegasus, PVS, Calibre, Assura)? Bestimmt das Tool fuer
+              den naechsten Schritt.
 
 Schritt 2: Synthese mit Scan-Insertion (DFT-01, Boundary Scan DFT-02)
 
@@ -98,11 +122,24 @@ Schritt 2: Synthese mit Scan-Insertion (DFT-01, Boundary Scan DFT-02)
       erwartet (Observe-only-Zelle, CLAUDE.md Regel 8, Ausnahme)
     - Timing-Reports pro View: Worst Slack >= 0
 
-Schritt 3: Place & Route (wie bisher)
+Schritt 3: Place & Route mit Power-Grid, Core-Fillern und GDS
 
-      ./scripts/innovus/innovus_pnr.sh -b -c
+      ./scripts/innovus/innovus_pnr.sh -b -s fp -c   (erst nur Floorplan)
+      ./scripts/innovus/innovus_pnr.sh -o fp         (ansehen)
+      ./scripts/innovus/innovus_pnr.sh -b -c         (alles bis GDS)
 
-  Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01).
+  Pruefen:
+    - run.log: "AS-pnr: die bbox" = 0 0 2600 2600 (der zusaetzliche
+      Rand von 35 um fuer den Power-Ring darf den Die nicht vergroessern),
+      Lage der SPRAM-Makros ("AS-pnr: I-Mem ... at")
+    - GUI (-o fp): Core-Ring, Stripes, Rails; Makros mit Halo; die
+      Supply-Pads mit dem Ring verbunden
+    - cc_chip_top_pg_connectivity.rpt: keine Opens auf VDD/GND
+    - DRC-/Antenna-Zahl gegen den Smoke-Test (2630/159) vergleichen
+    - cc_chip_top_gds.rpt: "missing: 0" (sonst fehlt eine GDS-Datei)
+  Danach Schritte 5-8 (Quantus, Tempus, GLS, LEC) auf dem neuen Layout.
+  Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01),
+  Post-Route-Optimierung.
 
 Schritt 4: Gate-Level-Simulation (Abschnitt 3b, 04_DocuGateSim)
 
@@ -262,16 +299,21 @@ Im selben Run-Verzeichnis wie Genus:
   Einfacher (aus RWU_RV/RV_NoPipeline, Ergebnisse in build_innovus/):
 
     ./scripts/innovus/innovus_pnr.sh            (ganzer Flow in der GUI)
-    ./scripts/innovus/innovus_pnr.sh -s place   (Stopp nach fp/place/cts)
+    ./scripts/innovus/innovus_pnr.sh -s place   (Stopp nach fp/place/cts/route)
     ./scripts/innovus/innovus_pnr.sh -o route   (Checkpoint nur ansehen)
     ./scripts/innovus/innovus_pnr.sh -b         (batch, mit DRC/Antenna)
 
   Ausfuehrliche Anleitung: 03_DokuINNOVUS/DokuINNOVUS.pdf
 
   Ablauf: read_db innovus/cc_chip_top.db -> Floorplan (Die 2600x2600 um,
-  Core 2086x2086 um, IO-Ring 257 um) -> Pad-Ring (26 Pads, Eckzellen,
-  IO-Filler) -> place_design -> ccopt_design -> routeDesign.
+  Core 2016x2016 um, 35 um Rand fuer den Power-Ring, IO-Ring 257 um) ->
+  Pad-Ring (26 Pads, Eckzellen, IO-Filler) -> SPRAM-Makros fest platziert
+  -> Power-Grid (02a_rv64_power.tcl: Global Connect, Core-Ring, Stripes,
+  route_special) -> place_design -> ccopt_design -> routeDesign ->
+  Core-Filler -> Netzlisten/DEF (02b) -> GDS mit Merge (02c).
   Checkpoints: cc_chip_top_fp.db, _placed.db, _cts.db, _routed.db
+  Uebergabe: _routed.v, _routed.def, _lvs.v (mit Supply-Ports und
+  Physical-only-Zellen), cc_chip_top.gds
 
   Erster Durchlauf (24.11.2026, reiner Smoke-Test, damals noch mit
   Innovus 23.33 -- mit Release 2026/27 zu wiederholen): 0 Connectivity-
@@ -704,7 +746,8 @@ Offen:
            ca. 0,8 mm^2)
   TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
-  Power-Ring/-Stripes, DRC/Antenna bereinigen, Scan-Reorder in Innovus,
+  Power-Grid/Filler/GDS im Labor laufen lassen (Abschnitt 1a, Schritt 3),
+  DRC/Antenna bereinigen, Post-Route-Optimierung, Scan-Reorder in Innovus,
   ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7), DRC/LVS/ERC
   (Pegasus o. a., je nach Runsets im PDK), LEC-Lauf (Abschnitt 1a,
   Schritt 8)

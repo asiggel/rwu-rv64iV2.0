@@ -10,11 +10,12 @@
 #   -b, --batch       no GUI: run the flow, check DRC/antenna/connectivity,
 #                     print a summary, exit (default: GUI, the window stays
 #                     open after the flow)
-#   -s, --stop STAGE  stop after STAGE: fp | place | cts | route (default)
-#                       fp     floorplan + pad ring
+#   -s, --stop STAGE  stop after STAGE: fp | place | cts | route | gds (default)
+#                       fp     floorplan, pad ring, SRAM macros, power grid
 #                       place  standard cells placed
 #                       cts    clock tree built
-#                       route  all wires routed
+#                       route  all wires routed, core fillers, netlists
+#                       gds    merged GDS for DRC/LVS
 #   -o, --open STAGE  do not run anything: open the checkpoint of STAGE in
 #                     the GUI (needs an earlier run up to that stage)
 #   -c, --clean       delete build_innovus/ before starting
@@ -25,13 +26,15 @@
 #   2. run ../02_rv64_floorplan_pnr.tcl up to STAGE (batch or GUI)
 #   3. after routing: DRC, antenna check, connectivity -> reports
 #   4. batch: evaluate errors, checkpoints, timing, violation counts,
-#      hand-off cc_chip_top_routed.v / .def for scripts/quantus, scripts/sta
+#      hand-off cc_chip_top_routed.v / .def / _lvs.v (scripts/quantus,
+#      scripts/sta, LVS), with gds: cc_chip_top.gds
 #
 # Run scripts/genus/genus_syn.sh first. All results go to build_innovus/.
 #
 # Before running:
 #   XFAB_PATHS = local X-FAB path file (NDA, never in git); the flow takes
-#                the pad, corner and filler cell names from it
+#                the pad, corner, filler and macro cell names, the supply
+#                pins and layers of the power grid and the GDS files from it
 #
 # Exit code: 0 = flow ran through, 1 = Innovus error / missing checkpoint,
 #            2 = usage / environment error
@@ -50,7 +53,7 @@ GENUS_ROOT="${GENUS_ROOT:-$PROJECT_ROOT/build_genus}"
 DESIGN_TOP=cc_chip_top
 
 MODE="gui"
-STAGE="route"
+STAGE="gds"
 OPEN_STAGE=""
 CLEAN=0
 
@@ -63,6 +66,7 @@ checkpoint() {
     place) echo "${DESIGN_TOP}_placed.db" ;;
     cts)   echo "${DESIGN_TOP}_cts.db" ;;
     route) echo "${DESIGN_TOP}_routed.db" ;;
+    gds)   echo "${DESIGN_TOP}_routed.db" ;;
     *)     return 1 ;;
   esac
 }
@@ -80,11 +84,11 @@ while [ $# -gt 0 ]; do
 done
 
 if ! checkpoint "$STAGE" >/dev/null; then
-  echo "ERROR: unknown stage '$STAGE' (fp | place | cts | route)" >&2; exit 2
+  echo "ERROR: unknown stage '$STAGE' (fp | place | cts | route | gds)" >&2; exit 2
 fi
 if [ -n "$OPEN_STAGE" ]; then
   if ! checkpoint "$OPEN_STAGE" >/dev/null; then
-    echo "ERROR: unknown stage '$OPEN_STAGE' (fp | place | cts | route)" >&2; exit 2
+    echo "ERROR: unknown stage '$OPEN_STAGE' (fp | place | cts | route | gds)" >&2; exit 2
   fi
   if [ "$MODE" = "batch" ] || [ "$CLEAN" -eq 1 ]; then
     echo "ERROR: --open only views an existing checkpoint (no --batch, --clean)" >&2
@@ -139,7 +143,7 @@ ln -sfn "$GENUS_ROOT/innovus" innovus
 # Checkpoints and reports of this stage and all later ones are stale now
 # (write_db writes a directory per checkpoint)
 rm -rf "${DESIGN_TOP}"_{fp,placed,cts,routed}.db "${DESIGN_TOP}"_*.rpt \
-       "${DESIGN_TOP}"_routed.{v,def}
+       "${DESIGN_TOP}"_routed.{v,def} "${DESIGN_TOP}"_lvs.v "${DESIGN_TOP}".gds
 
 # ------------------------------------------------------------------------
 # 2./3. Generated run script: flow up to STAGE, checks after routing
@@ -147,7 +151,7 @@ rm -rf "${DESIGN_TOP}"_{fp,placed,cts,routed}.db "${DESIGN_TOP}"_*.rpt \
 {
   echo "set STOP_AFTER $STAGE"
   echo "source $TCL_DIR/02_rv64_floorplan_pnr.tcl"
-  if [ "$STAGE" = "route" ]; then
+  if [ "$STAGE" = "route" ] || [ "$STAGE" = "gds" ]; then
     cat <<EOF
 # Physical checks after routing. catch: a missing check must not hide the
 # result of the flow itself.
@@ -195,21 +199,31 @@ fi
 
 case "$STAGE" in
   cts)   TIMING="${DESIGN_TOP}_cts_timing.rpt" ;;
-  route) TIMING="${DESIGN_TOP}_final_timing.rpt" ;;
+  route|gds) TIMING="${DESIGN_TOP}_final_timing.rpt" ;;
   *)     TIMING="" ;;
 esac
 if [ -n "$TIMING" ]; then
   slack="$(grep -iE 'slack' "$TIMING" 2>/dev/null | head -1 | sed 's/^ *//')"
   echo "  worst setup slack: ${slack:-no slack line found in $TIMING}"
 fi
-if [ "$STAGE" = "route" ]; then
-  for f in "${DESIGN_TOP}_routed.v" "${DESIGN_TOP}_routed.def"; do
+if [ "$STAGE" = "route" ] || [ "$STAGE" = "gds" ]; then
+  for f in "${DESIGN_TOP}_routed.v" "${DESIGN_TOP}_routed.def" "${DESIGN_TOP}_lvs.v"; do
     if [ -s "$f" ]; then echo "  hand-off:     $f"; else echo "  hand-off:     $f missing"; RC=1; fi
   done
-  for r in drc antenna connectivity; do
+  for r in drc antenna connectivity pg_connectivity; do
     line="$(grep -iE 'total|violation' "${DESIGN_TOP}_$r.rpt" 2>/dev/null | tail -1 | sed 's/^ *//')"
-    printf '  %-13s %s\n' "$r:" "${line:-see ${DESIGN_TOP}_$r.rpt}"
+    printf '  %-17s %s\n' "$r:" "${line:-see ${DESIGN_TOP}_$r.rpt}"
   done
+fi
+if [ "$STAGE" = "gds" ]; then
+  if [ -s "${DESIGN_TOP}.gds" ]; then
+    echo "  GDS:              ${DESIGN_TOP}.gds ($(du -h "${DESIGN_TOP}.gds" | cut -f1))"
+    echo "  GDS merge:        $(tail -1 "${DESIGN_TOP}_gds.rpt" 2>/dev/null)"
+    grep -q '^missing' "${DESIGN_TOP}_gds.rpt" 2>/dev/null && RC=1
+  else
+    echo "  GDS:              ${DESIGN_TOP}.gds missing"
+    RC=1
+  fi
 fi
 echo "--- reports: $BUILD_ROOT/${DESIGN_TOP}_*.rpt, log: $BUILD_ROOT/run.log"
 echo "--- view a stage: ./scripts/innovus/innovus_pnr.sh --open $STAGE"

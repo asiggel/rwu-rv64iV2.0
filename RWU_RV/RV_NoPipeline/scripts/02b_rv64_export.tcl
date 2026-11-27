@@ -10,9 +10,14 @@
 #                           post-route gate-level simulation
 #   cc_chip_top_routed.def  floorplan, netlist and routing: Quantus extracts
 #                           the parasitics from it
+#   cc_chip_top_lvs.v       netlist for LVS: with supply ports and the
+#                           physical-only cells (fillers, corners, taps), so
+#                           that it matches the layout device by device
 #===============================================================================
 
 set DESIGN_TOP cc_chip_top
 
 write_netlist ${DESIGN_TOP}_routed.v
 write_def -floorplan -netlist -routing ${DESIGN_TOP}_routed.def
+# VERIFY-LAB: option names in Innovus 26.1
+write_netlist -include_pg_ports -include_phys_insts ${DESIGN_TOP}_lvs.v

@@ -128,12 +128,14 @@
     \cmd{*\_drc.rpt}               & design rule violations (spacing, width, \dots)\\[1pt]
     \cmd{*\_antenna.rpt}           & antenna violations\\[1pt]
     \cmd{*\_connectivity.rpt}      & open or shorted nets\\[1pt]
-    \cmd{*\_summary.rpt}           & cell count, area, wire length per layer\\
+    \cmd{*\_summary.rpt}           & cell count, area, wire length per layer\\[1pt]
+    \cmd{\_routed.v}, \cmd{\_routed.def} & hand-off to Quantus, Tempus, GLS, LEC\\[1pt]
+    \cmd{\_lvs.v}, \cmd{cc\_chip\_top.gds} & hand-off to DRC/LVS\\
   \end{tabularx}
   \vspace{4pt}
   \begin{itemize}
-    \item Not yet in the flow: power ring/stripes, GDSII export, signoff
-      (DRC/LVS with the X-FAB rule deck)
+    \item Not yet in the flow: post-route optimization, signoff DRC/LVS
+      with the X-FAB rule deck
   \end{itemize}
 \end{block}
 \end{frame}
@@ -145,7 +147,8 @@
   \footnotesize
   \begin{tabularx}{\linewidth}{@{}lY@{}}
     die              & 2600\,$\times$\,2600\,\textmu m\\[2pt]
-    core             & 2086\,$\times$\,2086\,\textmu m\\[2pt]
+    core             & 2016\,$\times$\,2016\,\textmu m (rows), 35\,\textmu m
+                       to the IO ring for the power ring\\[2pt]
     IO ring          & 257\,\textmu m deep (= height of a pad cell), all four sides\\[2pt]
     pads             & 26: inputs, outputs, bidirectional (GPIO), supply\\[2pt]
     corners          & 4 corner cells, gaps closed with IO filler cells\\[2pt]
@@ -230,6 +233,8 @@ lmstat -c $CDS_LIC_FILE -a | grep -i innovus
     \cmd{scripts/innovus/innovus\_pnr.sh}   & P\&R with GUI (default) or batch,
                                               step by step, view checkpoints\\[2pt]
     \cmd{scripts/02\_rv64\_floorplan\_pnr.tcl} & the Innovus flow itself\\[2pt]
+    \cmd{scripts/02a/b/c\_rv64\_*.tcl}     & macros + power grid, hand-off
+                                              netlists, merged GDS (sourced)\\[2pt]
     \cmd{scripts/xh018\_mmmc.tcl}           & corners and views (came with the Genus DB)\\[2pt]
     \cmd{build\_genus/innovus/}             & input: hand-off from Genus\\[2pt]
     \cmd{build\_innovus/}                   & all results\\
@@ -264,7 +269,7 @@ cd RWU_RV/RV_NoPipeline
 \end{lstlisting}
 % VERIFY-LAB: replace with the output of a real run
 \begin{lstlisting}[style=out]
-=== [innovus] 1/3 run 02_rv64_floorplan_pnr.tcl up to 'route' (batch) ...
+=== [innovus] 1/3 run 02_rv64_floorplan_pnr.tcl up to 'gds' (batch) ...
 === [innovus] 2/3 checkpoints
   fp: cc_chip_top_fp.db
   place: cc_chip_top_placed.db
@@ -272,16 +277,18 @@ cd RWU_RV/RV_NoPipeline
   route: cc_chip_top_routed.db
 === [innovus] 3/3 result
   worst setup slack: ...
-  drc:          ...
-  antenna:      ...
-  connectivity: ...
-PASS  place & route of cc_chip_top up to 'route'
+  hand-off:     cc_chip_top_routed.v / _routed.def / _lvs.v
+  drc:              ...
+  antenna:          ...
+  connectivity:     ...
+  pg_connectivity:  ...
+  GDS:              cc_chip_top.gds (...)
+  GDS merge:        cells used: ..., missing: 0
+PASS  place & route of cc_chip_top up to 'gds'
 \end{lstlisting}
   \begin{itemize}
-    \item Exit code: \cmd{0} = flow ran through, \cmd{1} = Innovus error or
-      missing checkpoint, \cmd{2} = wrong call / environment
-    \item PASS means: all stages ran. DRC and antenna violations are
-      reported, not judged: read the numbers!
+    \item PASS = all stages ran (exit code 0). DRC and antenna violations
+      are reported, not judged: read the numbers!
   \end{itemize}
 \end{block}
 \end{frame}
@@ -294,7 +301,8 @@ PASS  place & route of cc_chip_top up to 'route'
   \begin{tabularx}{\linewidth}{@{}lY@{}}
     \cmd{-b}, \cmd{-{}-batch}        & no GUI (default: Innovus GUI)\\[2pt]
     \cmd{-s}, \cmd{-{}-stop STAGE}   & stop after \cmd{fp}, \cmd{place},
-                                       \cmd{cts} or \cmd{route} (default)\\[2pt]
+                                       \cmd{cts}, \cmd{route} or \cmd{gds}
+                                       (default)\\[2pt]
     \cmd{-o}, \cmd{-{}-open STAGE}   & run nothing, open the checkpoint of
                                        \cmd{STAGE} in the GUI\\[2pt]
     \cmd{-c}, \cmd{-{}-clean}        & delete \cmd{build\_innovus/} first\\[2pt]
@@ -321,14 +329,18 @@ PASS  place & route of cc_chip_top up to 'route'
     \cmd{run.tcl}                              & generated: \cmd{STOP\_AFTER}, \cmd{source} the flow,
                                                  checks, \cmd{exit} (batch)\\[1pt]
     \cmd{run.log}, \cmd{run.logv}, \cmd{run.cmd} & log, verbose log, commands\\[1pt]
-    \cmd{cc\_chip\_top\_fp.db}                 & checkpoint: floorplan + pad ring\\[1pt]
+    \cmd{cc\_chip\_top\_fp.db}                 & checkpoint: floorplan, pad ring,
+                                                 macros, power grid\\[1pt]
     \cmd{cc\_chip\_top\_placed.db}             & checkpoint: placed\\[1pt]
     \cmd{cc\_chip\_top\_cts.db}                & checkpoint: clock tree\\[1pt]
     \cmd{cc\_chip\_top\_routed.db}             & checkpoint: routed\\[1pt]
     \cmd{*\_fp\_summary.rpt}, \cmd{*\_route\_summary.rpt} & design summary\\[1pt]
     \cmd{*\_placed\_area.rpt}, \cmd{*\_final\_area.rpt}   & area\\[1pt]
     \cmd{*\_cts\_timing.rpt}, \cmd{*\_final\_timing.rpt}  & worst paths\\[1pt]
-    \cmd{*\_drc.rpt}, \cmd{*\_antenna.rpt}, \cmd{*\_connectivity.rpt} & physical checks\\
+    \cmd{*\_drc.rpt}, \cmd{*\_antenna.rpt}, \cmd{*\_connectivity.rpt} & physical checks\\[1pt]
+    \cmd{*\_pg\_connectivity.rpt}             & power grid after \cmd{route\_special}\\[1pt]
+    \cmd{*\_routed.v/.def}, \cmd{*\_lvs.v}     & hand-off netlists, layout\\[1pt]
+    \cmd{cc\_chip\_top.gds}, \cmd{*\_gds.rpt}  & merged GDS, cells missing in the merge\\
   \end{tabularx}
 \end{block}
 \end{frame}
@@ -354,8 +366,8 @@ PASS  place & route of cc_chip_top up to 'route'
       \item connectivity clean, setup met, routing complete
       \item about 2630 DRC and 159 antenna violations
     \end{itemize}
-    \item Expected: no power ring and stripes yet, pad order not yet checked
-      against the IO databook (TECH-06). That is the next work
+    \item That run had no power grid and no core fillers (added since,
+      not yet run); the pad order is still unchecked (TECH-06)
   \end{itemize}
 \end{block}
 \end{frame}
@@ -529,7 +541,8 @@ innovus -batch -files run.tcl -log run -overwrite < /dev/null
   \footnotesize
 \begin{lstlisting}[style=sh]
 read_db innovus/${DESIGN_TOP}.db
-floorPlan -site $CORE_SITE -s 2086.0 2086.0 0 0 0 0
+set CORE_SIZE [expr {2600 - 2*257 - 2*35}]      ;# 2016 um
+floorPlan -site $CORE_SITE -s $CORE_SIZE $CORE_SIZE 35 35 35 35
 \end{lstlisting}
   \begin{itemize}
     \item \cmd{-site}: the row type of the high-density standard cells
@@ -539,7 +552,8 @@ floorPlan -site $CORE_SITE -s 2086.0 2086.0 0 0 0 0
     \item Result: die 2600\,$\times$\,2600\,\textmu m with standard-cell rows
       in the core
     \item Found by trying: margin 0 gives a core box from 257 to 2343\,\textmu m.
-      Such things belong into a comment in the script
+      The 35\,\textmu m margin on top holds the core power ring
+      (VERIFY-LAB: the script prints die and core box)
   \end{itemize}
 \end{block}
 \end{frame}
@@ -578,20 +592,135 @@ ccopt_design                     ;  write_db cc_chip_top_cts.db
 routeDesign                      ;  write_db cc_chip_top_routed.db
 \end{lstlisting}
   \begin{itemize}
-    \item \cmd{place\_design}: places macros and standard cells, optimizes
-      timing on the way
+    \item \cmd{place\_design}: places the standard cells (the macros are
+      already fixed), optimizes timing on the way
     \item \cmd{create\_ccopt\_clock\_tree\_spec}: derives the clock trees from
       the SDC (\cmd{clk\_i}, generated \cmd{clk\_core}, \cmd{tck\_i})
     \item \cmd{ccopt\_design}: builds and balances the trees; after that the
       clocks are \emph{propagated}: real delays instead of ideal clocks
     \item \cmd{routeDesign}: global and detailed routing of all signal nets
-    \item Not yet in the flow: power planning before \cmd{place\_design},
-      post-route optimization, filler cells in the core, GDSII export
+    \item Not yet in the flow: post-route optimization
   \end{itemize}
 \end{block}
 \end{frame}
 
-\renewcommand{\assubtitle}{e) Physical Checks}
+\renewcommand{\assubtitle}{e) SRAM Macros (\texttt{02a\_rv64\_power.tcl})}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item Placed \emph{before} the power grid and fixed, so that stripes
+      and row rails are built around them
+    \item I-Mem in the lower left corner of the core, D-Mem in the lower
+      right; if both do not fit side by side, the D-Mem goes to the upper
+      right. Sizes come from the macro LEF (\cmd{.base\_cell.bbox})
+    \item Halo of 20\,\textmu m around each macro: no standard cells
+      there, room for the supply connections
+    \item The log line \cmd{AS-pnr: I-Mem WxH at (x,y)} shows the result
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{f) Power Grid: Structure}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{part} & \textbf{what}\\\hline
+    global connect & every supply pin of every cell to its net:
+                     \cmd{VDD}/\cmd{GND} (core 1.8\,V), \cmd{VDDO}/\cmd{GNDO}
+                     (IO 3.3\,V)\\
+    core ring      & \cmd{VDD}/\cmd{GND} around the core, 12\,\textmu m wide;
+                     horizontal sides \cmd{PG\_LAYER\_H}, vertical
+                     \cmd{PG\_LAYER\_V} (top metal)\\
+    stripes        & vertical \cmd{VDD}/\cmd{GND} pairs on the top metal,
+                     every 200\,\textmu m, 8\,\textmu m wide\\
+    rails          & \cmd{route\_special}: the row rails (followpins) on
+                     metal 1, the supply pads to the ring, the macro supply
+                     pins to ring and stripes\\
+    IO supplies    & \cmd{VDDO}/\cmd{GNDO} only in the pad ring: by abutment of
+                     pads, corners and IO fillers\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Widths and pitch are a first estimate (a few mA at 1.25\,MHz);
+      an IR-drop analysis (Voltus) is still open
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{f) Power Grid: Commands}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+foreach p $PG_PINS_VDD {
+  connect_global_net VDD -type pg_pin -pin_base_name $p -inst_base_name *
+}                                          ;# same for GND, VDDO, GNDO
+connect_global_net VDD -type tie_hi -inst_base_name *
+add_rings -nets {VDD GND} -type core_rings -follow core \
+  -layer [list top $PG_LAYER_H bottom $PG_LAYER_H \
+               left $PG_LAYER_V right $PG_LAYER_V] \
+  -width 12 -spacing 3 -offset 3
+add_stripes -nets {VDD GND} -layer $PG_LAYER_V -direction vertical \
+  -width 8 -spacing 3 -set_to_set_distance 200 -start_offset 100
+route_special -nets {VDD GND} -connect {core_pin pad_pin block_pin}
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item Optional before the ring: \cmd{add\_well\_taps},
+      \cmd{add\_endcaps}, if \cmd{WELLTAP\_CELL}/\cmd{ENDCAP\_CELL} are set
+    \item Check: \cmd{cc\_chip\_top\_pg\_connectivity.rpt}, and in the GUI
+      the layers of the ring and the stripes
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{g) Core Fillers and Hand-off}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+add_fillers -base_cells $CORE_FILLERS              ;# after routing
+write_netlist ${DESIGN_TOP}_routed.v               ;# STA, GLS, LEC
+write_def -floorplan -netlist -routing ${DESIGN_TOP}_routed.def  ;# Quantus
+write_netlist -include_pg_ports -include_phys_insts ${DESIGN_TOP}_lvs.v
+\end{lstlisting}
+  \begin{itemize}
+    \item Fillers close the gaps in the rows: wells, implants and the
+      supply rails become continuous -- otherwise DRC errors
+    \item Two netlists: for timing only the logic; for LVS also the supply
+      ports and all physical-only cells, because LVS compares device by
+      device with the layout
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{h) Merged GDS (\texttt{02c\_rv64\_gds.tcl})}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+write_stream cc_chip_top.gds -map_file $STREAM_MAP -merge $GDS_FILES \
+             -unit $GDS_UNIT -mode ALL -structure_name cc_chip_top
+\end{lstlisting}
+  \begin{itemize}
+    \item Innovus knows the cells only as abstracts (LEF): it writes the
+      wires, vias and cell placements
+    \item \cmd{-merge} copies the full layout of every cell from the X-FAB
+      GDS files: standard cells, IO cells, SPRAM macros
+    \item \cmd{-map\_file}: LEF layer $\rightarrow$ GDS layer/datatype, from
+      the PDK
+    \item \cmd{cc\_chip\_top\_gds.rpt}: cells used in the design but found
+      in none of the GDS files -- must be 0, else the GDS has empty boxes
+    \item Next: DRC and LVS with the X-FAB rule decks
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{i) Physical Checks}
 \begin{frame}[fragile]
 \frametitle{\astitle}
 \begin{block}{\assubtitle}

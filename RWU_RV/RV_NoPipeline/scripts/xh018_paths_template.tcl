@@ -64,10 +64,30 @@ set ICG_TE     <pin_test_enable>
 set ICG_Q      <pin_gated_clock>
 
 # Physical-only cells and the standard-cell site for Innovus
-# (02_rv64_floorplan_pnr.tcl)
+# (02_rv64_floorplan_pnr.tcl, fillers after routing)
 set CORE_SITE   <std_cell_site>              ;# row site of the HD standard cells
 set PAD_CORNER  <io_corner_cell>
 set PAD_FILLERS [list <io_filler_widest> ... <io_filler_narrowest>]  ;# widest first
+set CORE_FILLERS [list <core_filler_widest> ... <core_filler_narrowest>] ;# D_CELLS_HD fillers, widest first
+
+# Power grid (02a_rv64_power.tcl). Supply pin names of ALL cells per net:
+# standard cells, IO cells (core side and IO side), SPRAM macros
+set PG_PINS_VDD  [list <std_power_pin> <io_core_power_pin> <sram_power_pin>]
+set PG_PINS_GND  [list <std_ground_pin> <io_core_ground_pin> <sram_ground_pin>]
+set PG_PINS_VDDO [list <io_io_power_pin>]
+set PG_PINS_GNDO [list <io_io_ground_pin>]
+set PG_LAYER_H   <metal_for_horizontal_ring>  ;# e.g. the third metal
+set PG_LAYER_V   <top_metal>                  ;# vertical ring sides + stripes
+# Well taps / end caps: only if the library needs them, otherwise empty
+set WELLTAP_CELL     ""
+set WELLTAP_INTERVAL 50.0                     ;# um, from the design rules
+set ENDCAP_CELL      ""
+
+# Merged GDS (02c_rv64_gds.tcl): Innovus stream layer map of the PDK and
+# the GDS of standard cells, IO cells, I-Mem macro, D-Mem macro
+set STREAM_MAP <innovus_stream_out.map>
+set GDS_FILES  [list <D_CELLS_HD.gds> <IO_CELLS_3V.gds> <imem.gds> <dmem.gds>]
+set GDS_UNIT   1000                           ;# database units per um
 
 # Verilog simulation models for the gate-level simulation (scripts/gatesim):
 # standard cells, I/O cells, I-Mem macro, D-Mem macro. Plain file paths, no

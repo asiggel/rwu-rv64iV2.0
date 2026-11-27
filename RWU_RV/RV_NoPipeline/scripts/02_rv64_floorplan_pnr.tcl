@@ -1,19 +1,28 @@
 #===============================================================================
 # 02_rv64_floorplan_pnr.tcl
 #
-# Innovus script: floorplan, pad-ring placement, standard-cell placement,
-# CTS and routing for cc_chip_top (X-FAB XH018). Writes the routed netlist and
-# DEF for Quantus, Tempus and the post-route gate-level simulation.
+# Innovus script: floorplan, pad-ring placement, SRAM macro placement, power
+# grid, standard-cell placement, CTS, routing, core fillers and GDS for
+# cc_chip_top (X-FAB XH018). Writes the routed netlist and DEF for Quantus,
+# Tempus and the post-route gate-level simulation, the LVS netlist and the
+# merged GDS.
+#
+# Stages (STOP_AFTER): fp | place | cts | route | gds (default: all)
+#   fp     floorplan, pad ring, macros, power grid  (02a_rv64_power.tcl)
+#   route  ... routing, core fillers, hand-off      (02b_rv64_export.tcl)
+#   gds    merged GDS for DRC/LVS                    (02c_rv64_gds.tcl)
 #
 # FIRST-PASS SMOKE TEST (spec section 4.1.3 / TECH-06 still open):
 #   - The 26 pad-ring cells are placed in plain netlist order around the
 #     four sides, not checked against the IO_CELLS_3V databook.
-#   - No power ring / stripes yet (Phase 2 item, not reached here).
+#   - Power grid (ring, stripes, rails) is a first pass: widths and pitch
+#     are estimates, no IR-drop analysis yet.
 #
 # Die size and IO-ring depth come from spec section 4.1.3:
 #   - core ~3.5-4.5 mm^2 / ~2 mm side  (measured synth. area: 3.04 mm^2)
 #   - die side ~2.5-2.7 mm, core-limited (26 pads, ring mostly filler)
-#   -> die 2600 x 2600 um, IO ring depth = pad cell height (257 um)
+#   -> die 2600 x 2600 um, IO ring depth = pad cell height (257 um),
+#      35 um between IO ring and core rows for the core power ring
 #
 # Before running:
 #   01b_rv64_syn.tcl must have written innovus/cc_chip_top.db. Libraries,
@@ -36,8 +45,8 @@ if {![info exists ::env(XFAB_PATHS)] || ![file readable $::env(XFAB_PATHS)]} {
 source $::env(XFAB_PATHS)
 
 # Optional stop point for step-by-step runs (scripts/innovus/innovus_pnr.sh
-# -s): fp | place | cts | route. Not set = full flow.
-if {![info exists STOP_AFTER]} { set STOP_AFTER route }
+# -s): fp | place | cts | route | gds. Not set = full flow.
+if {![info exists STOP_AFTER]} { set STOP_AFTER gds }
 proc as_stop_here {stage} {
   global STOP_AFTER
   if {$STOP_AFTER eq $stage} {
@@ -57,8 +66,11 @@ read_db innovus/${DESIGN_TOP}.db
 # ------------------------------------------------------------------------
 set DIE_W       2600.0
 set DIE_H       2600.0
-set CORE_SIZE   2086.0
 set IO_RING     257.0
+# Space between the IO ring and the core rows, for the core power ring
+# (02a_rv64_power.tcl: offset + 2 x (width + spacing) <= CORE_MARGIN)
+set CORE_MARGIN 35.0
+set CORE_SIZE   [expr {$DIE_W - 2*$IO_RING - 2*$CORE_MARGIN}]
 set PAD_W       60.0
 set CORNER_CELL $PAD_CORNER
 
@@ -67,7 +79,12 @@ set CORNER_CELL $PAD_CORNER
 # empirically (margin 0 -> core_bbox {257 257 2343 2343}, i.e. exactly the
 # intended core-to-die gap). Core size is given directly (-s) to avoid
 # relying on that implicit margin for the die-size (-d) form as well.
-floorPlan -site $CORE_SITE -s $CORE_SIZE $CORE_SIZE 0 0 0 0
+# VERIFY-LAB: the implicit margin is added to CORE_MARGIN, so the die stays
+# 2600 um -- compare the two boxes printed below.
+floorPlan -site $CORE_SITE -s $CORE_SIZE $CORE_SIZE \
+          $CORE_MARGIN $CORE_MARGIN $CORE_MARGIN $CORE_MARGIN
+puts "AS-pnr: die  bbox [get_db current_design .bbox] (expected 0 0 $DIE_W $DIE_H)"
+puts "AS-pnr: core bbox [get_db current_design .core_bbox]"
 
 # ------------------------------------------------------------------------
 # 3. Pad-ring placement (first-pass, netlist order -- TECH-06 open)
@@ -143,14 +160,19 @@ foreach s {bottom top left right} {
 }
 
 # ------------------------------------------------------------------------
-# 6. Checkpoint after floorplan + pad ring
+# 5a. SRAM macros (fixed) and power grid -- before the standard cells
+# ------------------------------------------------------------------------
+source [file join [file dirname [file normalize [info script]]] 02a_rv64_power.tcl]
+
+# ------------------------------------------------------------------------
+# 6. Checkpoint after floorplan + pad ring + power grid
 # ------------------------------------------------------------------------
 write_db ${DESIGN_TOP}_fp.db
 summaryReport -outfile ${DESIGN_TOP}_fp_summary.rpt
 if {[as_stop_here fp]} { return }
 
 # ------------------------------------------------------------------------
-# 7. Standard-cell / macro placement
+# 7. Standard-cell placement (macros are fixed since 02a)
 # ------------------------------------------------------------------------
 place_design
 
@@ -174,8 +196,12 @@ if {[as_stop_here cts]} { return }
 routeDesign
 
 # ------------------------------------------------------------------------
-# 10. Final reports + checkpoint
+# 10. Core fillers, final reports + checkpoint
 # ------------------------------------------------------------------------
+# Fillers close the gaps in the rows, so the wells, implants and supply rails
+# are continuous (DRC). Physical only: not in the STA/GLS netlist.
+add_fillers -base_cells $CORE_FILLERS
+
 summaryReport -outfile ${DESIGN_TOP}_route_summary.rpt
 verify_connectivity -type all > ${DESIGN_TOP}_connectivity.rpt
 report_area                   > ${DESIGN_TOP}_final_area.rpt
@@ -183,6 +209,12 @@ report_timing -max_paths 20   > ${DESIGN_TOP}_final_timing.rpt
 write_db ${DESIGN_TOP}_routed.db
 
 # ------------------------------------------------------------------------
-# 11. Hand-off to sign-off: routed netlist + DEF (02b_rv64_export.tcl)
+# 11. Hand-off to sign-off: routed netlist, DEF, LVS netlist (02b_rv64_export.tcl)
 # ------------------------------------------------------------------------
 source [file join [file dirname [file normalize [info script]]] 02b_rv64_export.tcl]
+if {[as_stop_here route]} { return }
+
+# ------------------------------------------------------------------------
+# 12. Merged GDS for DRC / LVS (02c_rv64_gds.tcl)
+# ------------------------------------------------------------------------
+source [file join [file dirname [file normalize [info script]]] 02c_rv64_gds.tcl]
