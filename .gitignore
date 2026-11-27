@@ -111,6 +111,7 @@ build_vlt/
 build_xcelium/
 build_genus/
 build_innovus/
+build_gatesim/
 xrun.history
 xrun.key
 xcelium.d/

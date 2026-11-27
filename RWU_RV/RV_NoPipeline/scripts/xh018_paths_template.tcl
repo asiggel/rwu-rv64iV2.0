@@ -64,3 +64,10 @@ set ICG_Q      <pin_gated_clock>
 set CORE_SITE   <std_cell_site>              ;# row site of the HD standard cells
 set PAD_CORNER  <io_corner_cell>
 set PAD_FILLERS [list <io_filler_widest> ... <io_filler_narrowest>]  ;# widest first
+
+# Verilog simulation models for the gate-level simulation (scripts/gatesim):
+# standard cells, I/O cells, I-Mem macro, D-Mem macro. Plain file paths, no
+# Tcl expressions: gatesim.sh also reads this file without tclsh.
+set VLOG_MODELS  [list <D_CELLS_HD.v> <IO_CELLS_3V.v> <imem_macro.v> <dmem_macro.v>]
+# Defines the cell models need (e.g. functional model, no notifier); may be empty
+set VLOG_DEFINES [list]

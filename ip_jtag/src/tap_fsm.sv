@@ -196,9 +196,12 @@ module tap_fsm ( input  logic tck_i,          // Base clock
   end
   //assign irdr_select_o = irdr_select_s;
 
-  // TDO enable
-  assign tdo_ena_s     = ((state_s == shift_ir_st) | (state_s == shift_dr_st) | 
-                          (state_s == exit1_dr_st) | (state_s == exit1_ir_st)) ? 1 : 0;
+  // TDO enable, registered on the falling TCK edge together with the TDO
+  // data (IEEE 1149.1): active from the falling edge in Shift-IR/Shift-DR,
+  // inactive from the falling edge in Exit1. jtag.sv uses it directly -- a
+  // second register there enabled the pad one cycle late and lost the first
+  // bit of every scan at the pin.
+  assign tdo_ena_s     = ((state_s == shift_ir_st) | (state_s == shift_dr_st)) ? 1 : 0;
   always_ff @(negedge tck_i, posedge trst_s)
   begin
     if (trst_s)

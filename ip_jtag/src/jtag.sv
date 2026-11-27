@@ -39,7 +39,7 @@ module jtag ( input logic  tck_i,        // Test Clock
   logic	id_shift_s, id_clock_s, id_upd_s, id_mode_s;
   logic	dr_shift_s, dr_clock_s, dr_upd_s;
   logic	irdr_select_s;
-  logic	tdo_ena_s, tdo_ena_n_s;
+  logic	tdo_ena_s;
 
   logic	[ir_width:0]   ser_ir_s;
   localparam logic [ir_width-1:0] ir_rst_s  = 'h96;  // IR reset value (constant → clean FDCE/FDPE per bit)
@@ -235,23 +235,18 @@ module jtag ( input logic  tck_i,        // Test Clock
   always_ff @(negedge tck_i, posedge jtag_rst_s)
   begin
     if(jtag_rst_s == 1)
-    begin
       tdo_3rd_s <= 0;
-      tdo_ena_n_s <= 0;
-    end
     else
-    begin
       tdo_3rd_s <= tdo_2nd_s;
-      tdo_ena_n_s <= tdo_ena_s;
-    end
   end
 
   //----------------------------------------
   // TDO driven on falling TCK edge per IEEE 1149.1; the tri-state driver is
-  // in the pad (cc_chip_top) or in the testbench.
+  // in the pad (cc_chip_top) or in the testbench. The enable comes from the
+  // TAP, already registered on the same falling edge as tdo_3rd_s.
   //----------------------------------------
   assign tdo_o    = tdo_3rd_s;
-  assign tdo_oe_o = tdo_ena_n_s;
+  assign tdo_oe_o = tdo_ena_s;
 
 
 endmodule : jtag

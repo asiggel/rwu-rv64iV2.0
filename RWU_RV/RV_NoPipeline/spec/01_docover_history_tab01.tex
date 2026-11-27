@@ -46,5 +46,7 @@
   \hline
   & 2026-11-26 & DFT-02: boundary-scan register \texttt{cc\_bscan} (29 cells, EXTEST, INTEST, SAMPLE/PRELOAD), BSDL file (CC) \\
   \hline
+  & 2026-11-27 & JTAG-03: TDO pad enable registered only once (\texttt{tap\_fsm}, Shift-IR/Shift-DR); before, the first bit of every scan was lost at the pin. Gate-level simulation prepared (\texttt{scripts/gatesim}, chip-level testbench \texttt{tb/gls/tb\_gls\_chip.sv}) (CC) \\
+  \hline
 \end{tabularx}
 \end{table}

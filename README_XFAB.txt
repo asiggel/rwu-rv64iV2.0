@@ -2,7 +2,8 @@
  HowTo: Cadence Design Flow fuer X-FAB (Simulation -> Synthese -> GDSII)
 ================================================================================
 
-Stand:        06.07.2026 (Mitschrift), ueberarbeitet 11.07.2026, 26.11.2026
+Stand:        06.07.2026 (Mitschrift), ueberarbeitet 11.07.2026, 26.11.2026,
+              27.11.2026
 Autor:        Prof. Dr.-Ing. Andreas Siggelkow
 Testvehikel:  Dummy-Adder (ha_e/ha_a/ha_tb) fuer die Werkzeugkette
 Zieldesign:   RV_NoPipeline (RISC-V CPU, SystemVerilog), Chip-Top cc_chip_top
@@ -32,6 +33,96 @@ X-FAB-Pfaddatei (NDA, liegt NICHT im Repository) bekannt machen:
 
 Vorlage dafuer: RWU_RV/RV_NoPipeline/scripts/xh018_paths_template.tcl
 (Liberty pro Corner, LEF, capTbl/QRC, SPRAM-Makro- und Pad-Zellnamen).
+
+
+--------------------------------------------------------------------------------
+1a. Labor-Checkliste: am Labor-PC nachzuziehen (Stand 27.11.2026)
+--------------------------------------------------------------------------------
+
+Zu Hause (ohne X-FAB-Daten) vorbereitet und nur in RTL getestet; im Labor
+fehlen noch die X-FAB-Namen in der lokalen $XFAB_PATHS-Datei und die ersten
+echten Laeufe. Reihenfolge einhalten, jeder Schritt braucht den vorigen.
+
+Schritt 1: $XFAB_PATHS ergaenzen (Datei liegt NICHT im Repository)
+  Vergleich mit der Vorlage zeigt, was fehlt:
+
+      grep -o '^set [A-Z_0-9]*' RWU_RV/RV_NoPipeline/scripts/xh018_paths_template.tcl \
+        | sort > /tmp/soll.txt
+      grep -o '^set [A-Z_0-9]*' $XFAB_PATHS | sort > /tmp/ist.txt
+      comm -23 /tmp/soll.txt /tmp/ist.txt       (= noch einzutragen)
+
+  Neu seit dem letzten Laborbesuch:
+    CLKMUX, CLKMUX_I0/_I1/_S/_Q   Takt-Multiplexer 2:1 aus D_CELLS_HD und
+                                  seine Pins (cc_clk_mux2: Scan-Takt,
+                                  I-Mem-Takt). Gibt es keine eigene
+                                  Clock-Mux-Zelle, geht ein normaler MUX2
+                                  (die Instanz ist preserve, Genus aendert
+                                  sie nicht).
+    ICG, ICG_CK/_E/_TE/_Q         Integrated Clock Gate (Latch + AND, mit
+                                  Test-Enable) und seine Pins (cc_clk_gate)
+    CORE_SITE                     Site-Name der HD-Standardzellreihen
+    PAD_CORNER, PAD_FILLERS       IO-Eckzelle, IO-Filler (breiteste zuerst)
+    VLOG_MODELS                   Verilog-Simulationsmodelle: D_CELLS_HD,
+                                  IO_CELLS_3V, I-Mem-Makro, D-Mem-Makro
+    VLOG_DEFINES                  Defines, die die Zellmodelle brauchen
+                                  (z. B. funktionales Modell), sonst leer
+
+  Wo man die Namen findet (Pfade aus LIBS_TYP / LEF_FILES der Datei):
+    ICG       Liberty: Zelle mit  clock_gating_integrated_cell : "latch_posedge..."
+                grep -n 'clock_gating_integrated_cell' <std_typ.lib>
+              Pins im selben cell()-Block: clock_gate_clock_pin,
+              clock_gate_enable_pin, clock_gate_test_pin, clock_gate_out_pin
+    CLKMUX    Liberty/Databook: MUX2-Zelle der Clock-Familie (falls vorhanden),
+              Pins aus den pin()-Zeilen; I0 = bei S=0 durchgeschaltet
+                grep -n 'cell *(.*MU' <std_typ.lib>
+    CORE_SITE LEF der Standardzellen:  grep -n '^ *SITE ' <std_cells.lef>
+    PAD_*     LEF der IO-Zellen: CLASS PAD SPACER (Filler), Eckzelle (CORNER)
+                grep -n -B2 'CLASS PAD\|CLASS ENDCAP\|CORNER' <io_cells.lef>
+    VLOG_*    im PDK-Baum der Zellbibliotheken, meist .../verilog/*.v;
+              die SPRAM-Modelle liegen im Memory-Compiler-Paket
+
+Schritt 2: Synthese mit Scan-Insertion (DFT-01, Boundary Scan DFT-02)
+
+      cd RWU_RV/RV_NoPipeline
+      ./scripts/genus/genus_syn.sh -b -c
+
+  Pruefen (02_DokuGENUS, Folien mit VERIFY-LAB):
+    - build_genus/syn.log ohne "Error   :"; check_design ohne unresolved
+    - cc_chip_top_dft_rules.rpt / _dft_rules_final.rpt: keine Violations,
+      die das Scannen verhindern (define_test_mode/define_shift_enable auf
+      internen Pins core/as_jtag/... -- erster Lauf mit echtem Genus!)
+    - cc_chip_top_scan_chains.rpt: Kette sc01, Laenge notieren
+      (= +SCAN_LENGTH der Gate-Level-Simulation)
+    - core/bscan und core/as_jtag NICHT in der Kette (dft_dont_scan)
+    - Warnung "clock used as data" am Boundary-Scan-Eingang clk_i ist
+      erwartet (Observe-only-Zelle, CLAUDE.md Regel 8, Ausnahme)
+    - Timing-Reports pro View: Worst Slack >= 0
+
+Schritt 3: Place & Route (wie bisher)
+
+      ./scripts/innovus/innovus_pnr.sh -b -c
+
+  Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01).
+
+Schritt 4: Gate-Level-Simulation (Abschnitt 3b, 04_DocuGateSim)
+
+      ./scripts/gatesim/gatesim.sh -b --rtl instr06addi   (Referenz, RTL)
+      ./scripts/gatesim/gatesim.sh -b instr06addi         (Netzliste)
+      ./scripts/gatesim/gatesim.sh -b scan                (Scan-Kette)
+      ./scripts/gatesim/gatesim.sh -b instr99bscan        (Boundary Scan)
+      ./scripts/gatesim/gatesim.sh -r                     (alle, ~62 Tests)
+      ./scripts/gatesim/gatesim.sh -r -s                  (alle, mit SDF)
+
+Mit Claude im Labor
+  Claude kann die Schritte ausfuehren und die Logs/Reports auswerten. Dazu
+  Claude auf diesen Abschnitt hinweisen ("README_XFAB.txt, Abschnitt 1a").
+  Regeln (X-FAB-NDA): Claude liest PDK-, Liberty- und LEF-Dateien nur am
+  Ort, kopiert nichts davon ins Repository und traegt X-FAB-Zell-, Pin-
+  und Dateinamen ausschliesslich in die lokale $XFAB_PATHS-Datei ein;
+  Auszuege hoechstens in ein temporaeres Verzeichnis ausserhalb des
+  Repositorys. Vor einem Commit "git status" pruefen: build_genus/,
+  build_innovus/, build_gatesim/ und build_xcelium/ sind gesperrt
+  (.gitignore), Netzliste und SDF enthalten X-FAB-Zellnamen.
 
 
 --------------------------------------------------------------------------------
@@ -138,6 +229,35 @@ Im selben Run-Verzeichnis wie Genus:
   Violations, Setup erfuellt, Routing ohne Fails; ca. 2630 DRC- und
   159 Antenna-Violations -- erwartet, da Pad-Zuordnung (TECH-06) und
   Power-Ring/-Stripes noch fehlen.
+
+
+--------------------------------------------------------------------------------
+3b. Gate-Level-Simulation (Xcelium)
+--------------------------------------------------------------------------------
+
+Aus RWU_RV/RV_NoPipeline, nach der Synthese (build_genus/), Ergebnisse in
+build_gatesim/<test>/:
+
+    ./scripts/gatesim/gatesim.sh instr06addi         (Netzliste, SimVision-GUI)
+    ./scripts/gatesim/gatesim.sh -b instr06addi      (batch)
+    ./scripts/gatesim/gatesim.sh -b -s instr06addi   (mit SDF, Slow-Corner)
+    ./scripts/gatesim/gatesim.sh -b --rtl scan       (Referenz auf RTL)
+    ./scripts/gatesim/gatesim.sh -r [-s]             (alle Tests, batch)
+    ./scripts/gatesim/gatesim.sh -l                  (Testliste)
+
+  - DUT ist cc_chip_top: Netzliste cc_chip_top_syn.v + Verilog-Modelle der
+    X-FAB-Zellen (VLOG_MODELS aus $XFAB_PATHS). --rtl nimmt stattdessen das
+    RTL mit Verhaltens-Pads (gleiche Testbench, Referenz ohne X-FAB-Daten).
+  - Testbench tb/gls/tb_gls_chip.sv: nur Pins, keine hierarchischen
+    Zugriffe ins DUT; laedt das Programm ueber JTAG (I_MEM), weil das
+    SPRAM-Modell kein $readmemh hat -- wie spaeter auf dem Chip.
+  - Tests: die 60 Instruktionstests, instr99bscan (SAMPLE/PRELOAD, EXTEST
+    an den Pins), scan (Muster durch die Scan-Kette, Laenge aus
+    build_genus/cc_chip_top_scan_chains.rpt oder -L <n>).
+  - Ohne -s: funktional (-nospecify), mit -s: SDF aus Genus (vor dem
+    Layout, Slow-Corner) und Timing-Checks. Bei Races an den Taktzellen
+    ohne SDF: -u (Unit Delay).
+  - Ausfuehrliche Anleitung: 04_DocuGateSim/DocuGateSim.pdf
 
 
 --------------------------------------------------------------------------------
@@ -449,7 +569,7 @@ Sonst noch wichtig
 
 
 --------------------------------------------------------------------------------
-10. Stand RV_NoPipeline / Variante A (26.11.2026)
+10. Stand RV_NoPipeline / Variante A (27.11.2026)
 --------------------------------------------------------------------------------
 
 Erledigt:
@@ -460,14 +580,24 @@ Erledigt:
   CLK-02   CGU-Registerinterface auf clk_div_s
   Synthese auf chip-design01 gelaufen (Zellflaeche ca. 3,04 mm^2),
   Innovus-Smoke-Test bis routeDesign gelaufen
+  CLK-03   CGU-Takte direkt aus Flipflops
+  DFT-01   Scan-Insertion in Genus ueber JTAG SCANTEST (RTL + Skript,
+           Genus-Lauf im Labor offen, Abschnitt 1a)
+  DFT-02   Boundary Scan cc_bscan (29 Zellen) + BSDL (RTL)
+  JTAG     TDO-Enable einen Takt zu spaet (erstes Bit jedes Scans am Pin
+           verloren) -- korrigiert 27.11.2026, gefunden mit der Pin-
+           Testbench der Gate-Level-Simulation
+  Gate-Level-Simulation vorbereitet (scripts/gatesim, 04_DocuGateSim),
+  RTL-Referenz gelaufen; Netzliste im Labor offen
 
 Offen:
   TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
            ca. 0,8 mm^2)
   TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
-  Power-Ring/-Stripes, DRC/Antenna bereinigen, Gate-Level-Simulation,
-  DFT (Scan/BIST), Signoff (Abschnitt 5, Schritte 5-10)
+  Power-Ring/-Stripes, DRC/Antenna bereinigen, Gate-Level-Simulation
+  der Netzliste, Scan-Reorder in Innovus, ATPG, SRAM-BIST, Signoff
+  (Abschnitt 5, Schritte 5-10)
 
 
 ================================================================================

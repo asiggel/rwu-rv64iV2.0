@@ -1,0 +1,489 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: Gate-Level Simulation with Xcelium}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+
+\renewcommand{\assubtitle}{What Is a Gate-Level Simulation?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The \emph{netlist} from Genus is simulated instead of the RTL:
+      X-FAB standard cells, pads and SRAM macros, wired by Genus
+    \item The cells come as Verilog \emph{simulation models} from the PDK
+      (D\_CELLS\_HD, IO\_CELLS\_3V, memory compiler)
+    \item What it finds that the RTL simulation cannot:
+    \begin{itemize}
+      \item synthesis did something else than the RTL meant
+        (\cmd{always\_latch}, \cmd{x}-assignments, missing resets)
+      \item \cmd{X} from flip-flops without reset that the RTL hid
+      \item the inserted scan chain and the boundary scan really work
+      \item with SDF: timing violations (setup/hold) in the simulation
+    \end{itemize}
+    \item Slow: many thousand cell instances instead of a few hundred
+      \cmd{always} blocks
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Where in the Flow?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}llY@{}}
+    \textbf{step} & \textbf{script} & \textbf{result}\\\hline
+    1 RTL simulation    & \cmd{scripts/xcelium/}  & functionally correct RTL\\
+    2 synthesis + DFT   & \cmd{scripts/genus/}    & netlist \cmd{\_syn.v}, \cmd{\_syn.sdf}, scan chain\\
+    \textbf{3 gate-level sim} & \cmd{scripts/gatesim/} & netlist ok, scan/BS ok\\
+    4 place \& route    & \cmd{scripts/innovus/}  & layout\\
+    5 GLS after layout  & \cmd{scripts/gatesim/}  & with the SDF from Innovus\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The netlist contains the scan chain: step 3 is the
+      \emph{gate-level simulation with DFT}
+    \item The Genus SDF is an estimate (no wires yet); the SDF after
+      routing is the one that counts
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Setup
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Setup}
+\renewcommand{\astitle}{Setup}
+
+\renewcommand{\assubtitle}{Prerequisites}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Cadence environment loaded (\cmd{xrun}), see \emph{RISC-V
+      Simulation with Xcelium}
+    \item Synthesis done, batch mode:
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/genus/genus_syn.sh -b      # -> build_genus/
+\end{lstlisting}
+    \item \cmd{\$XFAB\_PATHS} additionally lists the Verilog models
+      (X-FAB NDA, never in git):
+\begin{lstlisting}[style=sh]
+set VLOG_MODELS  [list <D_CELLS_HD.v> <IO_CELLS_3V.v> \
+                       <imem_macro.v> <dmem_macro.v>]
+set VLOG_DEFINES [list]     ;# defines the models need
+\end{lstlisting}
+    \item Template: \cmd{scripts/xh018\_paths\_template.tcl}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Netlist and RTL Reference}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item One testbench, two DUTs, both called \cmd{cc\_chip\_top}:
+    \begin{itemize}
+      \item netlist: \cmd{cc\_chip\_top\_syn.v} + X-FAB models
+      \item \cmd{-{}-rtl}: the RTL with the behavioural pads
+    \end{itemize}
+    \item Always run the \cmd{-{}-rtl} reference first: if a test fails on
+      the RTL too, the problem is the test, not the netlist
+    \item The RTL reference needs no X-FAB file, so it also runs at home
+    \item Results: \cmd{build\_gatesim/<test>/}
+      (\cmd{xrun.log}, \cmd{error.txt}, \cmd{waves.shm})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Testbench
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Testbench}
+\renewcommand{\astitle}{Testbench}
+
+\renewcommand{\assubtitle}{\texttt{tb/gls/tb\_gls\_chip.sv}: Only the Pins}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The RTL testbenches look into the DUT
+      (\cmd{DUT.clk\_div\_s}, \cmd{DUT.gpio\_o\_s}): those signals do not
+      exist in the netlist -- Genus renames or removes them
+    \item \cmd{tb\_gls\_chip.sv} uses \emph{only the bond pads} of
+      \cmd{cc\_chip\_top}, exactly like a tester or a board
+    \item Weak pull-downs on the GPIO pins: an undriven pad reads 0, not
+      \cmd{Z}
+    \item \cmd{+MODE=} selects the test:
+    \begin{itemize}
+      \item \cmd{instr}: instruction test, result on the GPIO pins
+        (\cmd{+EXPECTED=}), like \cmd{tb\_rv64i\_instr.sv}
+      \item \cmd{scan}: internal scan chain
+      \item \cmd{bscan}: boundary scan
+    \end{itemize}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Program Comes through JTAG}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item In the RTL the I-Mem reads \cmd{riscvtest.mem} with
+      \cmd{\$readmemh}; the SPRAM model of the netlist cannot do that
+    \item So the testbench loads the program like on silicon: JTAG
+      instruction \cmd{I\_MEM} (\cmd{0x80}), one I-Mem write per word
+\begin{lstlisting}
+DR = {byte address[14:0], instruction[31:0], write enable}   48 bit
+\end{lstlisting}
+    \item Only non-zero words: the image is zero-filled up to the ISR at
+      \cmd{0x7F00} (20 instead of 8131 words)
+    \item \cmd{rst\_i = 1} while loading, then \cmd{BYPASS}, then
+      \cmd{rst\_i = 0}: the CPU starts
+    \item The script writes \cmd{gls\_prog.mem}, \emph{not}
+      \cmd{riscvtest.mem}: otherwise the RTL reference would preload the
+      I-Mem and hide a broken JTAG load
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Scan and Boundary Scan at the Pins}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \small
+  \begin{itemize}
+    \item \cmd{scan}: JTAG \cmd{SCANTEST} (\cmd{0x81}), a random pattern
+      into TDI; it must come out at TDO delayed by the chain length
+    \begin{itemize}
+      \item length from \cmd{build\_genus/cc\_chip\_top\_scan\_chains.rpt}
+        or \cmd{-L <n>}; RTL reference: 0
+      \item a wrong length makes the test fail -- that is the check
+    \end{itemize}
+    \item \cmd{instr99bscan}: the program sets GPIO 3..0 = \cmd{0101}
+      (outputs), the testbench drives GPIO 7..4
+    \begin{itemize}
+      \item SAMPLE/PRELOAD: the cells capture the pins, pins stay functional
+      \item EXTEST: the pins show the preloaded values; a control cell
+        switches GPIO 3 off (pull-down $\rightarrow$ 0)
+      \item BYPASS: the pins are functional again
+      \item INTEST is only in the RTL test (needs a look into the core)
+    \end{itemize}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Run
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Run}
+\renewcommand{\astitle}{Run}
+
+\renewcommand{\assubtitle}{Without GUI}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/gatesim/gatesim.sh -l                    # list of tests
+./scripts/gatesim/gatesim.sh -b --rtl instr06addi  # reference, RTL
+./scripts/gatesim/gatesim.sh -b instr06addi        # netlist
+./scripts/gatesim/gatesim.sh -b scan               # scan chain
+./scripts/gatesim/gatesim.sh -b instr99bscan       # boundary scan
+./scripts/gatesim/gatesim.sh -r                    # all 62 tests
+./scripts/gatesim/gatesim.sh -r -s                 # all, with SDF
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+=== [instr06addi] 1/3 assemble rv64Sim/instr06addi.asm
+=== [instr06addi] 2/3 xrun (batch, netlist .../build_gatesim/../build_genus/cc_chip_top_syn.v)
+=== [instr06addi] 3/3 result
+PASS  instr06addi
+\end{lstlisting}
+  \scriptsize
+  Summary of \cmd{-r}: \cmd{build\_gatesim/regression.txt};
+  exit code 0 = all tests ok
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-b}               & batch, no GUI (default: SimVision)\\
+    \cmd{-r}               & all tests one after another (batch)\\
+    \cmd{-s}               & annotate the Genus SDF, timing checks on\\
+    \cmd{-u}               & unit delay (races without SDF)\\
+    \cmd{-{}-rtl}          & reference run on the RTL\\
+    \cmd{-L <n>}           & scan chain length\\
+    \cmd{-n <dir>}         & Genus result directory (default \cmd{build\_genus})\\
+    \cmd{-w}               & batch: record waves into \cmd{waves.shm}\\
+    \cmd{-t <s>}           & timeout per test (default 1800\,s)\\
+    \cmd{-c}               & delete \cmd{build\_gatesim/} first\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Licenses: \cmd{-licqueue} waits for one of the \textbf{2} Xcelium
+      licenses; a regression blocks one license for a long time
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{With GUI}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+./scripts/gatesim/gatesim.sh instr06addi
+\end{lstlisting}
+  \begin{itemize}
+    \item SimVision opens; all signals are recorded (\cmd{probe -all
+      -depth all})
+    \item Pins: \cmd{tb\_gls.DUT.gpio\_io}, \cmd{tdo\_o}, \cmd{cs\_o}
+    \item Inside the netlist: Genus kept the hierarchies \cmd{core},
+      \cmd{core.cgu}, \cmd{core.as\_jtag} (\cmd{ungroup\_ok false}); the
+      rest is flat, signal names like \cmd{core.\textbackslash
+      cpu/PC\_instr\_r\_reg[3]} (escaped names)
+    \item Look for the first \cmd{X}: Design Browser $\rightarrow$
+      signal $\rightarrow$ \emph{Trace X} (driver of the \cmd{X})
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Timing
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Timing}
+\renewcommand{\astitle}{Timing}
+
+\renewcommand{\assubtitle}{Functional or with SDF?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Without \cmd{-s}: \cmd{-nospecify} -- no cell delays, no timing
+      checks; does the netlist do the same as the RTL?
+    \item With \cmd{-s}: \cmd{cc\_chip\_top\_syn.sdf} (slow corner,
+      \cmd{MAXIMUM}) is annotated, the \cmd{\$setup}/\cmd{\$hold} checks of
+      the models are active
+    \begin{itemize}
+      \item a violation prints a warning in \cmd{xrun.log} and usually
+        sets the flip-flop to \cmd{X}
+      \item the script counts the violations
+    \end{itemize}
+    \item The pre-layout SDF has no clock tree: hold violations on the
+      clock nets are expected and are fixed in Innovus (CTS)
+    \item Static timing analysis remains the sign-off -- the simulation
+      only covers the paths the test uses
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The SDF Command File}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{gatesim.sh -s} writes \cmd{build\_gatesim/<test>/sdf.cmd}:
+\begin{lstlisting}
+SDF_FILE    = ".../build_genus/cc_chip_top_syn.sdf",
+SCOPE       = tb_gls.DUT,
+MTM_CONTROL = "MAXIMUM",
+LOG_FILE    = "sdf.log";
+\end{lstlisting}
+  \begin{itemize}
+    \item \cmd{SCOPE}: the instance the SDF belongs to (the netlist top
+      \cmd{cc\_chip\_top} = \cmd{tb\_gls.DUT})
+    \item \cmd{sdf.log}: cells or pins the SDF names but the netlist does not
+      have (should be none)
+    \item Xcelium compiles the SDF once into \cmd{.sdf.X}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Problems
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Typical Problems}
+\renewcommand{\astitle}{Typical Problems}
+
+\renewcommand{\assubtitle}{X, Races, Missing Models}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \small
+  \begin{itemize}
+    \item \cmd{X} everywhere after reset: a flip-flop without reset feeds
+      the control logic; in the RTL an \cmd{if} chose a branch, the gates
+      propagate the \cmd{X}. Trace X back to the first flip-flop
+    \item Test passes with \cmd{-s} but fails without: zero-delay race at
+      the clock mux or clock gate (clock and data change in the same
+      delta cycle) $\rightarrow$ \cmd{-u} (unit delay)
+    \item \cmd{*E,CUVMUR} \emph{module not found}: a cell model is missing
+      in \cmd{VLOG\_MODELS} (e.g.\ the SRAM model)
+    \item Pin name errors at the SPRAM: the model has other pin names than
+      the RTL wrapper (\cmd{asIMem.sv}, \cmd{asDMemCore.sv})
+    \item Timeout: program does not reach its check -- look at
+      \cmd{cs\_o}/GPIO in the GUI; with SDF also at timing violations
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{It Already Found a Bug}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item First run of \cmd{tb\_gls\_chip.sv} on the RTL reference
+      (27.11.2026): the first boundary-scan bit read as \cmd{z}
+    \item TDO enable was registered twice on the falling TCK edge
+      (\cmd{tap\_fsm} \emph{and} \cmd{jtag.sv}): the TDO pad switched on one
+      cycle late, the first bit of \emph{every} IR/DR scan was lost at the pin
+    \item The RTL testbenches read \cmd{tdo\_o} of \cmd{as\_top\_mem}
+      directly, without the tri-state pad -- they could not see it
+    \item Lesson: test at the pins, like the tester will
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Under the Hood
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Under the Hood}
+\renewcommand{\astitle}{Under the Hood}
+
+\renewcommand{\assubtitle}{File List and xrun Call}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \cmd{build\_gatesim/<test>/files.f} (netlist):
+\begin{lstlisting}
+src/as_pack.sv                     # package: constants for the TB
+<D_CELLS_HD.v> <IO_CELLS_3V.v>     # VLOG_MODELS from $XFAB_PATHS
+<imem_macro.v> <dmem_macro.v>
+build_genus/cc_chip_top_syn.v      # netlist from Genus
+tb/gls/tb_gls_chip.sv
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+xrun -sv -timescale 1ns/1ps -cdslib ./cds.lib -f files.f -top tb_gls
+     -access +rwc -licqueue -input run.tcl -l xrun.log -nospecify
+     +MODE=instr +TEST_NAME=addi +EXPECTED=255
+\end{lstlisting}
+  \scriptsize
+  \begin{itemize}
+    \item \cmd{-{}-rtl}: the RTL file list from \cmd{sim/CMakeLists.txt}
+      plus the pads and \cmd{cc\_chip\_top.sv}
+    \item The exact call is in \cmd{xrun.cmd}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB NDA}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The netlist, the SDF and the logs contain X-FAB cell names
+    \item \cmd{build\_genus/} and \cmd{build\_gatesim/} are in
+      \cmd{.gitignore}: never commit them, never copy them out of the lab
+    \item Paths to the models only in the local \cmd{\$XFAB\_PATHS} file
+    \item Check \cmd{git status} before every commit
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}
