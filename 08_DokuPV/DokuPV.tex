@@ -135,7 +135,7 @@
   \footnotesize
   \begin{tabularx}{\linewidth}{@{}lY@{}}
     \textbf{step} & \textbf{result}\\\hline
-    Innovus, stage \cmd{gds}  & \cmd{cc\_chip\_top.gds} (merged, with pad
+    \cmd{innovus\_post.sh} (05) & \cmd{cc\_chip\_top.gds} (merged, with pad
                                 labels), \cmd{cc\_chip\_top\_lvs.v}\\
     \textbf{DRC}              & result count per deck: must be 0\\
     \textbf{LVS + ERC}        & CORRECT, 0 ERC results\\
@@ -280,7 +280,7 @@ INCLUDE "<lvs_deck>"
 \begin{block}{\assubtitle}
 \begin{lstlisting}[style=sh]
 cd RWU_RV/RV_NoPipeline
-./scripts/innovus/innovus_pnr.sh -b     # up to stage gds
+./scripts/innovus/innovus_post.sh -b    # 05, up to stage gds
 ./scripts/pv/pv.sh                      # DRC + LVS/ERC, PV_TOOL
 ./scripts/pv/pv.sh -m drc -j 8          # DRC only, 8 CPUs
 ./scripts/pv/pv.sh -m lvs -t calibre    # LVS with Calibre
@@ -443,8 +443,6 @@ PASS  physical verification of cc_chip_top (all, pegasus)
   \begin{itemize}
     \item DRC 0, LVS CORRECT, ERC 0 -- on the final GDS
     \item STA, LEC and the post-route GLS on the same layout
-    \item Post-route optimization in Innovus (metal fill and antenna
-      fixing are in the flow)
     \item Pad order and supply pads checked (TECH-06), seal ring and
       logo as X-FAB requires
     \item X-FAB's own tape-out checks (their DRC run on the submitted GDS)

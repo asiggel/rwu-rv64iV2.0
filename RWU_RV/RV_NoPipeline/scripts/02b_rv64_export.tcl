@@ -2,8 +2,8 @@
 # 02b_rv64_export.tcl
 #
 # Innovus: write the routed design for sign-off. Sourced at the end of
-# 02_rv64_floorplan_pnr.tcl; scripts/quantus/quantus_rcx.sh also runs it on
-# its own on an existing cc_chip_top_routed.db (read_db first).
+# 02d_rv64_postroute.tcl (final layout); scripts/quantus/quantus_rcx.sh also
+# runs it on its own on an existing cc_chip_top_final.db (read_db first).
 #
 #   cc_chip_top_routed.v    netlist without physical-only cells (fillers,
 #                           corners), with the CTS buffers: Tempus and the

@@ -111,16 +111,18 @@
   \footnotesize
   \begin{tabularx}{\linewidth}{@{}llY@{}}
     \textbf{step} & \textbf{script} & \textbf{result}\\\hline
-    1 RTL simulation    & \cmd{scripts/xcelium/}  & functionally correct RTL\\
-    2 synthesis + DFT   & \cmd{scripts/genus/}    & netlist \cmd{\_syn.v}, \cmd{\_syn.sdf}, scan chain\\
-    \textbf{3 gate-level sim} & \cmd{scripts/gatesim/} & netlist ok, scan/BS ok\\
-    4 place \& route    & \cmd{scripts/innovus/}  & layout\\
-    5 GLS after layout  & \cmd{scripts/gatesim/}  & with the SDF from Innovus\\
+    01 RTL simulation    & \cmd{scripts/xcelium/}  & functionally correct RTL\\
+    02 synthesis + DFT   & \cmd{scripts/genus/}    & netlist \cmd{\_syn.v}, \cmd{\_syn.sdf}, scan chain\\
+    03 place \& route    & \cmd{innovus\_pnr.sh}   & routed layout\\
+    \textbf{04 gate-level sim} & \cmd{scripts/gatesim/} & netlist ok, scan/BS ok\\
+    05 post-route        & \cmd{innovus\_post.sh}  & final layout, \cmd{\_routed.v}\\
+    06 extraction + STA  & \cmd{scripts/sta/}      & SDF with real wires\\
+    04 again: \cmd{-p -s} & \cmd{scripts/gatesim/} & GLS after layout\\
   \end{tabularx}
   \vspace{4pt}
   \begin{itemize}
-    \item The netlist contains the scan chain: step 3 is the
-      \emph{gate-level simulation with DFT}
+    \item Numbers = HowTo folders. The netlist contains the scan chain:
+      step 04 is the \emph{gate-level simulation with DFT}
     \item The Genus SDF is an estimate (no wires yet); the SDF after
       routing is the one that counts
   \end{itemize}

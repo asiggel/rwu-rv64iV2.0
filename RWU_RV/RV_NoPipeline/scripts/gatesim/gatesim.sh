@@ -22,8 +22,8 @@
 #                   corner). With -p: Tempus SDF with the Quantus
 #                   parasitics (build_sta/cc_chip_top_sta_func.sdf, for the
 #                   test 'scan' _sta_scan.sdf), max delays = slow corner
-#   -p, --postroute post-route netlist from Innovus
-#                   (build_innovus/cc_chip_top_routed.v, with the clock
+#   -p, --postroute post-route netlist from Innovus (innovus_post.sh,
+#                   build_innovus/cc_chip_top_routed.v, with the clock
 #                   tree) instead of the Genus netlist; results in
 #                   build_gatesim/postroute/
 #   -m, --min       with -p -s: min delays of the SDF (fast corner, hold
@@ -278,7 +278,7 @@ else
   fi
   if [ "$POSTROUTE" -eq 1 ]; then
     NETLIST="$INNOVUS_ROOT/${DESIGN_TOP}_routed.v"
-    HINT="./scripts/innovus/innovus_pnr.sh -b or ./scripts/quantus/quantus_rcx.sh"
+    HINT="./scripts/innovus/innovus_post.sh -b or ./scripts/quantus/quantus_rcx.sh"
   else
     NETLIST="$NETDIR/${DESIGN_TOP}_syn.v"
     HINT="./scripts/genus/genus_syn.sh -b"

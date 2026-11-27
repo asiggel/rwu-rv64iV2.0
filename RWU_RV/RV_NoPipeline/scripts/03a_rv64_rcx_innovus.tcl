@@ -10,13 +10,13 @@
 # as the standalone run: cc_chip_top_rc_max.spef, _rc_typ.spef, _rc_min.spef.
 #
 # Usage (normally: scripts/quantus/quantus_rcx.sh --innovus), in a directory
-# that holds cc_chip_top_routed.db:
+# that holds cc_chip_top_final.db (02d_rv64_postroute.tcl):
 #   innovus -batch -files 03a_rv64_rcx_innovus.tcl
 #===============================================================================
 
 set DESIGN_TOP cc_chip_top
 
-read_db ${DESIGN_TOP}_routed.db
+read_db ${DESIGN_TOP}_final.db
 
 set_db extract_rc_engine       post_route
 set_db extract_rc_effort_level signoff

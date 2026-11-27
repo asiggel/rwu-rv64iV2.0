@@ -14,16 +14,16 @@
 #   -h, --help      show this help
 #
 # Steps:
-#   1. hand-off from Innovus: build_innovus/cc_chip_top_routed.v and .def.
-#      Missing (P&R ran before 02b_rv64_export.tcl existed) but
-#      cc_chip_top_routed.db present: write them now from the DB.
+#   1. hand-off from Innovus (02d_rv64_postroute.tcl):
+#      build_innovus/cc_chip_top_routed.v and .def of the final layout.
+#      Missing or older than cc_chip_top_final.db: written now from the DB.
 #   2. extraction, one SPEF per RC corner of xh018_mmmc.tcl:
 #        cc_chip_top_rc_max.spef   slow corner, 125 C  (setup)
 #        cc_chip_top_rc_typ.spef   typ corner,   25 C
 #        cc_chip_top_rc_min.spef   fast corner, -40 C  (hold)
 #   3. evaluate: errors in the log, SPEF files present, number of nets
 #
-# Run scripts/innovus/innovus_pnr.sh -b first. Results go to build_quantus/
+# Run scripts/innovus/innovus_post.sh -b first. Results go to build_quantus/
 # (never in git: CCL, lib.defs and SPEF hold X-FAB paths and cell names).
 # Next step: ./scripts/sta/sta.sh -b
 #
@@ -73,11 +73,11 @@ for tool in innovus $( [ "$ENGINE" = "quantus" ] && echo quantus tclsh ); do
   fi
 done
 
-ROUTED_DB="$INNOVUS_ROOT/${DESIGN_TOP}_routed.db"
+ROUTED_DB="$INNOVUS_ROOT/${DESIGN_TOP}_final.db"
 ROUTED_V="$INNOVUS_ROOT/${DESIGN_TOP}_routed.v"
 ROUTED_DEF="$INNOVUS_ROOT/${DESIGN_TOP}_routed.def"
 if [ ! -e "$ROUTED_DB" ]; then
-  echo "ERROR: $ROUTED_DB not found -- run ./scripts/innovus/innovus_pnr.sh -b first" >&2
+  echo "ERROR: $ROUTED_DB not found -- run ./scripts/innovus/innovus_post.sh -b first" >&2
   exit 2
 fi
 
@@ -86,7 +86,7 @@ fi
 # ------------------------------------------------------------------------
 echo "=== [quantus] 1/3 hand-off from $INNOVUS_ROOT"
 if [ ! -s "$ROUTED_V" ] || [ ! -s "$ROUTED_DEF" ] || [ "$ROUTED_DB" -nt "$ROUTED_DEF" ]; then
-  echo "    writing ${DESIGN_TOP}_routed.v / .def from ${DESIGN_TOP}_routed.db"
+  echo "    writing ${DESIGN_TOP}_routed.v / .def from ${DESIGN_TOP}_final.db"
   ( cd "$INNOVUS_ROOT" || exit 2
     printf 'read_db %s\nsource %s\nexit\n' "$(basename "$ROUTED_DB")" \
       "$TCL_DIR/02b_rv64_export.tcl" > export.tcl
@@ -114,7 +114,7 @@ if [ "$ENGINE" = "quantus" ]; then
   quantus -cmd quantus.ccl < /dev/null > "$LOG" 2>&1
 else
   echo "=== [quantus] 2/3 Quantus engine inside Innovus in $BUILD_ROOT"
-  ln -sfn "$ROUTED_DB" "${DESIGN_TOP}_routed.db"
+  ln -sfn "$ROUTED_DB" "${DESIGN_TOP}_final.db"
   printf 'source %s\nexit\n' "$TCL_DIR/03a_rv64_rcx_innovus.tcl" > rcx.tcl
   LOG="$BUILD_ROOT/rcx.log"
   innovus -batch -files rcx.tcl -log rcx -overwrite < /dev/null > /dev/null 2>&1

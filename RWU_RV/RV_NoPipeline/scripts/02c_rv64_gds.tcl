@@ -2,7 +2,7 @@
 # 02c_rv64_gds.tcl
 #
 # Innovus: merged GDS of cc_chip_top for DRC and LVS. Sourced at the end of
-# 02_rv64_floorplan_pnr.tcl (stage gds).
+# 02d_rv64_postroute.tcl (stage gds).
 #
 # Innovus only knows the abstracts (LEF) of the cells: write_stream writes
 # the routing, vias and cell placements, and -merge copies the full layout

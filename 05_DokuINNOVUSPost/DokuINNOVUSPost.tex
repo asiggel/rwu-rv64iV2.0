@@ -1,0 +1,528 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: RISC-V Post-Route Optimization with Innovus}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Overview}
+
+\url{https://github.com/asiggel/rwu-rv64iV2.0}
+\end{frame}
+
+\renewcommand{\assubtitle}{Where in the Flow?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}llY@{}}
+    \textbf{step} & \textbf{tool / script} & \textbf{result}\\\hline
+    01 RTL simulation   & xrun, \cmd{scripts/xcelium/}  & functionally correct RTL\\
+    02 synthesis + DFT  & Genus, \cmd{scripts/genus/}   & netlist, scan chain\\
+    03 place \& route   & Innovus, \cmd{innovus\_pnr.sh} & routed layout\\
+    04 gate-level sim   & xrun, \cmd{scripts/gatesim/}  & netlist ok\\
+    \textbf{05 post-route} & \textbf{Innovus}, \cmd{innovus\_post.sh} & final layout, hand-off, GDS\\
+    06 extraction + STA & Quantus, Tempus               & sign-off timing\\
+    07 LEC              & Conformal                     & RTL $\equiv$ layout netlist\\
+    08 DRC/LVS/ERC      & Pegasus/Calibre               & geometry ok\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Numbers = HowTo folders, in the order they run
+    \item Innovus twice: 03 builds the layout up to the routing, 05
+      finishes it
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Why Optimize after Routing?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Before routing the timing uses estimated wires; after routing
+      the wires are real: longer detours, coupling to the neighbours
+    \item The clock tree (03, CTS) adds skew: a flip-flop to flip-flop
+      path with almost no logic can now violate \textbf{hold}
+    \item Hold violations do not depend on the clock frequency: a chip
+      with a hold violation does not work at any speed
+    \item Post-route optimization repairs what routing broke:
+    \begin{itemize}
+      \item setup: resize cells, insert buffers on long wires
+      \item hold: insert delay cells in too-fast data paths
+      \item DRV: max transition / capacitance / fanout
+    \end{itemize}
+    \item The router makes the small ECO routes itself
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Why a Separate Step?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item The optimization inserts and resizes cells. Everything that
+      fills the layout must come \emph{after} it:
+    \begin{itemize}
+      \item core fillers (in the gaps that are left)
+      \item metal fill (in the empty metal that is left)
+    \end{itemize}
+    \item The hand-off files (netlists, DEF, GDS) must show the
+      optimized layout: Quantus, Tempus, LEC, GLS and DRC/LVS all check
+      the \emph{same} layout
+    \item The P\&R run (03) takes long; the post-route step starts from
+      its checkpoint \cmd{cc\_chip\_top\_routed.db} and can be repeated
+      alone
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Inputs and Outputs}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \scriptsize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{In}                       & \\\hline
+    \cmd{build\_innovus/cc\_chip\_top\_routed.db} & routed layout from 03\\[1pt]
+    \cmd{as\_top\_mem\_scan.sdc}      & constraint mode scan (for the hold view)\\[1pt]
+    \cmd{\$XFAB\_PATHS}               & \cmd{CORE\_FILLERS}, \cmd{FILL\_LAYERS},
+                                        GDS variables\\[4pt]
+    \textbf{Out} (same directory)     & \\\hline
+    \cmd{cc\_chip\_top\_postopt.db}   & checkpoint after the optimization\\[1pt]
+    \cmd{cc\_chip\_top\_final.db}     & final layout (fillers, metal fill)\\[1pt]
+    \cmd{*\_post\_\{setup,hold\}\_pre.rpt} & worst paths before\\[1pt]
+    \cmd{*\_final\_timing.rpt}, \cmd{*\_final\_hold.rpt} & worst paths after\\[1pt]
+    \cmd{timing\_pre/}, \cmd{timing\_post/} & \cmd{time\_design} reports per view\\[1pt]
+    \cmd{*\_drc/antenna/density/connectivity.rpt} & physical checks\\[1pt]
+    \cmd{\_routed.v}, \cmd{\_routed.def} & hand-off to Quantus, Tempus, GLS, LEC\\[1pt]
+    \cmd{\_lvs.v}, \cmd{cc\_chip\_top.gds} & hand-off to DRC/LVS\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Run
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Run}
+\renewcommand{\astitle}{Run}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Run the post-route step}
+\end{frame}
+
+\renewcommand{\assubtitle}{Batch}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+\begin{lstlisting}[style=sh,basicstyle=\ttfamily\small]
+cd RWU_RV/RV_NoPipeline
+./scripts/innovus/innovus_pnr.sh -b      # 03, once
+./scripts/innovus/innovus_post.sh -b     # 05
+\end{lstlisting}
+% VERIFY-LAB: replace with the output of a real run
+\begin{lstlisting}[style=out]
+=== [innovus-post] 1/3 run 02d_rv64_postroute.tcl up to 'gds' (batch, extraction medium)
+=== [innovus-post] 2/3 checkpoints
+  opt: cc_chip_top_postopt.db
+  finish: cc_chip_top_final.db
+=== [innovus-post] 3/3 result
+  worst setup slack: before ..., after ...
+  worst hold  slack: before ..., after ...
+  drc:              ...
+  antenna:          ...
+  density:          ...
+  connectivity:     ...
+  hand-off:         cc_chip_top_routed.v / _routed.def / _lvs.v
+  GDS:              cc_chip_top.gds (...)
+  GDS merge:        cells used: ..., missing: 0
+PASS  post-route step of cc_chip_top up to 'gds'
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Options}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \cmd{-b}, \cmd{-{}-batch}        & no GUI (default: Innovus GUI)\\[2pt]
+    \cmd{-s}, \cmd{-{}-stop STAGE}   & stop after \cmd{opt}, \cmd{finish} or
+                                       \cmd{gds} (default)\\[2pt]
+    \cmd{-x}, \cmd{-{}-extract E}    & extraction effort for the optimization:
+                                       \cmd{medium} (default), \cmd{high},
+                                       \cmd{signoff} (Quantus engine, licence)\\[2pt]
+    \cmd{-o}, \cmd{-{}-open STAGE}   & run nothing, open the checkpoint\\[2pt]
+    \cmd{-h}, \cmd{-{}-help}         & help\\
+  \end{tabularx}
+  \vspace{6pt}
+  \begin{itemize}
+    \item Every run starts again from \cmd{cc\_chip\_top\_routed.db}; the
+      P\&R checkpoints of 03 stay
+    \item \cmd{-b -s opt}: only the timing repair, compare before/after
+    \item A new P\&R run (03) deletes the results of this step
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reading the Result}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    hold after  & \textbf{must} be $\geq 0$ in every hold view, also
+                  \cmd{av\_scan\_fast} (scan shift)\\[2pt]
+    setup after & $\geq 0$ in \cmd{av\_slow}, \cmd{av\_jtag\_slow}. Hold
+                  buffers cost a little setup: compare with before\\[2pt]
+    DRV         & \cmd{timing\_post/}: max transition / capacitance left?\\[2pt]
+    antenna     & near 0 (diodes during routing, 03)\\[2pt]
+    density     & minimum density reached on every layer\\[2pt]
+    GDS merge   & \cmd{missing: 0}\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item FAIL = Innovus error, negative slack after the optimization or
+      a missing output (exit code 1)
+    \item The numbers here use Innovus' fast extraction; the sign-off
+      numbers come from Quantus + Tempus (06)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Under the hood
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Under the Hood}
+\renewcommand{\astitle}{Under the Hood}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{\cmd{02d\_rv64\_postroute.tcl} step by step}
+\end{frame}
+
+\renewcommand{\assubtitle}{a) Views: Hold in Scan Shift}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+read_db cc_chip_top_routed.db
+create_constraint_mode -name scan \
+  -sdc_files [list as_top_mem.sdc as_top_mem_scan.sdc]
+create_analysis_view -name av_scan_fast -constraint_mode scan \
+  -delay_corner dc_fast
+set_analysis_view -setup {av_slow av_typ av_jtag_slow} \
+                  -hold  {av_fast av_jtag_fast av_scan_fast}
+\end{lstlisting}
+  \begin{itemize}
+    \item Genus and P\&R know only \cmd{func} and \cmd{jtag\_load}
+    \item Scan shift: one flip-flop drives the next directly, no logic in
+      between -- the classic hold problem, must be fixed in the layout
+    \item Setup in scan mode stays out: it only limits TCK in SCANTEST
+      (06\_DokuSTA)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{b) Analysis Settings}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+set_db extract_rc_engine       post_route
+set_db extract_rc_effort_level $EXTRACT_EFFORT   ;# medium | high | signoff
+set_db extract_rc_coupled      true
+set_db timing_analysis_type    ocv
+set_db timing_analysis_cppr    both
+set_db delaycal_enable_si      true
+\end{lstlisting}
+  \begin{itemize}
+    \item The same analysis as the sign-off STA (06): OCV, CPPR, SI
+    \item Otherwise Innovus repairs against different numbers than
+      Tempus checks
+    \item \cmd{signoff} = Quantus inside Innovus: closest to the sign-off,
+      slower, needs a Quantus licence
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{c) Optimization}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+time_design -post_route        -report_dir timing_pre ...
+time_design -post_route -hold  -report_dir timing_pre ...
+opt_design  -post_route -setup -hold
+opt_design  -post_route -drv
+time_design -post_route        -report_dir timing_post ...
+time_design -post_route -hold  -report_dir timing_post ...
+write_db cc_chip_top_postopt.db
+\end{lstlisting}
+  \begin{itemize}
+    \item Before/after: the reports show what the optimization changed
+    \item Setup and hold in one call: Innovus balances them (a hold
+      buffer must not create a setup violation)
+    \item DRV afterwards: transition and capacitance limits of the
+      Liberty cells
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{d) Core Fillers}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+add_fillers -base_cells $CORE_FILLERS     ;# after the last cell change
+\end{lstlisting}
+  \begin{itemize}
+    \item Fillers close the gaps in the rows: wells, implants and the
+      supply rails become continuous -- otherwise DRC errors
+    \item Physical only: not in the STA/GLS netlist, but in the LVS
+      netlist
+    \item After the optimization: a filler would block the space a hold
+      buffer needs
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{e) Metal Fill}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+add_metal_fill -layers $FILL_LAYERS
+check_metal_density -report cc_chip_top_density.rpt
+\end{lstlisting}
+  \begin{itemize}
+    \item Chemical-mechanical polishing (CMP) needs an even metal density:
+      every layer needs a minimum (and maximum) share of metal per window
+    \item Fill = unconnected dummy metal in the empty areas
+    \item Before the export: Quantus sees the fill (extra capacitance), the
+      GDS carries it
+    \item Some foundries want their own fill deck (Pegasus/Calibre) instead:
+      VERIFY-LAB, then this step goes
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{f) Hand-off (\texttt{02b\_rv64\_export.tcl})}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+write_db cc_chip_top_final.db
+write_netlist cc_chip_top_routed.v                          ;# STA, GLS, LEC
+write_def -floorplan -netlist -routing cc_chip_top_routed.def ;# Quantus
+write_netlist -include_pg_ports -include_phys_insts cc_chip_top_lvs.v
+\end{lstlisting}
+  \begin{itemize}
+    \item The names stay \cmd{\_routed.*}: the later steps read them
+      unchanged
+    \item Two netlists: for timing only the logic; for LVS also the supply
+      ports and all physical-only cells, because LVS compares device by
+      device with the layout
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{g) Merged GDS (\texttt{02c\_rv64\_gds.tcl})}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+write_stream cc_chip_top.gds -map_file $STREAM_MAP -merge $GDS_FILES \
+             -unit $GDS_UNIT -mode ALL -structure_name cc_chip_top
+\end{lstlisting}
+  \begin{itemize}
+    \item Innovus writes wires, vias and placements (it knows the cells only
+      as LEF); \cmd{-merge} adds the full cell layouts from the X-FAB GDS
+    \item \cmd{-map\_file}: LEF layer $\rightarrow$ GDS layer (PDK)
+    \item \cmd{cc\_chip\_top\_gds.rpt}: cells used in the design but found
+      in none of the GDS files -- must be 0, else the GDS has empty boxes
+    \item Before: one text label per pad (port name or VDD/GND/VDDO/GNDO)
+      on \cmd{LABEL\_LAYER}, for LVS
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{h) Physical Checks on the Final Layout}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  Added by \cmd{innovus\_post.sh} (stages \cmd{finish}, \cmd{gds}):
+\begin{lstlisting}[style=sh]
+verify_connectivity -type all > cc_chip_top_connectivity.rpt   # in the flow
+verify_drc -limit 100000 -report cc_chip_top_drc.rpt
+verifyProcessAntenna -report cc_chip_top_antenna.rpt
+\end{lstlisting}
+  \begin{itemize}
+    \item Same checks as after routing (03), now with hold buffers,
+      fillers and metal fill
+    \item Innovus' own checks with the LEF rules; sign-off is the X-FAB
+      rule deck (08\_DokuPV)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pitfalls
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Pitfalls}
+\renewcommand{\astitle}{Pitfalls}
+\begin{frame}
+\frametitle{\astitle}
+\textcolor{red}{Pitfalls}
+\end{frame}
+
+\renewcommand{\assubtitle}{No Routed Checkpoint}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}
+ERROR: .../build_innovus/cc_chip_top_routed.db not found
+       run ./scripts/innovus/innovus_pnr.sh -b first
+\end{lstlisting}
+  \begin{itemize}
+    \item 03 has not run, or only up to an earlier stage (\cmd{-s fp})
+    \item A P\&R run deletes the old post-route results: run 05 again
+      after every run of 03
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Hold Not Fixed}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Hold still negative after \cmd{opt\_design}: look at the path in
+      \cmd{cc\_chip\_top\_final\_hold.rpt}
+    \begin{itemize}
+      \item in \cmd{av\_scan\_fast}: scan path from one flip-flop to the
+        next; large clock skew between them? (CTS, scan reorder, DFT-01)
+      \item at a macro or a pad: the SDC may be wrong (input/output delay)
+      \item no space for the delay cells: the core is too full
+    \end{itemize}
+    \item Setup much worse after the hold fixing: hold and setup on the
+      same path conflict -- usually skew, not logic
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{VERIFY-LAB: Not Yet Run}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{itemize}
+    \item Prepared without access to Innovus; to check on the first run:
+    \begin{itemize}
+      \item \cmd{create\_constraint\_mode} / \cmd{create\_analysis\_view}
+        on an already initialized design (else: add the scan view to
+        \cmd{xh018\_mmmc.tcl} for all steps)
+      \item options of \cmd{opt\_design} and \cmd{time\_design} in
+        Innovus 26.1
+      \item attribute names of the extraction and SI settings
+      \item \cmd{add\_metal\_fill} options, density report; X-FAB fill deck?
+      \item the slack lines the wrapper reads from the reports
+    \end{itemize}
+    \item Replace the example output on the Batch slide with a real one
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

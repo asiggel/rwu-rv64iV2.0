@@ -76,7 +76,7 @@ fi
 NETLIST="$INNOVUS_ROOT/${DESIGN_TOP}_routed.v"
 if [ ! -s "$NETLIST" ]; then
   echo "ERROR: $NETLIST not found -- run ./scripts/quantus/quantus_rcx.sh first" >&2
-  echo "       (it writes the netlist from cc_chip_top_routed.db if needed)" >&2
+  echo "       (it writes the netlist from cc_chip_top_final.db if needed)" >&2
   exit 2
 fi
 for c in rc_max rc_typ rc_min; do

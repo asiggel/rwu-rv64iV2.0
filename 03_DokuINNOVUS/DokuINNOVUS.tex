@@ -97,7 +97,7 @@
       Xcelium (RTL) $\rightarrow$ Genus (synthesis) $\rightarrow$ \textbf{Innovus (P\&R)}
     \item Genus decides \emph{which} cells, Innovus decides \emph{where} they
       go and \emph{how} they are wired
-    \item Four stages
+    \item This deck (step 03): four stages up to the routed layout
     \begin{itemize}
       \item \textbf{fp}: floorplan: die and core size, pad ring
       \item \textbf{place}: put every standard cell and macro onto the core area
@@ -129,13 +129,12 @@
     \cmd{*\_antenna.rpt}           & antenna violations\\[1pt]
     \cmd{*\_connectivity.rpt}      & open or shorted nets\\[1pt]
     \cmd{*\_summary.rpt}           & cell count, area, wire length per layer\\[1pt]
-    \cmd{\_routed.v}, \cmd{\_routed.def} & hand-off to Quantus, Tempus, GLS, LEC\\[1pt]
-    \cmd{\_lvs.v}, \cmd{cc\_chip\_top.gds} & hand-off to DRC/LVS\\
+    \cmd{cc\_chip\_top\_routed.db} & input of the post-route step\\
   \end{tabularx}
   \vspace{4pt}
   \begin{itemize}
-    \item Not yet in the flow: post-route optimization, signoff DRC/LVS
-      with the X-FAB rule deck
+    \item Hand-off netlists, DEF and GDS come from the post-route step
+      (\cmd{05\_DokuINNOVUSPost}), after the last cell change
   \end{itemize}
 \end{block}
 \end{frame}
@@ -233,8 +232,7 @@ lmstat -c $CDS_LIC_FILE -a | grep -i innovus
     \cmd{scripts/innovus/innovus\_pnr.sh}   & P\&R with GUI (default) or batch,
                                               step by step, view checkpoints\\[2pt]
     \cmd{scripts/02\_rv64\_floorplan\_pnr.tcl} & the Innovus flow itself\\[2pt]
-    \cmd{scripts/02a/b/c\_rv64\_*.tcl}     & macros + power grid, hand-off
-                                              netlists, merged GDS (sourced)\\[2pt]
+    \cmd{scripts/02a\_rv64\_power.tcl}    & macros + power grid (sourced)\\[2pt]
     \cmd{scripts/xh018\_mmmc.tcl}           & corners and views (came with the Genus DB)\\[2pt]
     \cmd{build\_genus/innovus/}             & input: hand-off from Genus\\[2pt]
     \cmd{build\_innovus/}                   & all results\\
@@ -244,6 +242,9 @@ lmstat -c $CDS_LIC_FILE -a | grep -i innovus
     \item \cmd{innovus\_pnr.sh} only \emph{calls} \cmd{02\_rv64\_floorplan\_pnr.tcl}
     \item $\Rightarrow$ floorplan or flow changes are made \emph{only} in
       the Tcl script
+    \item This step ends with the routed layout. Post-route optimization,
+      fillers, metal fill, hand-off and GDS: next Innovus step,
+      \cmd{05\_DokuINNOVUSPost}
   \end{itemize}
 \end{block}
 \end{frame}
@@ -269,7 +270,7 @@ cd RWU_RV/RV_NoPipeline
 \end{lstlisting}
 % VERIFY-LAB: replace with the output of a real run
 \begin{lstlisting}[style=out]
-=== [innovus] 1/3 run 02_rv64_floorplan_pnr.tcl up to 'gds' (batch) ...
+=== [innovus] 1/3 run 02_rv64_floorplan_pnr.tcl up to 'route' (batch) ...
 === [innovus] 2/3 checkpoints
   fp: cc_chip_top_fp.db
   place: cc_chip_top_placed.db
@@ -277,14 +278,12 @@ cd RWU_RV/RV_NoPipeline
   route: cc_chip_top_routed.db
 === [innovus] 3/3 result
   worst setup slack: ...
-  hand-off:     cc_chip_top_routed.v / _routed.def / _lvs.v
   drc:              ...
   antenna:          ...
   connectivity:     ...
   pg_connectivity:  ...
-  GDS:              cc_chip_top.gds (...)
-  GDS merge:        cells used: ..., missing: 0
-PASS  place & route of cc_chip_top up to 'gds'
+--- next: ./scripts/innovus/innovus_post.sh -b
+PASS  place & route of cc_chip_top up to 'route'
 \end{lstlisting}
   \begin{itemize}
     \item PASS = all stages ran (exit code 0). DRC and antenna violations
@@ -301,7 +300,7 @@ PASS  place & route of cc_chip_top up to 'gds'
   \begin{tabularx}{\linewidth}{@{}lY@{}}
     \cmd{-b}, \cmd{-{}-batch}        & no GUI (default: Innovus GUI)\\[2pt]
     \cmd{-s}, \cmd{-{}-stop STAGE}   & stop after \cmd{fp}, \cmd{place},
-                                       \cmd{cts}, \cmd{route} or \cmd{gds}
+                                       \cmd{cts} or \cmd{route}
                                        (default)\\[2pt]
     \cmd{-o}, \cmd{-{}-open STAGE}   & run nothing, open the checkpoint of
                                        \cmd{STAGE} in the GUI\\[2pt]
@@ -312,8 +311,9 @@ PASS  place & route of cc_chip_top up to 'gds'
   \begin{itemize}
     \item Every run starts again from the Genus database; \cmd{-s} only
       decides where it ends
-    \item A run deletes the old checkpoints and reports first:
-      what is in \cmd{build\_innovus/} always belongs to the last run
+    \item A run deletes the old checkpoints and reports first, also those
+      of the post-route step: what is in \cmd{build\_innovus/} always
+      belongs to the last run
     \item \cmd{-b -s fp}: try a floorplan change in a few seconds
   \end{itemize}
 \end{block}
@@ -335,14 +335,14 @@ PASS  place & route of cc_chip_top up to 'gds'
     \cmd{cc\_chip\_top\_cts.db}                & checkpoint: clock tree\\[1pt]
     \cmd{cc\_chip\_top\_routed.db}             & checkpoint: routed\\[1pt]
     \cmd{*\_fp\_summary.rpt}, \cmd{*\_route\_summary.rpt} & design summary\\[1pt]
-    \cmd{*\_placed\_area.rpt}, \cmd{*\_final\_area.rpt}   & area\\[1pt]
-    \cmd{*\_cts\_timing.rpt}, \cmd{*\_final\_timing.rpt}  & worst paths\\[1pt]
+    \cmd{*\_placed\_area.rpt}, \cmd{*\_route\_area.rpt}   & area\\[1pt]
+    \cmd{*\_cts\_timing.rpt}, \cmd{*\_route\_timing.rpt}  & worst paths\\[1pt]
     \cmd{*\_drc.rpt}, \cmd{*\_antenna.rpt}, \cmd{*\_connectivity.rpt} & physical checks\\[1pt]
-    \cmd{*\_pg\_connectivity.rpt}             & power grid after \cmd{route\_special}\\[1pt]
-    \cmd{*\_density.rpt}                      & metal density after fill\\[1pt]
-    \cmd{*\_routed.v/.def}, \cmd{*\_lvs.v}     & hand-off netlists, layout\\[1pt]
-    \cmd{cc\_chip\_top.gds}, \cmd{*\_gds.rpt}  & merged GDS, cells missing in the merge\\
+    \cmd{*\_pg\_connectivity.rpt}             & power grid after \cmd{route\_special}\\
   \end{tabularx}
+  \vspace{3pt}
+  The post-route step (\cmd{05\_DokuINNOVUSPost}) adds its results to the
+  same directory.
 \end{block}
 \end{frame}
 
@@ -601,7 +601,8 @@ routeDesign                      ;  write_db cc_chip_top_routed.db
       clocks are \emph{propagated}: real delays instead of ideal clocks
     \item \cmd{routeDesign}: global and detailed routing of all signal nets
     \item Before \cmd{routeDesign}: antenna fixing switched on (see g)
-    \item Not yet in the flow: post-route optimization
+    \item Then the next Innovus step: post-route optimization
+      (\cmd{05\_DokuINNOVUSPost})
   \end{itemize}
 \end{block}
 \end{frame}
@@ -704,68 +705,7 @@ routeDesign
 \end{block}
 \end{frame}
 
-\renewcommand{\assubtitle}{h) Metal Fill}
-\begin{frame}[fragile]
-\frametitle{\astitle}
-\begin{block}{\assubtitle}
-\begin{lstlisting}[style=sh]
-add_metal_fill -layers $FILL_LAYERS            ;# after the core fillers
-check_metal_density -report cc_chip_top_density.rpt
-\end{lstlisting}
-  \begin{itemize}
-    \item Chemical-mechanical polishing (CMP) needs an even metal density:
-      every layer needs a minimum (and maximum) share of metal per window
-    \item Fill = unconnected dummy metal in the empty areas
-    \item Before the export: Quantus sees the fill (extra capacitance), the
-      GDS carries it
-    \item Some foundries want their own fill deck (Pegasus/Calibre) instead:
-      VERIFY-LAB, then this step goes
-  \end{itemize}
-\end{block}
-\end{frame}
-
-\renewcommand{\assubtitle}{i) Core Fillers and Hand-off}
-\begin{frame}[fragile]
-\frametitle{\astitle}
-\begin{block}{\assubtitle}
-\begin{lstlisting}[style=sh]
-add_fillers -base_cells $CORE_FILLERS              ;# after routing
-write_netlist ${DESIGN_TOP}_routed.v               ;# STA, GLS, LEC
-write_def -floorplan -netlist -routing ${DESIGN_TOP}_routed.def  ;# Quantus
-write_netlist -include_pg_ports -include_phys_insts ${DESIGN_TOP}_lvs.v
-\end{lstlisting}
-  \begin{itemize}
-    \item Fillers close the gaps in the rows: wells, implants and the
-      supply rails become continuous -- otherwise DRC errors
-    \item Two netlists: for timing only the logic; for LVS also the supply
-      ports and all physical-only cells, because LVS compares device by
-      device with the layout
-  \end{itemize}
-\end{block}
-\end{frame}
-
-\renewcommand{\assubtitle}{j) Merged GDS (\texttt{02c\_rv64\_gds.tcl})}
-\begin{frame}[fragile]
-\frametitle{\astitle}
-\begin{block}{\assubtitle}
-\begin{lstlisting}[style=sh]
-write_stream cc_chip_top.gds -map_file $STREAM_MAP -merge $GDS_FILES \
-             -unit $GDS_UNIT -mode ALL -structure_name cc_chip_top
-\end{lstlisting}
-  \begin{itemize}
-    \item Innovus writes wires, vias and placements (it knows the cells only
-      as LEF); \cmd{-merge} adds the full cell layouts from the X-FAB GDS
-    \item \cmd{-map\_file}: LEF layer $\rightarrow$ GDS layer (PDK)
-    \item \cmd{cc\_chip\_top\_gds.rpt}: cells used in the design but found
-      in none of the GDS files -- must be 0, else the GDS has empty boxes
-    \item Before: one text label per pad (port name or VDD/GND/VDDO/GNDO)
-      on \cmd{LABEL\_LAYER}, for LVS
-    \item Next: DRC and LVS with the X-FAB rule decks (\cmd{scripts/pv})
-  \end{itemize}
-\end{block}
-\end{frame}
-
-\renewcommand{\assubtitle}{k) Physical Checks}
+\renewcommand{\assubtitle}{h) Physical Checks}
 \begin{frame}[fragile]
 \frametitle{\astitle}
 \begin{block}{\assubtitle}
@@ -780,8 +720,8 @@ verifyProcessAntenna -report cc_chip_top_antenna.rpt
     \item \cmd{-limit}: by default the DRC stops after a few hundred
       violations; the first pass has more
     \item These are Innovus' own checks with the LEF rules. Signoff for
-      tape-out is done later with the X-FAB rule deck (DRC/LVS in a
-      physical verification tool)
+      tape-out is done later with the X-FAB rule deck (\cmd{08\_DokuPV})
+    \item The post-route step runs them again on the final layout
   \end{itemize}
 \end{block}
 \end{frame}
@@ -802,15 +742,17 @@ verifyProcessAntenna -report cc_chip_top_antenna.rpt
 \begin{block}{\assubtitle}
 \begin{lstlisting}[style=sh]
 cd RWU_RV/RV_NoPipeline
-./scripts/xcelium/xrun_regression.sh -c     # 1. does it work?
-./scripts/genus/genus_syn.sh -b -c          # 2. gates, area, timing
-./scripts/innovus/innovus_pnr.sh -b -c      # 3. layout
-./scripts/innovus/innovus_pnr.sh -o route   # 4. look at it
+./scripts/xcelium/xrun_regression.sh -c     # 01 does it work?
+./scripts/genus/genus_syn.sh -b -c          # 02 gates, area, timing
+./scripts/innovus/innovus_pnr.sh -b -c      # 03 layout up to routing
+./scripts/innovus/innovus_pnr.sh -o route   #    look at it
+./scripts/gatesim/gatesim.sh ...            # 04 gate-level sim
+./scripts/innovus/innovus_post.sh -b        # 05 post-route, GDS
 \end{lstlisting}
   \begin{itemize}
-    \item Each step reads the result of the step before; after an RTL
-      change all three run again
-    \item Steps 1--3 in batch mode, the GUI only for looking: saves
+    \item Numbers = HowTo folders. Each step reads the result of the step
+      before; after an RTL change all of them run again
+    \item Batch mode, the GUI only for looking: saves
       licenses and time
   \end{itemize}
 \end{block}

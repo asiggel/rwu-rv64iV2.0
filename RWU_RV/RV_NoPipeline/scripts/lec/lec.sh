@@ -100,7 +100,7 @@ case " $MODES " in
   *" syn2pnr "*)
     if [ ! -s "$PNR_NETLIST" ]; then
       echo "ERROR: $PNR_NETLIST not found -- ./scripts/quantus/quantus_rcx.sh" >&2
-      echo "       writes it from cc_chip_top_routed.db (or ./scripts/innovus/innovus_pnr.sh -b)" >&2
+      echo "       writes it from cc_chip_top_final.db (or ./scripts/innovus/innovus_post.sh -b)" >&2
       exit 2
     fi ;;
 esac

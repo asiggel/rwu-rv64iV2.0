@@ -133,11 +133,12 @@ Schritt 2: Synthese mit Scan-Insertion (DFT-01, Boundary Scan DFT-02)
       erwartet (Observe-only-Zelle, CLAUDE.md Regel 8, Ausnahme)
     - Timing-Reports pro View: Worst Slack >= 0
 
-Schritt 3: Place & Route mit Power-Grid, Core-Fillern und GDS
+Schritt 3: Place & Route mit Power-Grid bis zum Routing (Innovus,
+           Abschnitt 3a, 03_DokuINNOVUS)
 
       ./scripts/innovus/innovus_pnr.sh -b -s fp -c   (erst nur Floorplan)
       ./scripts/innovus/innovus_pnr.sh -o fp         (ansehen)
-      ./scripts/innovus/innovus_pnr.sh -b -c         (alles bis GDS)
+      ./scripts/innovus/innovus_pnr.sh -b -c         (alles bis Routing)
 
   Pruefen:
     - run.log: "AS-pnr: die bbox" = 0 0 2600 2600 (der zusaetzliche
@@ -148,11 +149,7 @@ Schritt 3: Place & Route mit Power-Grid, Core-Fillern und GDS
     - cc_chip_top_pg_connectivity.rpt: keine Opens auf VDD/GND
     - DRC-/Antenna-Zahl gegen den Smoke-Test (2630/159) vergleichen;
       Antenna sollte jetzt (Dioden beim Routing) fast 0 sein
-    - cc_chip_top_density.rpt: Mindestdichte pro Layer erreicht
-    - cc_chip_top_gds.rpt: "missing: 0" (sonst fehlt eine GDS-Datei)
-  Danach Schritte 5-8 (Quantus, Tempus, GLS, LEC) auf dem neuen Layout.
-  Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01),
-  Post-Route-Optimierung.
+  Offen dabei: Scan-Ketten-Umordnung mit cc_chip_top_syn.scandef (DFT-01).
 
 Schritt 4: Gate-Level-Simulation (Abschnitt 3b, 04_DocuGateSim)
 
@@ -163,14 +160,36 @@ Schritt 4: Gate-Level-Simulation (Abschnitt 3b, 04_DocuGateSim)
       ./scripts/gatesim/gatesim.sh -r                     (alle, ~62 Tests)
       ./scripts/gatesim/gatesim.sh -r -s                  (alle, mit SDF)
 
-Schritt 5: RC-Extraktion (Quantus, Abschnitt 3c, 05_DokuSTA)
+Schritt 5: Post-Route-Optimierung, Filler, Metal-Fill, GDS (Innovus,
+           Abschnitt 3c, 05_DokuINNOVUSPost)
+  Braucht build_innovus/cc_chip_top_routed.db aus Schritt 3.
+
+      ./scripts/innovus/innovus_post.sh -b -s opt   (erst nur Optimierung)
+      ./scripts/innovus/innovus_post.sh -b          (alles bis GDS)
+      ./scripts/innovus/innovus_post.sh -o gds      (ansehen)
+      ./scripts/innovus/innovus_post.sh -b -x signoff  (Extraktion mit
+                                                    Quantus-Engine)
+  Pruefen:
+    - Worst Setup/Hold vorher/nachher (Ausgabe des Skripts): Hold in
+      allen Views >= 0, auch av_scan_fast (Scan-Shift); Setup darf durch
+      das Hold-Fixing nicht negativ werden
+    - run_post.log: create_constraint_mode/create_analysis_view fuer den
+      Scan-Modus ohne Fehler (VERIFY-LAB), opt_design-Zusammenfassung
+      (eingefuegte Hold-Buffer, DRV-Reste)
+    - cc_chip_top_antenna.rpt: fast 0 (Dioden beim Routing)
+    - cc_chip_top_density.rpt: Mindestdichte pro Layer erreicht
+    - cc_chip_top_gds.rpt: "missing: 0" (sonst fehlt eine GDS-Datei)
+    - DRC-Zahl gegen den Smoke-Test (2630) vergleichen
+  Danach Schritte 6-10 auf dem neuen Layout.
+
+Schritt 6: RC-Extraktion (Quantus, Abschnitt 3d, 06_DokuSTA)
   $XFAB_PATHS: QRC_MAX/_TYP/_MIN muessen auf die qrcTechFile-Dateien
   zeigen (stehen schon drin, Genus/Innovus nutzen sie). Neu und optional:
     QRC_LAYERMAP   Paare "LEF-Layer" "QRC-Layer", nur falls die Layer-
                    namen im Technologie-LEF und im qrcTechFile verschieden
                    sind (Quantus meldet dann unbekannte Layer); sonst leer
-  Innovus vor dem 27.11.2026 gelaufen: Netzliste und DEF fehlen noch, das
-  Skript schreibt sie selbst aus cc_chip_top_routed.db (kein neuer P&R-Lauf).
+  Netzliste und DEF fehlen oder sind aelter als cc_chip_top_final.db: das
+  Skript schreibt sie selbst aus der DB (Schritt 5 muss gelaufen sein).
 
       ./scripts/quantus/quantus_rcx.sh            (Quantus standalone)
       ./scripts/quantus/quantus_rcx.sh -i         (Alternative: Quantus-
@@ -180,7 +199,7 @@ Schritt 5: RC-Extraktion (Quantus, Abschnitt 3c, 05_DokuSTA)
   Standalone-Lauf fehl (CCL-Syntax, Layer-Mapping -- VERIFY-LAB), mit -i
   weitermachen und den Fehler notieren.
 
-Schritt 6: Sign-off-STA (Tempus)
+Schritt 7: Sign-off-STA (Tempus)
 
       ./scripts/sta/sta.sh -b       (batch: Worst Slack pro View)
       ./scripts/sta/sta.sh          (Tempus-Shell bleibt offen)
@@ -191,12 +210,12 @@ Schritt 6: Sign-off-STA (Tempus)
   TCK im SCANTEST (Capture langsamer takten), kein Fehler am Chip.
   sta_violators.rpt: max_transition/max_capacitance (DRV) ansehen.
 
-Schritt 7: Post-Route-Gate-Level-Simulation mit Tempus-SDF
+Schritt 8: Post-Route-Gate-Level-Simulation mit Tempus-SDF
 
       ./scripts/gatesim/gatesim.sh -r -p -s       (Slow-Corner, Setup)
       ./scripts/gatesim/gatesim.sh -r -p -s -m    (Fast-Corner, Hold)
 
-Schritt 8: Formale Aequivalenz (Conformal LEC, Abschnitt 3d, 06_DokuLEC)
+Schritt 9: Formale Aequivalenz (Conformal LEC, Abschnitt 3e, 07_DokuLEC)
   Keine neuen $XFAB_PATHS-Eintraege. Genus liest die RTL-Dateiliste und
   die Defines jetzt aus rv64_rtl_setup.tcl (gleicher Inhalt wie vorher in
   00_rv64_elab.tcl) -- beim naechsten Genus-Lauf pruefen, dass er wie
@@ -210,15 +229,15 @@ Schritt 8: Formale Aequivalenz (Conformal LEC, Abschnitt 3d, 06_DokuLEC)
   _unmapped.rpt (not-mapped ansehen). Alle Scan-FFs non-equivalent ->
   Constraint auf core/as_jtag/sc01_shift_o greift nicht (Pin-Name).
 
-Schritt 9: DRC, LVS, ERC (Abschnitt 3e, 07_DokuPV)
-  Braucht den Innovus-Lauf bis zur Stufe gds (Schritt 3).
+Schritt 10: DRC, LVS, ERC (Abschnitt 3f, 08_DokuPV)
+  Braucht den Post-Route-Lauf bis zur Stufe gds (Schritt 5).
 
       ./scripts/pv/pv.sh -m drc        (erst DRC, Decks aus DRC_RULES)
       ./scripts/pv/pv.sh -m lvs        (LVS mit ERC)
       ./scripts/pv/pv.sh -t calibre    (falls nur Calibre-Decks)
   Pruefen: build_pv/drc_<n>.summary (Zahl pro Regel), lvs.report
-  (CORRECT), erc.summary. Erster Lauf: viele DRC-Ergebnisse sind
-  normal (Metal-Fill und Antenna-Fixing fehlen noch). Beim LVS zuerst
+  (CORRECT), erc.summary. Dichte- und Antenna-Ergebnisse mit den
+  Innovus-Reports aus Schritt 5 vergleichen. Beim LVS zuerst
   Ports/Supplies: fehlen die Pad-Labels oder liegen sie auf dem falschen
   Layer (cc_chip_top_labels.txt, LABEL_LAYER)?
 
@@ -323,7 +342,7 @@ Im selben Run-Verzeichnis wie Genus:
 
   Einfacher (aus RWU_RV/RV_NoPipeline, Ergebnisse in build_innovus/):
 
-    ./scripts/innovus/innovus_pnr.sh            (ganzer Flow in der GUI)
+    ./scripts/innovus/innovus_pnr.sh            (bis Routing in der GUI)
     ./scripts/innovus/innovus_pnr.sh -s place   (Stopp nach fp/place/cts/route)
     ./scripts/innovus/innovus_pnr.sh -o route   (Checkpoint nur ansehen)
     ./scripts/innovus/innovus_pnr.sh -b         (batch, mit DRC/Antenna)
@@ -335,12 +354,9 @@ Im selben Run-Verzeichnis wie Genus:
   Pad-Ring (26 Pads, Eckzellen, IO-Filler) -> SPRAM-Makros fest platziert
   -> Power-Grid (02a_rv64_power.tcl: Global Connect, Core-Ring, Stripes,
   route_special) -> place_design -> ccopt_design -> routeDesign (mit
-  Antenna-Fixing: Layerwechsel + Dioden ANTENNA_CELL) -> Core-Filler ->
-  Metal-Fill (FILL_LAYERS, Dichtereport) -> Netzlisten/DEF (02b) ->
-  GDS mit Merge (02c).
+  Antenna-Fixing: Layerwechsel + Dioden ANTENNA_CELL).
   Checkpoints: cc_chip_top_fp.db, _placed.db, _cts.db, _routed.db
-  Uebergabe: _routed.v, _routed.def, _lvs.v (mit Supply-Ports und
-  Physical-only-Zellen), cc_chip_top.gds
+  Weiter mit dem zweiten Innovus-Schritt (Abschnitt 3c).
 
   Erster Durchlauf (24.11.2026, reiner Smoke-Test, damals noch mit
   Innovus 23.33 -- mit Release 2026/27 zu wiederholen): 0 Connectivity-
@@ -379,21 +395,51 @@ build_gatesim/<test>/:
 
 
 --------------------------------------------------------------------------------
-3c. Sign-off-Timing: RC-Extraktion (Quantus) und STA (Tempus)
+3c. Post-Route-Optimierung und Abschluss des Layouts (Innovus)
 --------------------------------------------------------------------------------
 
-Aus RWU_RV/RV_NoPipeline, nach Place & Route (build_innovus/):
+Aus RWU_RV/RV_NoPipeline, nach Place & Route (build_innovus/cc_chip_top_routed.db):
+
+    ./scripts/innovus/innovus_post.sh            (GUI, bis GDS)
+    ./scripts/innovus/innovus_post.sh -b         (batch, mit Auswertung)
+    ./scripts/innovus/innovus_post.sh -s opt     (Stopp nach opt/finish/gds)
+    ./scripts/innovus/innovus_post.sh -o finish  (Checkpoint nur ansehen)
+
+  Ausfuehrliche Anleitung: 05_DokuINNOVUSPost/DokuINNOVUSPost.pdf
+
+  Ablauf (02d_rv64_postroute.tcl): read_db cc_chip_top_routed.db ->
+  Hold-View av_scan_fast dazu (Constraint-Modus scan) -> Extraktion
+  post_route (effort medium, -x high/signoff) + OCV/CPPR/SI wie in der
+  STA -> time_design vorher -> opt_design -post_route -setup -hold, dann
+  -drv -> time_design nachher -> Core-Filler -> Metal-Fill (FILL_LAYERS,
+  Dichtereport) -> Netzlisten/DEF (02b) -> GDS mit Merge (02c).
+  Checkpoints: cc_chip_top_postopt.db, _final.db
+  Uebergabe: _routed.v, _routed.def, _lvs.v (mit Supply-Ports und
+  Physical-only-Zellen), cc_chip_top.gds
+  Eigener Schritt, weil die Optimierung Zellen einfuegt und umbaut: sie
+  muss vor Fillern und Metal-Fill laufen, und die Uebergabe muss das
+  optimierte Layout zeigen.
+  Noch nie gelaufen: VERIFY-LAB in 02d_rv64_postroute.tcl und
+  05_DokuINNOVUSPost.
+
+
+--------------------------------------------------------------------------------
+3d. Sign-off-Timing: RC-Extraktion (Quantus) und STA (Tempus)
+--------------------------------------------------------------------------------
+
+Aus RWU_RV/RV_NoPipeline, nach dem Post-Route-Schritt (build_innovus/):
 
     ./scripts/quantus/quantus_rcx.sh [-i]    -> build_quantus/*.spef
     ./scripts/sta/sta.sh [-b] [--no-si]      -> build_sta/sta_*.rpt, *.sdf
     ./scripts/gatesim/gatesim.sh -r -p -s [-m]   (Post-Route-GLS)
 
-  Ausfuehrliche Anleitung: 05_DokuSTA/DokuSTA.pdf
+  Ausfuehrliche Anleitung: 06_DokuSTA/DokuSTA.pdf
 
   - Reihenfolge: erst Extraktion, dann STA. Tempus rechnet die Leitungs-
     verzoegerungen nicht selbst, es liest die RC-Werte aus der SPEF.
-  - Innovus schreibt am Ende cc_chip_top_routed.v (Netzliste mit Clock-
-    Tree, ohne Filler) und cc_chip_top_routed.def (02b_rv64_export.tcl).
+  - Der Post-Route-Schritt schreibt am Ende cc_chip_top_routed.v (Netz-
+    liste mit Clock-Tree und Hold-Buffern, ohne Filler) und
+    cc_chip_top_routed.def (02b_rv64_export.tcl).
   - Quantus: 03a_rv64_quantus.tcl erzeugt im Build-Verzeichnis die CCL-
     Datei, lib.defs und qrc/rc_{max,typ,min}/ (Links auf die X-FAB-
     qrcTechFiles); die Corner heissen damit wie die RC-Corner in
@@ -407,19 +453,20 @@ Aus RWU_RV/RV_NoPipeline, nach Place & Route (build_innovus/):
   - SDF fuer die GLS: cc_chip_top_sta_func.sdf und _sta_scan.sdf
     (min = Fast-, max = Slow-Corner).
   - Noch nie mit echtem Quantus/Tempus gelaufen: VERIFY-LAB-Punkte in den
-    Skripten und in 05_DokuSTA.
+    Skripten und in 06_DokuSTA.
 
 
 --------------------------------------------------------------------------------
-3d. Formale Aequivalenz (Conformal LEC)
+3e. Formale Aequivalenz (Conformal LEC)
 --------------------------------------------------------------------------------
 
-Aus RWU_RV/RV_NoPipeline, nach Synthese (und fuer syn2pnr nach P&R):
+Aus RWU_RV/RV_NoPipeline, nach Synthese (und fuer syn2pnr nach dem
+Post-Route-Schritt):
 
     ./scripts/lec/lec.sh [-m rtl2syn|syn2pnr|all] [-g] [-i]
                                         -> build_lec/lec_<mode>*.rpt
 
-  Ausfuehrliche Anleitung: 06_DokuLEC/DokuLEC.pdf
+  Ausfuehrliche Anleitung: 07_DokuLEC/DokuLEC.pdf
 
   - rtl2syn: RTL (golden) gegen build_genus/cc_chip_top_syn.v
     syn2pnr: Genus-Netzliste gegen build_innovus/cc_chip_top_routed.v
@@ -431,19 +478,19 @@ Aus RWU_RV/RV_NoPipeline, nach Synthese (und fuer syn2pnr nach P&R):
   - SPRAM-Makros: Black Boxes (Liberty ohne Funktion), Pins verglichen.
   - -g: Dofile, das Genus mit write_do_lec schreibt (01b_rv64_syn.tcl;
     fehlt es, erzeugt lec.sh es aus cc_chip_top_syn.db).
-  - Noch nie mit echtem Conformal gelaufen: VERIFY-LAB in 06_DokuLEC.
+  - Noch nie mit echtem Conformal gelaufen: VERIFY-LAB in 07_DokuLEC.
 
 
 --------------------------------------------------------------------------------
-3e. Physikalische Verifikation: DRC, LVS, ERC (Pegasus oder Calibre)
+3f. Physikalische Verifikation: DRC, LVS, ERC (Pegasus oder Calibre)
 --------------------------------------------------------------------------------
 
-Aus RWU_RV/RV_NoPipeline, nach Innovus bis zur Stufe gds:
+Aus RWU_RV/RV_NoPipeline, nach dem Post-Route-Schritt bis zur Stufe gds:
 
     ./scripts/pv/pv.sh [-m drc|lvs|all] [-t pegasus|calibre] [-j N]
                                         -> build_pv/
 
-  Ausfuehrliche Anleitung: 07_DokuPV/DokuPV.pdf
+  Ausfuehrliche Anleitung: 08_DokuPV/DokuPV.pdf
 
   - Eingaben: build_innovus/cc_chip_top.gds (gemergt, mit Pad-Labels
     fuer Ports und Supplies), cc_chip_top_lvs.v (mit Supply-Ports und
@@ -453,7 +500,7 @@ Aus RWU_RV/RV_NoPipeline, nach Innovus bis zur Stufe gds:
     Decks selbst werden nie veraendert.
   - Pegasus liest die Verilog-Netzliste direkt; fuer Calibre wandelt
     v2lvs sie vorher in SPICE (cc_chip_top_lvs.sp).
-  - Noch nie gelaufen: VERIFY-LAB in 07_DokuPV.
+  - Noch nie gelaufen: VERIFY-LAB in 08_DokuPV.
 
 
 --------------------------------------------------------------------------------
@@ -786,23 +833,26 @@ Erledigt:
   Gate-Level-Simulation (scripts/gatesim, 04_DocuGateSim), im Labor mit
   der Netzliste gelaufen
   Sign-off-Timing vorbereitet: Quantus + Tempus (scripts/quantus,
-  scripts/sta, 05_DokuSTA), Constraint-Modus scan; im Labor offen
+  scripts/sta, 06_DokuSTA), Constraint-Modus scan; im Labor offen
   Formale Aequivalenz vorbereitet: Conformal LEC (scripts/lec,
-  06_DokuLEC), RTL->Genus und Genus->Innovus; im Labor offen
+  07_DokuLEC), RTL->Genus und Genus->Innovus; im Labor offen
   Power-Grid, Core-Filler, GDS-Merge mit Pad-Labels (Innovus) und
-  DRC/LVS/ERC (scripts/pv, Pegasus oder Calibre, 07_DokuPV) vorbereitet;
+  DRC/LVS/ERC (scripts/pv, Pegasus oder Calibre, 08_DokuPV) vorbereitet;
   im Labor offen
+  Post-Route-Optimierung (Setup/Hold/DRV, Hold auch im Scan-Shift),
+  Core-Filler, Metal-Fill und GDS als zweiter Innovus-Schritt
+  (innovus_post.sh, 05_DokuINNOVUSPost) vorbereitet; im Labor offen
 
 Offen:
   TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
            ca. 0,8 mm^2)
   TECH-06  Supply-Pads (Rolle, Anzahl, Platzierung, ESD, SSO) und
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
-  Power-Grid/Filler/GDS im Labor laufen lassen (Abschnitt 1a, Schritt 3),
-  Antenna-Fixing und Metal-Fill pruefen, Post-Route-Optimierung,
-  Scan-Reorder in Innovus,
-  ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7),
-  LEC-Lauf (Schritt 8), DRC/LVS/ERC-Lauf (Schritt 9)
+  P&R mit Power-Grid und Antenna-Fixing im Labor laufen lassen
+  (Abschnitt 1a, Schritt 3), Post-Route-Schritt mit Fillern, Metal-Fill
+  und GDS (Schritt 5), Scan-Reorder in Innovus,
+  ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 6-8),
+  LEC-Lauf (Schritt 9), DRC/LVS/ERC-Lauf (Schritt 10)
 
 AS:
 RTL Simulation ist gemacht (xrun), Synthese mit scanpath insertion ist gemacht (genus), place&route ist genacht (innovus), gatelevel simulation ist gemacht (xrun).

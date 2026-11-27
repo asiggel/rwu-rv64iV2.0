@@ -91,8 +91,9 @@
     \textbf{step} & \textbf{tool / script} & \textbf{result}\\\hline
     RTL simulation      & xrun, \cmd{scripts/xcelium/}   & functionally correct RTL\\
     synthesis + DFT     & Genus, \cmd{scripts/genus/}    & netlist, scan chain\\
+    place \& route      & Innovus, \cmd{innovus\_pnr.sh}  & routed layout\\
     gate-level sim      & xrun, \cmd{scripts/gatesim/}   & netlist ok\\
-    place \& route      & Innovus, \cmd{scripts/innovus/} & layout, \cmd{\_routed.v/.def}\\
+    post-route          & Innovus, \cmd{innovus\_post.sh} & final layout, \cmd{\_routed.v/.def}\\
     \textbf{RC extraction} & \textbf{Quantus}, \cmd{scripts/quantus/} & SPEF per RC corner\\
     \textbf{sign-off STA}  & \textbf{Tempus}, \cmd{scripts/sta/}      & slack per view, SDF\\
     post-route GLS      & xrun, \cmd{gatesim.sh -p -s}   & netlist with real delays\\
@@ -163,7 +164,8 @@
     \item Place \& route done:
 \begin{lstlisting}[style=sh]
 cd RWU_RV/RV_NoPipeline
-./scripts/innovus/innovus_pnr.sh -b     # -> build_innovus/
+./scripts/innovus/innovus_pnr.sh -b     # 03: up to routing
+./scripts/innovus/innovus_post.sh -b    # 05: final layout
 \end{lstlisting}
     \item \cmd{\$XFAB\_PATHS} (X-FAB NDA, never in git) already holds what
       Genus needs; used here:
@@ -182,17 +184,17 @@ set QRC_LAYERMAP [list]   ;# new, optional: LEF/QRC layer pairs
 \frametitle{\astitle}
 \begin{block}{\assubtitle}
   \begin{itemize}
-    \item \cmd{02\_rv64\_floorplan\_pnr.tcl} ends with
-      \cmd{02b\_rv64\_export.tcl}:
+    \item \cmd{02d\_rv64\_postroute.tcl} (\cmd{05\_DokuINNOVUSPost}) ends
+      with \cmd{02b\_rv64\_export.tcl}:
     \begin{itemize}
       \item \cmd{write\_netlist cc\_chip\_top\_routed.v}: logic incl. the
-        CTS buffers, without fillers and corner cells
+        CTS and hold buffers, without fillers and corner cells
       \item \cmd{write\_def -floorplan -netlist -routing
         cc\_chip\_top\_routed.def}
     \end{itemize}
-    \item P\&R ran before this step existed? No new P\&R run needed:
-      \cmd{quantus\_rcx.sh} finds \cmd{cc\_chip\_top\_routed.db} and runs
-      \cmd{02b\_rv64\_export.tcl} on it
+    \item Netlist missing or older than the layout:
+      \cmd{quantus\_rcx.sh} runs \cmd{02b\_rv64\_export.tcl} on
+      \cmd{cc\_chip\_top\_final.db}
     \item The netlist must be the routed one: the Genus netlist has no
       clock tree, its clock skew would be wrong
   \end{itemize}
@@ -287,7 +289,7 @@ output_db -type spef
   \begin{itemize}
     \item \cmd{03a\_rv64\_rcx\_innovus.tcl}, option \cmd{-i}:
 \begin{lstlisting}[style=sh]
-read_db cc_chip_top_routed.db
+read_db cc_chip_top_final.db
 set_db extract_rc_engine       post_route
 set_db extract_rc_effort_level signoff   ;# = Quantus
 set_db extract_rc_coupled      true

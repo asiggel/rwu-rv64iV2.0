@@ -15,7 +15,7 @@
 #   -h, --help      show this help
 #
 # Steps:
-#   1. inputs from Innovus (./scripts/innovus/innovus_pnr.sh -b, stage gds):
+#   1. inputs from Innovus (./scripts/innovus/innovus_post.sh -b, stage gds):
 #      build_innovus/cc_chip_top.gds, cc_chip_top_lvs.v
 #   2. Calibre LVS only: v2lvs converts the Verilog netlist to SPICE
 #      (cc_chip_top_lvs.sp, includes the cell CDL)
@@ -94,7 +94,7 @@ GDS="$INNOVUS_ROOT/${DESIGN_TOP}.gds"
 LVS_V="$INNOVUS_ROOT/${DESIGN_TOP}_lvs.v"
 for f in "$GDS" "$LVS_V"; do
   if [ ! -s "$f" ]; then
-    echo "ERROR: $f not found -- run ./scripts/innovus/innovus_pnr.sh -b (stage gds)" >&2
+    echo "ERROR: $f not found -- run ./scripts/innovus/innovus_post.sh -b (stage gds)" >&2
     exit 2
   fi
 done

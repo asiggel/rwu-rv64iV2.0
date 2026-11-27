@@ -2,17 +2,14 @@
 # 02_rv64_floorplan_pnr.tcl
 #
 # Innovus script: floorplan, pad-ring placement, SRAM macro placement, power
-# grid, standard-cell placement, CTS, routing with antenna fixing, core
-# fillers, metal fill and GDS for
-# cc_chip_top (X-FAB XH018). Writes the routed netlist and DEF for Quantus,
-# Tempus and the post-route gate-level simulation, the LVS netlist and the
-# merged GDS.
+# grid, standard-cell placement, CTS and routing with antenna fixing for
+# cc_chip_top (X-FAB XH018). Ends with the checkpoint cc_chip_top_routed.db.
+# The next Innovus step (post-route optimization, core fillers, metal fill,
+# hand-off netlists, GDS) is 02d_rv64_postroute.tcl.
 #
-# Stages (STOP_AFTER): fp | place | cts | route | gds (default: all)
+# Stages (STOP_AFTER): fp | place | cts | route (default: all)
 #   fp     floorplan, pad ring, macros, power grid  (02a_rv64_power.tcl)
-#   route  ... routing + antenna fixing, core fillers, metal fill,
-#          hand-off                                 (02b_rv64_export.tcl)
-#   gds    merged GDS for DRC/LVS                    (02c_rv64_gds.tcl)
+#   route  ... routing + antenna fixing
 #
 # FIRST-PASS SMOKE TEST (spec section 4.1.3 / TECH-06 still open):
 #   - The 26 pad-ring cells are placed in plain netlist order around the
@@ -47,8 +44,8 @@ if {![info exists ::env(XFAB_PATHS)] || ![file readable $::env(XFAB_PATHS)]} {
 source $::env(XFAB_PATHS)
 
 # Optional stop point for step-by-step runs (scripts/innovus/innovus_pnr.sh
-# -s): fp | place | cts | route | gds. Not set = full flow.
-if {![info exists STOP_AFTER]} { set STOP_AFTER gds }
+# -s): fp | place | cts | route. Not set = full flow.
+if {![info exists STOP_AFTER]} { set STOP_AFTER route }
 proc as_stop_here {stage} {
   global STOP_AFTER
   if {$STOP_AFTER eq $stage} {
@@ -208,37 +205,10 @@ set_db route_design_antenna_cell_name       $ANTENNA_CELL
 routeDesign
 
 # ------------------------------------------------------------------------
-# 10. Core fillers, final reports + checkpoint
+# 10. Reports + checkpoint (input of 02d_rv64_postroute.tcl)
 # ------------------------------------------------------------------------
-# Fillers close the gaps in the rows, so the wells, implants and supply rails
-# are continuous (DRC). Physical only: not in the STA/GLS netlist.
-add_fillers -base_cells $CORE_FILLERS
-
-# Metal fill: dummy metal in empty areas, so that every layer reaches the
-# minimum density per window that CMP needs (DRC density rules). After the
-# fillers and before the export: Quantus extracts the fill as well (it adds
-# capacitance), and the GDS carries it. Floating fill, density targets from
-# the technology LEF. VERIFY-LAB: options in Innovus 26.1 (legacy
-# addMetalFill / verifyMetalDensity); whether X-FAB requires its own fill
-# deck (Pegasus/Calibre) instead -- then remove this step.
-add_metal_fill -layers $FILL_LAYERS
-if {[catch {check_metal_density -report ${DESIGN_TOP}_density.rpt}]} {
-  verifyMetalDensity -report ${DESIGN_TOP}_density.rpt
-}
-
 summaryReport -outfile ${DESIGN_TOP}_route_summary.rpt
 verify_connectivity -type all > ${DESIGN_TOP}_connectivity.rpt
-report_area                   > ${DESIGN_TOP}_final_area.rpt
-report_timing -max_paths 20   > ${DESIGN_TOP}_final_timing.rpt
+report_area                   > ${DESIGN_TOP}_route_area.rpt
+report_timing -max_paths 20   > ${DESIGN_TOP}_route_timing.rpt
 write_db ${DESIGN_TOP}_routed.db
-
-# ------------------------------------------------------------------------
-# 11. Hand-off to sign-off: routed netlist, DEF, LVS netlist (02b_rv64_export.tcl)
-# ------------------------------------------------------------------------
-source [file join [file dirname [file normalize [info script]]] 02b_rv64_export.tcl]
-if {[as_stop_here route]} { return }
-
-# ------------------------------------------------------------------------
-# 12. Merged GDS for DRC / LVS (02c_rv64_gds.tcl)
-# ------------------------------------------------------------------------
-source [file join [file dirname [file normalize [info script]]] 02c_rv64_gds.tcl]
