@@ -102,13 +102,17 @@ foreach view {av_slow av_typ av_jtag_slow} {
 }
 
 # ------------------------------------------------------------------------
-# 6. Outputs: netlist + constraints for Innovus and gate-level simulation
+# 6. Outputs: netlist + constraints for Innovus, gate-level simulation, LEC
 # ------------------------------------------------------------------------
 write_hdl                  > ${DESIGN_TOP}_syn.v
 write_sdc -view av_slow    > ${DESIGN_TOP}_syn.sdc
 write_sdc -view av_jtag_slow > ${DESIGN_TOP}_syn_jtag.sdc
 write_sdf -view av_slow    > ${DESIGN_TOP}_syn.sdf
 write_scandef              > ${DESIGN_TOP}_syn.scandef
+# Genus's own Conformal LEC dofile (RTL -> netlist), the fallback of
+# scripts/lec/lec.sh -g; the main LEC run is 04_rv64_lec.tcl
+write_do_lec -golden_design rtl -revised_design ${DESIGN_TOP}_syn.v \
+             -logfile lec_genus_rtl2syn.log > ${DESIGN_TOP}_rtl2syn_genus.do
 write_db -all_root_attributes ${DESIGN_TOP}_syn.db
 file mkdir innovus
 write_db -common -all_root_attributes innovus/${DESIGN_TOP}.db

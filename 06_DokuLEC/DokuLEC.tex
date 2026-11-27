@@ -1,0 +1,521 @@
+\documentclass{beamer}
+
+\mode<presentation>
+\title{SoC1\&2: Formal Equivalence with Conformal LEC}
+\author[AS]{Andreas Siggelkow \newline \texttt{andreas.siggelkow@rwu.de}}
+\date[2026]{\today}
+\subtitle{RWU}
+\institute{Elektrotechnik und Informatik}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Logo
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\pgfdeclareimage[height=1cm]{hslogo}{./hs}
+\logo{\pgfuseimage{hslogo}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\definecolor{links}{HTML}{2A1B81}
+\hypersetup{colorlinks,linkcolor=,urlcolor=links}
+\usepackage{graphicx}
+\usepackage{ragged2e, tabularx}
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\usetheme{Singapore}
+\usecolortheme{seahorse}
+\usefonttheme[onlylarge]{structuresmallcapsserif}
+\usefonttheme[onlysmall]{structurebold}
+\setbeamertemplate{footline}[frame number]
+\usepackage{listings}
+\newcommand{\astitle}{nix}
+\newcommand{\assubtitle}{nix}
+\newcommand{\asfolie}[3]{\begin{frame}\frametitle{#1}\begin{block}{#2}{#3}\end{block}\end{frame}}
+
+% Commands and tool output are set with listings: dashes, $, _, \ and quotes
+% appear exactly as they have to be typed.
+\definecolor{lstbg}{HTML}{F2F2F7}
+\definecolor{lstcomment}{HTML}{5A5A8A}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  columns=fullflexible,
+  keepspaces=true,
+  upquote=true,
+  breaklines=true,
+  breakatwhitespace=false,
+  backgroundcolor=\color{lstbg},
+  frame=none,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=4pt,
+  belowskip=4pt,
+  showstringspaces=false
+}
+\lstdefinestyle{sh}{
+  morecomment=[l]{\#},
+  commentstyle=\color{lstcomment}\itshape
+}
+\lstdefinestyle{out}{basicstyle=\ttfamily\tiny}
+\newcommand{\cmd}[1]{\texttt{#1}}
+
+
+
+
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% First pages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\setcounter{tocdepth}{1}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{Outline}
+  \tableofcontents
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Overview
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Overview}
+\renewcommand{\astitle}{Overview}
+
+\renewcommand{\assubtitle}{What Is an Equivalence Check?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Two descriptions of the same design: \emph{golden} (reference)
+      and \emph{revised} (to be checked)
+    \item Conformal LEC \emph{proves} that both compute the same function
+      -- for every input value, without a testbench and without
+      simulation time
+    \item Simulation shows: these 62 tests pass. LEC shows: no input
+      sequence at all can tell RTL and netlist apart
+    \item It does not show that the RTL is right: a bug in the RTL is also
+      in the netlist, and LEC calls them equivalent
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Equivalence vs. Property Checking}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lYY@{}}
+    & \textbf{equivalence (LEC)} & \textbf{property (Jasper, SymbiYosys)}\\\hline
+    question & design A $\equiv$ design B? & does the design meet assertion P?\\
+    needs    & two designs              & one design + SVA properties\\
+    finds    & tool or flow errors      & design errors\\
+    tool     & Conformal LEC            & Jasper (no licence), SymbiYosys\\
+    effort   & low: scripts only        & high: write the properties\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item LEC is part of every sign-off: it closes the gap between the
+      simulated RTL and the netlist that goes to the fab
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Where in the Flow?}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lp{0.36\linewidth}Y@{}}
+    \textbf{check} & \textbf{golden $\rightarrow$ revised} & \textbf{what can go wrong}\\\hline
+    \cmd{rtl2syn} & RTL $\rightarrow$ Genus netlist (\cmd{\_syn.v})
+                  & optimization, constant propagation, scan insertion,
+                    Verilog read differently than by the simulator\\
+    \cmd{syn2pnr} & Genus netlist $\rightarrow$ Innovus netlist
+                    (\cmd{\_routed.v})
+                  & CTS buffers, resizing, hold fixing, scan reorder\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Both together: RTL $\equiv$ layout netlist
+    \item Run \cmd{rtl2syn} after every synthesis, \cmd{syn2pnr} after
+      every P\&R run
+    \item Faster than a gate-level regression, and complete
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% How LEC works
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{How LEC Works}
+\renewcommand{\astitle}{How LEC Works}
+
+\renewcommand{\assubtitle}{Key Points}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item LEC does not unroll time: it cuts the design at the
+      \emph{key points}
+    \begin{itemize}
+      \item primary inputs and outputs
+      \item flip-flops (DFF) and latches (DLAT)
+      \item black boxes (BBOX): here the SPRAM macros
+      \item cut points (added on purpose, see DFT)
+    \end{itemize}
+    \item Between the key points there is only combinational logic
+    \item Two steps:
+    \begin{enumerate}
+      \item \textbf{mapping}: which flip-flop in the netlist is which
+        flip-flop in the RTL (by name, then by function)
+      \item \textbf{compare}: is the logic cone in front of each mapped
+        key point the same Boolean function?
+    \end{enumerate}
+    \item Needs the same states in both designs (no retiming here)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Mapping: Unmapped Points}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{class} & \textbf{meaning}\\\hline
+    unreachable & no output depends on it -- Genus removed it, the RTL
+                  still has it: harmless\\
+    extra       & only in one design, e.g. scan logic, CTS buffers
+                  are not key points; DFT lockup latches\\
+    not-mapped  & in both designs, but LEC found no partner:
+                  \textbf{look at it}\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item \cmd{lec\_<mode>\_unmapped.rpt}
+    \item Not-mapped points become non-equivalent points later
+    \item Typical cause: a flip-flop renamed beyond the LEC name rules,
+      or two flip-flops merged by Genus (\cmd{set\_analyze\_option
+      -auto} handles most cases)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Compare Result}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{result} & \textbf{meaning}\\\hline
+    equivalent     & proven equal\\
+    non-equivalent & LEC found an input combination with different
+                     values: a counterexample exists\\
+    abort          & the solver gave up (large arithmetic cones);
+                     neither proven nor refuted\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Sign-off: \textbf{0 non-equivalent, 0 abort}
+    \item \cmd{analyze\_abort -compare} retries aborts with more effort
+    \item Black-box pins (SPRAM) are compared like outputs: address,
+      data, write enable of the macro must be the same
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DFT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Scan Chain}
+\renewcommand{\astitle}{Scan Chain}
+
+\renewcommand{\assubtitle}{The Netlist Has More Than the RTL}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Genus replaced every core flip-flop by a scan flip-flop:
+      $D' = SE\;?\;SI : D$
+    \item SE is \cmd{core/as\_jtag/sc01\_shift\_o} (TAP, SCANTEST +
+      Shift-DR); in the RTL nothing uses it
+    \item The chain end goes to \cmd{core/as\_jtag/sc01\_tdo\_i}; in the
+      RTL (\cmd{XFAB\_DFT}) this pin is a constant 0
+    \item Without constraints: every scan flip-flop is non-equivalent,
+      and TDO in SCANTEST as well
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Constraints in \texttt{04\_rv64\_lec.tcl}}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+# shift enable: cut, becomes a primary input, held at 0
+add_primary_input core/as_jtag/sc01_shift_o -pin -cut -both
+add_pin_constraints 0 core/as_jtag/sc01_shift_o -both
+# chain end: cut in both designs, a free input on both sides
+add_primary_input core/as_jtag/sc01_tdo_i   -pin -cut -both
+\end{lstlisting}
+  \begin{itemize}
+    \item The internal TAP pins are no ports: a \emph{cut} makes them a
+      key point LEC may constrain
+    \item With SE = 0 the scan multiplexers are transparent: the
+      functional mode is compared, completely
+    \item The scan mode itself is checked by the gate-level simulation
+      (test \cmd{scan}) and later by ATPG
+    \item Same constraints in \cmd{syn2pnr}: a scan reorder in Innovus
+      would otherwise change the chain
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Scripts
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Scripts}
+\renewcommand{\astitle}{Scripts}
+
+\renewcommand{\assubtitle}{Files}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{file} & \textbf{role}\\\hline
+    \cmd{scripts/lec/lec.sh}        & wrapper: inputs, run, PASS/FAIL\\
+    \cmd{scripts/04\_rv64\_lec.tcl} & Conformal Tcl mode: read, constrain,
+                                      map, compare, reports\\
+    \cmd{scripts/rv64\_rtl\_setup.tcl} & RTL file list + defines, shared
+                                      with Genus (\cmd{00\_rv64\_elab.tcl})\\
+    \cmd{build\_genus/cc\_chip\_top\_rtl2syn\_genus.do} & dofile from
+                                      Genus \cmd{write\_do\_lec} (option
+                                      \cmd{-g})\\
+    \cmd{build\_lec/}               & logs, reports (\cmd{.gitignore})\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item The golden RTL must be read \emph{exactly} as Genus read it:
+      same files, same defines (\cmd{XFAB\_SPRAM}, \cmd{XFAB\_PADS},
+      \cmd{XFAB\_CLKCELLS}, \cmd{XFAB\_DFT}, cell names) -- hence one
+      shared file
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{\texttt{04\_rv64\_lec.tcl} (short)}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+source $::env(XFAB_PATHS)
+source $SCRIPT_DIR/rv64_rtl_setup.tcl        ;# RTL_FILES, RTL_DEFINES
+read_library -both -liberty $LIBS_TYP
+read_design -golden  -sv09 -define ... $RTL_FILES   ;# rtl2syn
+read_design -revised -verilog $SYN_NETLIST
+set_root_module cc_chip_top -golden
+set_root_module cc_chip_top -revised
+add_primary_input core/as_jtag/sc01_shift_o -pin -cut -both
+add_pin_constraints 0 core/as_jtag/sc01_shift_o -both
+add_primary_input core/as_jtag/sc01_tdo_i   -pin -cut -both
+set_flatten_model -seq_constant -seq_constant_x_to 0
+set_analyze_option -auto
+set_system_mode lec                          ;# mapping
+add_compared_points -all
+compare
+analyze_abort -compare
+report_verification > lec_rtl2syn_verification.rpt
+\end{lstlisting}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Running LEC}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+\begin{lstlisting}[style=sh]
+cd RWU_RV/RV_NoPipeline
+./scripts/lec/lec.sh                  # rtl2syn, then syn2pnr
+./scripts/lec/lec.sh -m rtl2syn       # one check only
+./scripts/lec/lec.sh -m rtl2syn -g    # with the Genus dofile
+./scripts/lec/lec.sh -m rtl2syn -i    # GUI stays open (debug)
+\end{lstlisting}
+\begin{lstlisting}[style=out]
+=== [lec] rtl2syn
+    equivalent NNNNN, non-equivalent 0, abort 0
+PASS  LEC rtl2syn
+=== [lec] syn2pnr
+    equivalent NNNNN, non-equivalent 0, abort 0
+PASS  LEC syn2pnr
+\end{lstlisting}
+  \begin{itemize}
+    \item Needs: \cmd{build\_genus/} and for \cmd{syn2pnr}
+      \cmd{build\_innovus/cc\_chip\_top\_routed.v}
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Reports in \texttt{build\_lec/}}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{file} & \textbf{content}\\\hline
+    \cmd{lec\_<mode>.log}              & everything, incl. the compare table\\
+    \cmd{lec\_<mode>\_design.rpt}      & designs read, black boxes,
+                                         undefined cells\\
+    \cmd{lec\_<mode>\_unmapped.rpt}    & unmapped key points by class\\
+    \cmd{lec\_<mode>\_verification.rpt} & checklist: modelling, mapping,
+                                         compare -- all must be ok\\
+    \cmd{lec\_<mode>\_noneq.rpt}       & non-equivalent and abort points\\
+    \cmd{lec\_<mode>\_statistics.rpt}  & key point counts per type\\
+  \end{tabularx}
+  \vspace{4pt}
+  \begin{itemize}
+    \item Read \cmd{\_design.rpt} first: a black box that should not be
+      one (missing cell in the Liberty) hides its whole logic
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Debug
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Debugging}
+\renewcommand{\astitle}{Debugging}
+
+\renewcommand{\assubtitle}{Non-Equivalent Points}
+\begin{frame}[fragile]
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{./scripts/lec/lec.sh -m rtl2syn -i}: the GUI stays open
+  \end{itemize}
+\begin{lstlisting}[style=sh]
+report_compare_data -class nonequivalent
+diagnose -summary                     ;# groups points by cause
+diagnose <point>                      ;# counterexample for one point
+\end{lstlisting}
+  \begin{itemize}
+    \item Diagnose shows the input pattern that makes golden and revised
+      differ, and the schematic of both cones side by side
+    \item Many points with one root cause are typical: fix the first
+      group, run again
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Typical Causes}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \footnotesize
+  \begin{tabularx}{\linewidth}{@{}lY@{}}
+    \textbf{symptom} & \textbf{cause}\\\hline
+    all scan FFs non-eq. & SE constraint not applied: pin name in the
+                          netlist differs (check \cmd{core/as\_jtag} is
+                          not ungrouped)\\
+    pads / clock cells   & RTL read without the \cmd{XFAB\_*} defines:
+                          behavioural model vs. library cell\\
+    some FFs, \cmd{x}   & RTL assigns \cmd{'x} (don't care); Genus picked
+                          a value. Avoid \cmd{x} in RTL or set
+                          \cmd{set\_x\_conversion}\\
+    constant FFs         & \cmd{set\_flatten\_model -seq\_constant}\\
+    many not-mapped      & names changed: \cmd{add\_renaming\_rule}, or
+                          let Genus write the dofile (\cmd{-g})\\
+    aborts               & \cmd{analyze\_abort -compare}; for the
+                          multiplier/ALU: \cmd{set\_compare\_effort high}\\
+  \end{tabularx}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{The Genus Dofile (\texttt{-g})}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{01b\_rv64\_syn.tcl} writes it at the end:
+      \cmd{write\_do\_lec -golden\_design rtl -revised\_design
+      cc\_chip\_top\_syn.v}
+    \item Genus knows its own renamings, merged and removed flip-flops
+      and writes the matching LEC settings
+    \item Synthesis ran before this was added? \cmd{lec.sh -g} writes it
+      from \cmd{cc\_chip\_top\_syn.db}
+    \item Use: cross-check, or as a template if the own script has many
+      not-mapped points. Whether Genus also constrains the internal scan
+      enable: VERIFY-LAB
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Open points
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Open Points}
+\renewcommand{\astitle}{Open Points}
+
+\renewcommand{\assubtitle}{VERIFY-LAB: Not Yet Run with Conformal}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item \cmd{lec -xl -tclmode}: licence option and the Tcl command
+      names (\cmd{read\_design}, \cmd{add\_primary\_input -pin -cut})
+    \item \cmd{read\_design -define NAME=VALUE} syntax for the cell-name
+      defines
+    \item Hierarchical pin names \cmd{core/as\_jtag/...} after flattening
+    \item Redirection \cmd{> file} in Tcl mode (otherwise everything is in
+      \cmd{lec\_<mode>.log})
+    \item Layout of the compare table that \cmd{lec.sh} parses
+    \item Ends of \cmd{write\_do\_lec} output (\cmd{exit} present?)
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{X-FAB NDA}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Netlists, LEC logs, reports and the Genus dofile contain X-FAB
+      cell names and paths
+    \item \cmd{build\_genus/}, \cmd{build\_innovus/}, \cmd{build\_lec/}
+      are in \cmd{.gitignore}: never commit them, never copy them out of
+      the lab
+    \item Check \cmd{git status} before every commit
+  \end{itemize}
+\end{block}
+\end{frame}
+
+\renewcommand{\assubtitle}{Next Steps}
+\begin{frame}
+\frametitle{\astitle}
+\begin{block}{\assubtitle}
+  \begin{itemize}
+    \item Property checking without Jasper: SymbiYosys (open source) with
+      SVA, first on small blocks (TAP FSM, memory arbiter, FIFO)
+    \item riscv-formal: the RV64I core against the ISA (needs the RVFI
+      trace port)
+    \item Physical verification: DRC, LVS, ERC
+  \end{itemize}
+\end{block}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Q&A
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Q\&A}
+\renewcommand{\astitle}{Q\&A}
+\begin{frame}
+\frametitle{\astitle}
+\vfill
+\centering
+\begin{Huge}\textcolor{red}{Questions?}\end{Huge}
+\vfill
+\end{frame}
+
+\end{document}

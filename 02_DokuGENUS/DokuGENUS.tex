@@ -252,7 +252,8 @@ setenv XFAB_PATHS /path/to/X-FAB/xh018_paths.tcl     # csh
   \begin{itemize}
     \item \cmd{genus\_syn.sh} only \emph{calls} the two Tcl scripts
     \item $\Rightarrow$ a new RTL file is added \emph{only} in
-      \cmd{00\_rv64\_elab.tcl} (and in \cmd{sim/CMakeLists.txt} for the simulation)
+      \cmd{rv64\_rtl\_setup.tcl} (read by \cmd{00\_rv64\_elab.tcl} and
+      Conformal LEC; and in \cmd{sim/CMakeLists.txt} for the simulation)
   \end{itemize}
 \end{block}
 \end{frame}
@@ -542,8 +543,8 @@ genus -files syn.tcl  -log syn  -overwrite < /dev/null
 source $::env(XFAB_PATHS)              # X-FAB file locations (NDA)
 read_mmmc $SCRIPT_DIR/xh018_mmmc.tcl   # libraries, corners, SDC, views
 read_physical -lef $LEF_FILES          # cell and macro sizes
-read_hdl -sv -define [list XFAB_SPRAM XFAB_IMEM_MACRO=... \
-                           XFAB_PADS  XFAB_PAD_IN=...  ...] $RTL_FILES
+source $SCRIPT_DIR/rv64_rtl_setup.tcl # RTL_FILES, RTL_DEFINES (XFAB_...)
+read_hdl -sv -define $RTL_DEFINES $RTL_FILES
 elaborate cc_chip_top                  # build the hierarchy
 init_design                            # bind libraries + constraints
 check_design -unresolved
@@ -709,7 +710,7 @@ grep -iE "latch|unresolved" build_genus/elab.log
   \begin{enumerate}
     \item \cmd{sim/CMakeLists.txt}: add it to \cmd{SOURCES\_SV}
       (xsim, Verilator and Xcelium)
-    \item \cmd{scripts/00\_rv64\_elab.tcl}: add it to \cmd{RTL\_FILES},
+    \item \cmd{scripts/rv64\_rtl\_setup.tcl}: add it to \cmd{RTL\_FILES},
       at the same position as in the simulation
 \begin{lstlisting}
   "$DESIGN_PATH/ip_mynew/src/cc_mynew.sv" \

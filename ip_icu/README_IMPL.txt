@@ -302,7 +302,8 @@ either verification method (REQ-26).
   RWU_RV/RV_PipelineCacheFwd/sim/CMakeLists.txt   + cc_icu*.sv
   RWU_RV/RV_NoPipeline/cocotb/Makefile            + cc_icu*.sv
   RWU_RV/RV_PipelineCacheFwd/cocotb/Makefile      + cc_icu*.sv
-  RWU_RV/RV_NoPipeline/scripts/00_rv64_elab.tcl   + cc_icu*.sv (Genus filelist)
+  RWU_RV/RV_NoPipeline/scripts/00_rv64_elab.tcl   + cc_icu*.sv (Genus filelist,
+                                                   now in rv64_rtl_setup.tcl)
   RWU_RV/RV_NoPipeline/spec/00_rwurv64i_all.tex   sysmap table: ICU0 row
 
 --------------------------------------------------------------------------------

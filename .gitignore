@@ -114,6 +114,7 @@ build_innovus/
 build_gatesim/
 build_quantus/
 build_sta/
+build_lec/
 xrun.history
 xrun.key
 xcelium.d/

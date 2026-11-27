@@ -31,8 +31,9 @@
 # Exit code: 0 = synthesis ok, 1 = Genus error / missing output,
 #            2 = usage / environment error
 #
-# Single source of truth: the RTL file list, libraries, MMMC and SDC live in
-# ../00_rv64_elab.tcl, ../xh018_mmmc.tcl and ../as_top_mem*.sdc. This script
+# Single source of truth: the RTL file list and defines, libraries, MMMC and
+# SDC live in ../rv64_rtl_setup.tcl, ../00_rv64_elab.tcl, ../xh018_mmmc.tcl
+# and ../as_top_mem*.sdc. This script
 # only calls them, so it never has to be edited when the design changes.
 #===============================================================================
 

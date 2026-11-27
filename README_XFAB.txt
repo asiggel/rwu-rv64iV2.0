@@ -146,6 +146,20 @@ Schritt 7: Post-Route-Gate-Level-Simulation mit Tempus-SDF
       ./scripts/gatesim/gatesim.sh -r -p -s       (Slow-Corner, Setup)
       ./scripts/gatesim/gatesim.sh -r -p -s -m    (Fast-Corner, Hold)
 
+Schritt 8: Formale Aequivalenz (Conformal LEC, Abschnitt 3d, 06_DokuLEC)
+  Keine neuen $XFAB_PATHS-Eintraege. Genus liest die RTL-Dateiliste und
+  die Defines jetzt aus rv64_rtl_setup.tcl (gleicher Inhalt wie vorher in
+  00_rv64_elab.tcl) -- beim naechsten Genus-Lauf pruefen, dass er wie
+  bisher durchlaeuft.
+
+      ./scripts/lec/lec.sh                  (rtl2syn, dann syn2pnr)
+      ./scripts/lec/lec.sh -m rtl2syn -g    (Gegenprobe: Genus-Dofile)
+      ./scripts/lec/lec.sh -m rtl2syn -i    (GUI zum Debuggen)
+  Pruefen: 0 non-equivalent, 0 abort; build_lec/lec_<mode>_design.rpt
+  (keine unerwarteten Black Boxes ausser den SPRAM-Makros),
+  _unmapped.rpt (not-mapped ansehen). Alle Scan-FFs non-equivalent ->
+  Constraint auf core/as_jtag/sc01_shift_o greift nicht (Pin-Name).
+
 Mit Claude im Labor
   Claude kann die Schritte ausfuehren und die Logs/Reports auswerten. Dazu
   Claude auf diesen Abschnitt hinweisen ("README_XFAB.txt, Abschnitt 1a").
@@ -154,8 +168,8 @@ Mit Claude im Labor
   und Dateinamen ausschliesslich in die lokale $XFAB_PATHS-Datei ein;
   Auszuege hoechstens in ein temporaeres Verzeichnis ausserhalb des
   Repositorys. Vor einem Commit "git status" pruefen: build_genus/,
-  build_innovus/, build_quantus/, build_sta/, build_gatesim/ und
-  build_xcelium/ sind gesperrt (.gitignore), Netzliste, SPEF und SDF
+  build_innovus/, build_quantus/, build_sta/, build_lec/, build_gatesim/
+  und build_xcelium/ sind gesperrt (.gitignore), Netzliste, SPEF und SDF
   enthalten X-FAB-Zellnamen.
 
 
@@ -209,7 +223,8 @@ $XFAB_PATHS gesetzt, beide Skripte im selben Verzeichnis):
     genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/00_rv64_elab.tcl
     genus -files <asgithub>/RWU_RV/RV_NoPipeline/scripts/01b_rv64_syn.tcl
 
-  00_rv64_elab.tcl  MMMC (xh018_mmmc.tcl: slow/typ/fast), LEF, RTL lesen,
+  00_rv64_elab.tcl  MMMC (xh018_mmmc.tcl: slow/typ/fast), LEF, RTL lesen
+                    (Dateiliste + Defines: rv64_rtl_setup.tcl, auch fuer LEC),
                     cc_chip_top elaborieren -> cc_chip_top_elab.db
                     Defines XFAB_SPRAM / XFAB_PADS waehlen die echten
                     SPRAM-Makros und IO_CELLS_3V-Zellen statt der
@@ -324,6 +339,30 @@ Aus RWU_RV/RV_NoPipeline, nach Place & Route (build_innovus/):
     (min = Fast-, max = Slow-Corner).
   - Noch nie mit echtem Quantus/Tempus gelaufen: VERIFY-LAB-Punkte in den
     Skripten und in 05_DokuSTA.
+
+
+--------------------------------------------------------------------------------
+3d. Formale Aequivalenz (Conformal LEC)
+--------------------------------------------------------------------------------
+
+Aus RWU_RV/RV_NoPipeline, nach Synthese (und fuer syn2pnr nach P&R):
+
+    ./scripts/lec/lec.sh [-m rtl2syn|syn2pnr|all] [-g] [-i]
+                                        -> build_lec/lec_<mode>*.rpt
+
+  Ausfuehrliche Anleitung: 06_DokuLEC/DokuLEC.pdf
+
+  - rtl2syn: RTL (golden) gegen build_genus/cc_chip_top_syn.v
+    syn2pnr: Genus-Netzliste gegen build_innovus/cc_chip_top_routed.v
+  - 04_rv64_lec.tcl (Conformal Tcl-Modus) liest das RTL mit derselben
+    Dateiliste und denselben Defines wie Genus (rv64_rtl_setup.tcl).
+  - DFT: Scan-Enable core/as_jtag/sc01_shift_o geschnitten und auf 0
+    gehalten, Kettenende core/as_jtag/sc01_tdo_i in beiden Designs
+    geschnitten -> verglichen wird der Funktionsmodus, vollstaendig.
+  - SPRAM-Makros: Black Boxes (Liberty ohne Funktion), Pins verglichen.
+  - -g: Dofile, das Genus mit write_do_lec schreibt (01b_rv64_syn.tcl;
+    fehlt es, erzeugt lec.sh es aus cc_chip_top_syn.db).
+  - Noch nie mit echtem Conformal gelaufen: VERIFY-LAB in 06_DokuLEC.
 
 
 --------------------------------------------------------------------------------
@@ -657,6 +696,8 @@ Erledigt:
   der Netzliste gelaufen
   Sign-off-Timing vorbereitet: Quantus + Tempus (scripts/quantus,
   scripts/sta, 05_DokuSTA), Constraint-Modus scan; im Labor offen
+  Formale Aequivalenz vorbereitet: Conformal LEC (scripts/lec,
+  06_DokuLEC), RTL->Genus und Genus->Innovus; im Labor offen
 
 Offen:
   TECH-03  I-Mem-Groesse festlegen (32 KiB oder 16 KiB; 16 KiB spart
@@ -665,8 +706,8 @@ Offen:
            IO-Zuordnung gegen das IO_CELLS_3V-Databook pruefen
   Power-Ring/-Stripes, DRC/Antenna bereinigen, Scan-Reorder in Innovus,
   ATPG, SRAM-BIST, STA-Lauf (Abschnitt 1a, Schritte 5-7), DRC/LVS/ERC
-  (Pegasus o. a., je nach Runsets im PDK), formale Aequivalenz (Conformal
-  LEC)
+  (Pegasus o. a., je nach Runsets im PDK), LEC-Lauf (Abschnitt 1a,
+  Schritt 8)
 
 AS:
 RTL Simulation ist gemacht (xrun), Synthese mit scanpath insertion ist gemacht (genus), place&route ist genacht (innovus), gatelevel simulation ist gemacht (xrun).
