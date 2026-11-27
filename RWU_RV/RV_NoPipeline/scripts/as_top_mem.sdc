@@ -21,7 +21,7 @@
 create_clock -name clk_i -period 10.000 [get_ports clk_i]
 create_clock -name tck_i -period 40.000 [get_ports tck_i]
 
-# The CGU divides clk_i by a counter; clk_core_o is its decoded output.
+# The CGU divides clk_i by a counter; clk_core_o comes from a flip-flop.
 create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
   [get_pins core/cgu/CGUCore/clk_core_o]
 
@@ -30,6 +30,12 @@ create_generated_clock -name clk_core -source [get_ports clk_i] -divide_by 80 \
 # scan_ckgate; that path is only used in scan test.
 set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o]
 # The I-Mem clock mux (core/as_jtag/im_mode_o) is fixed per mode in the mode file.
+
+# Boundary scan (core/bscan, cc_bscan): transparent in both modes. EXTEST and
+# INTEST switch the pin and core-input muxes to the TCK-clocked update
+# flip-flops; that path is only used in board/boundary-scan test.
+set_case_analysis 0 [get_pins core/as_jtag/bs_mode_o]
+set_case_analysis 0 [get_pins core/as_jtag/bs_intest_o]
 
 # JTAG writes the I-Mem with tck_i, the core reads it with clk_core; the
 # software only runs after loading (rst_i = 1 while loading), so there is no

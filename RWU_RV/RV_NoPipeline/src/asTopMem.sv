@@ -6,7 +6,7 @@ import as_pack::*;
 
 //--------------------------------------------
 // 2Do:
-// - Insert a dummy BS chain. It should consist of one I, one O and one I/O
+// - Insert a BS chain (cc_bscan, all pins except JTAG).                      (Done)
 // - Insert WB bus for instruction and for data.                                (Done)
 // - Design WB master BPI and WB slave BPI. Implement WB.                       (Done)
 // - Design a GPIO peripheral.                                                  (Done)
@@ -73,7 +73,10 @@ module as_top_mem (input logic                       clk_i,
   /* verilator lint_on UNUSEDSIGNAL */
   logic tck_scan_s;
   logic im_tdo_s, im_tdi_s, im_shift_s, im_clock_s, im_upd_s, im_upd_del_s, im_mode_s;
-  logic bs_tdo_s, bs_tdi_s, bs_shift_s, bs_clock_s, bs_upd_s, bs_mode_s;
+  logic bs_tdo_s, bs_tdi_s, bs_shift_s, bs_clock_s, bs_upd_s, bs_mode_s, bs_intest_s;
+  // core side of the boundary-scan register (cc_bscan)
+  logic [nr_gpios-1:0] gpio_o_s, gpio_oe_s, gpio_i_s;
+  logic uart0_tx_s, uart0_rx_s;
   // JTAG: I-Mem scan chain
   logic [im_scan_length-1:0] im_datai_s, im_datao_s;
   // JTAG: I-Mem Address MUX
@@ -129,8 +132,6 @@ module as_top_mem (input logic                       clk_i,
   as_icache_if icpu_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
   as_dcache_if dcpu_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
 
-  assign cs_o        = asGpioCs_s;
-
   //--------------------------------------------
   // Memory Map Data Bus:
   // - see package
@@ -175,9 +176,9 @@ module as_top_mem (input logic                       clk_i,
                                    .wbdAck_o(wdbAckGpio_s),
                                    .wbdCyc_i(wbdcycarb_s),
 				   .gpio_irq_o(irq_gpiox_s),
-                                   .gpio_o(gpio_o),
-                                   .gpio_oe_o(gpio_oe_o),
-                                   .gpio_i(gpio_i),
+                                   .gpio_o(gpio_o_s),
+                                   .gpio_oe_o(gpio_oe_s),
+                                   .gpio_i(gpio_i_s),
                                    .cs_o(asGpioCs_s)
                                   );
 
@@ -235,8 +236,8 @@ module as_top_mem (input logic                       clk_i,
     .wbdStb_i   (wbdstbUart_s),
     .wbdAck_o   (wdbAckUart_s),
     .wbdCyc_i   (wbdcycarb_s),
-    .tx_o       (uart0_tx_o),
-    .rx_i       (uart0_rx_i),
+    .tx_o       (uart0_tx_s),
+    .rx_i       (uart0_rx_s),
     .uart_irq_o (irq_uart_s)
   );
 
@@ -399,8 +400,6 @@ module as_top_mem (input logic                       clk_i,
   //--------------------------------------------
   // JTAG
   //--------------------------------------------
-  assign bs_tdo_s = 1'b0;
-  
   jtag as_jtag (.tck_i(tck_i),
                 .trst_i(trst_i),
                 .tms_i(tms_i),
@@ -425,8 +424,36 @@ module as_top_mem (input logic                       clk_i,
                 .bs_clock_o(bs_clock_s),
                 .bs_upd_o(bs_upd_s),
                 .bs_mode_o(bs_mode_s),
-                .sc01_mode_o(sc01_mode_s)
+                .sc01_mode_o(sc01_mode_s),
+                .bs_intest_o(bs_intest_s)
                );
+
+  // Boundary scan: every pin except the JTAG pins (bsdl/cc_chip_top.bsd).
+  // Transparent outside EXTEST/INTEST.
+  cc_bscan bscan (.tck_i(tck_i),
+                  .trst_i(tap_rst_s),
+                  .shift_i(bs_shift_s),
+                  .clock_i(bs_clock_s),
+                  .upd_i(bs_upd_s),
+                  .extest_i(bs_mode_s),
+                  .intest_i(bs_intest_s),
+                  .tdi_i(bs_tdi_s),
+                  .tdo_o(bs_tdo_s),
+                  .pin_clk_i(clk_i),
+                  .pin_rst_i(rst_i),
+                  .pin_uart0_rx_i(uart0_rx_i),
+                  .pin_gpio_i(gpio_i),
+                  .pin_gpio_o(gpio_o),
+                  .pin_gpio_oe_o(gpio_oe_o),
+                  .pin_cs_o(cs_o),
+                  .pin_uart0_tx_o(uart0_tx_o),
+                  .core_uart0_rx_o(uart0_rx_s),
+                  .core_gpio_i_o(gpio_i_s),
+                  .core_gpio_o_i(gpio_o_s),
+                  .core_gpio_oe_i(gpio_oe_s),
+                  .core_cs_i(asGpioCs_s),
+                  .core_uart0_tx_i(uart0_tx_s)
+                 );
 
   // Scan chain hookup. RTL: chain of length 0. Synthesis (XFAB_DFT): left
   // open, connect_scan_chains puts the inserted chain between

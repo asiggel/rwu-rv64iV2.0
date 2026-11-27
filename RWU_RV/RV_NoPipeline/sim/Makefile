@@ -10,6 +10,7 @@ VERILOG_SOURCES = \
 	../src/asRegFile.sv \
 	../../../ip_clkcells/src/cc_clk_mux2.sv \
 	../../../ip_clkcells/src/cc_clk_gate.sv \
+	../src/cc_bscan.sv \
 	../../../ip_dmem/src/asDMemBack.sv \
 	../../../ip_dmem/src/asDMemFront.sv \
 	../../../ip_dmem/src/asDMemCore.sv \

@@ -39,6 +39,7 @@ VERILOG_SOURCES := \
   $(abspath ../src/asRegFile.sv)           \
   $(abspath $(IP_ROOT)/ip_clkcells/src/cc_clk_mux2.sv) \
   $(abspath $(IP_ROOT)/ip_clkcells/src/cc_clk_gate.sv) \
+  $(abspath ../src/cc_bscan.sv) \
   $(abspath ../src/asAlu.sv)               \
   $(abspath ../src/asAluBr.sv)             \
   $(abspath ../src/asInstrDecode.sv)       \

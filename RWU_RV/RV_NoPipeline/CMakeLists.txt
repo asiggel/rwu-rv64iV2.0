@@ -39,6 +39,7 @@ message(STATUS "AS-TOP: SIM_TARGET = ${SIM_TARGET}")
 # -------------------------------------------------
 set(ASM_TESTS
     instr99scantest
+    instr99bscan
     instr99loadimem
     readgpioid
     uart_tx

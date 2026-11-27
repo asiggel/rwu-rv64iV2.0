@@ -56,9 +56,11 @@ define_test_mode    -name rst_off    -active low  rst_i
 define_test_mode    -name trst_off   -active high trst_i
 define_shift_enable -name scan_shift -active high core/as_jtag/sc01_shift_o
 
-# Not scanned: the TAP and the I-Mem load register control the scan
-# operation itself (tck_i, outside SCANTEST), the CGU dividers run on clk_i.
+# Not scanned: the TAP, the boundary-scan register and the I-Mem load
+# register belong to the JTAG test logic (tck_i, outside SCANTEST), the CGU
+# dividers run on clk_i.
 set_db [get_db hinsts core/as_jtag]     .dft_dont_scan true
+set_db [get_db hinsts core/bscan]       .dft_dont_scan true
 set_db [get_db hinsts core/imem_load]   .dft_dont_scan true
 set_db [get_db hinsts core/cgu/CGUCore] .dft_dont_scan true
 

@@ -41,6 +41,7 @@ set(SOURCES_SV
     ${PROJECT_ROOT}/src/asRegFile.sv
     ${IP_ROOT}/ip_clkcells/src/cc_clk_mux2.sv
     ${IP_ROOT}/ip_clkcells/src/cc_clk_gate.sv
+    ${PROJECT_ROOT}/src/cc_bscan.sv
     #${PROJECT_ROOT}/src/asAdd.sv
 
     ${IP_ROOT}/ip_dmem/src/asDMemBack.sv

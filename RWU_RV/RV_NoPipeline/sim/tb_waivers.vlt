@@ -19,3 +19,8 @@ lint_off -rule UNUSEDSIGNAL  -file "*/tb/tb_rv64i_*.sv"
 // asSBpi: data_width ist Teil der Modulschnittstelle (positional pass durch Caller),
 // wird intern nicht genutzt (Modul verwendet reg_width aus Package stattdessen)
 lint_off -rule UNUSEDPARAM -file "*/src/asSBpi.sv"  // #-Delay mit variablem Wert
+
+// Boundary scan (cc_bscan): die Observe-only-Zelle tastet rst_i als Daten ab,
+// rst_i ist sonst asynchroner Reset. Gewollt (IEEE 1149.1, jeder Systempin
+// hat eine Zelle); Verilator meldet es am Reset-Netz der Testbench.
+lint_off -rule SYNCASYNCNET -file "*/tb/tb_rv64i_*.sv"

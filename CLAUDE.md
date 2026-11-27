@@ -177,3 +177,8 @@ assign start_fetch_s = rst_deasserted_r && !fetch_in_flight_r && ...;
 **Exception — clock-gating cell:** When a scan-test or power-management circuit
 must gate the clock through an AND cell, mark the line with `// CLOCK GATE:`
 and keep it isolated from all functional RTL.
+
+**Exception — boundary scan:** An IEEE 1149.1 observe-only boundary-scan cell
+may capture `clk_i` or `rst_i` as data on the pin side (`cc_bscan.sv`). Mark the
+line with `// BOUNDARY SCAN:`, never put a mux into the clock or reset path,
+and keep it out of the functional RTL.

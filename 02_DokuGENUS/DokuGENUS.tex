@@ -594,14 +594,15 @@ create_clock -name clk_i -period 10.000 [get_ports clk_i]
 create_clock -name tck_i -period 40.000 [get_ports tck_i]
 create_generated_clock -name clk_core -source [get_ports clk_i] \
   -divide_by 80 [get_pins core/cgu/CGUCore/clk_core_o]
-set_case_analysis 0 [get_pins core/as_jtag/dr_cap_o]   # no scan clock
+set_case_analysis 0 [get_pins core/as_jtag/sc01_mode_o] # no scan clock
+set_case_analysis 0 [get_pins core/as_jtag/bs_mode_o]   # no EXTEST
 set_clock_groups -asynchronous -group {clk_i clk_core} -group {tck_i}
 set_false_path -from [get_ports {rst_i trst_i}]
 \end{lstlisting}
   \begin{itemize}
     \item \cmd{clk\_core}: the CGU divides by a counter, Genus must be told
-    \item \cmd{set\_case\_analysis}: fixes the scan bypass mux to the
-      functional clock, otherwise every path is also timed at 100\,MHz
+    \item \cmd{set\_case\_analysis}: functional mode only -- clock mux on
+      \cmd{clk\_core}, boundary scan transparent
     \item \cmd{tck\_i} and the core clocks are asynchronous: no paths between them
     \item The reset is asynchronous: no timing from \cmd{rst\_i}
   \end{itemize}
@@ -645,6 +646,7 @@ define_test_clock   -name tck_scan -period 40000 tck_i
 define_test_mode    -name scan_mode  -active high core/as_jtag/sc01_mode_o
 define_shift_enable -name scan_shift -active high core/as_jtag/sc01_shift_o
 set_db [get_db hinsts core/as_jtag] .dft_dont_scan true
+set_db [get_db hinsts core/bscan]   .dft_dont_scan true
 check_dft_rules
 syn_generic ; syn_map                     # flip-flops -> scan flip-flops
 define_scan_chain -name sc01 -sdi tdi_i -sdo tdo_o -shared_output \
@@ -654,7 +656,8 @@ connect_scan_chains -chains sc01
   \scriptsize
   \begin{itemize}
     \item One chain via JTAG \cmd{SCANTEST} (IR 129): TDI $\rightarrow$ core
-      flip-flops $\rightarrow$ TDO. Not in it: TAP, I-Mem load register, CGU
+      flip-flops $\rightarrow$ TDO. Not in it: TAP, boundary scan, I-Mem load
+      register, CGU
     \item Core clock: TCK through a clock gate (one pulse per Capture-DR /
       Shift-DR) and a clock mux, both library cells
     \item Chain length (\cmd{\_scan\_chains.rpt}) $\rightarrow$

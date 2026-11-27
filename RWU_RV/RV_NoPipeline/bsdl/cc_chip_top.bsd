@@ -1,0 +1,124 @@
+--------------------------------------------------------------------------------
+-- cc_chip_top.bsd -- BSDL of RV_NoPipeline (Variant A, X-FAB XH018)
+--
+-- RTL: ip_jtag/src/jtag.sv, ip_jtag/src/ir_decode.sv (TAP, instructions),
+--      src/cc_bscan.sv (boundary-scan register; cell numbers = indices there)
+-- Spec: Section "Boundary Scan -- Variant A" (DFT-02)
+--
+-- Open (VERIFY):
+--   * PIN_MAP: pad numbers in cc_chip_top port order, a placeholder until the
+--     pad-ring order and the package are fixed (TECH-06)
+--   * IDCODE 0xDEADBEEF is a placeholder: no JEDEC manufacturer code
+--   * not yet run through a BSDL syntax/semantics checker
+--------------------------------------------------------------------------------
+
+entity cc_chip_top is
+
+  generic (PHYSICAL_PIN_MAP : string := "DIE26");
+
+  port (
+    clk_i      : in      bit;
+    rst_i      : in      bit;
+    tck_i      : in      bit;
+    trst_i     : in      bit;
+    tms_i      : in      bit;
+    tdi_i      : in      bit;
+    tdo_o      : out     bit;
+    gpio_io    : inout   bit_vector(0 to 7);
+    cs_o       : out     bit;
+    uart0_tx_o : out     bit;
+    uart0_rx_i : in      bit;
+    VDD        : linkage bit_vector(1 to 2);   -- core supply 1.8 V
+    GND        : linkage bit_vector(1 to 2);   -- core ground
+    VDDO       : linkage bit_vector(1 to 2);   -- IO supply 3.3 V
+    GNDO       : linkage bit_vector(1 to 2)    -- IO ground
+  );
+
+  use STD_1149_1_2001.all;
+
+  attribute COMPONENT_CONFORMANCE of cc_chip_top : entity is "STD_1149_1_2001";
+
+  attribute PIN_MAP of cc_chip_top : entity is PHYSICAL_PIN_MAP;
+
+  constant DIE26 : PIN_MAP_STRING :=
+    "clk_i:1, rst_i:2, tck_i:3, trst_i:4, tms_i:5, tdi_i:6, tdo_o:7, " &
+    "gpio_io:(8,9,10,11,12,13,14,15), " &
+    "cs_o:16, uart0_tx_o:17, uart0_rx_i:18, " &
+    "VDD:(19,20), GND:(21,22), VDDO:(23,24), GNDO:(25,26)";
+
+  attribute TAP_SCAN_IN    of tdi_i  : signal is true;
+  attribute TAP_SCAN_MODE  of tms_i  : signal is true;
+  attribute TAP_SCAN_OUT   of tdo_o  : signal is true;
+  attribute TAP_SCAN_RESET of trst_i : signal is true;   -- TRST*, active low
+  attribute TAP_SCAN_CLOCK of tck_i  : signal is (25.0e6, BOTH);
+
+  attribute INSTRUCTION_LENGTH of cc_chip_top : entity is 8;
+
+  -- Opcodes not listed act as BYPASS (ir_decode default branch); 3, 5, 6, 7
+  -- (RUNBIST, USERCODE, CLAMP, HIGHZ) are decoded but not implemented.
+  attribute INSTRUCTION_OPCODE of cc_chip_top : entity is
+    "EXTEST   (00000000), " &
+    "INTEST   (00000001), " &
+    "SAMPLE   (00000010), " &
+    "PRELOAD  (00000010), " &
+    "IDCODE   (00000100), " &
+    "BYPASS   (11111111, 00000011, 00000101, 00000110, 00000111), " &
+    "IMEM     (10000000), " &     -- load the I-Mem through JTAG
+    "SCANTEST (10000001)";        -- internal scan chain (DFT-01)
+
+  attribute INSTRUCTION_CAPTURE of cc_chip_top : entity is "11110001";
+
+  attribute INSTRUCTION_PRIVATE of cc_chip_top : entity is "IMEM, SCANTEST";
+
+  -- 0xDEADBEEF: version 0xD, part 0xEADB, manufacturer 0x777
+  attribute IDCODE_REGISTER of cc_chip_top : entity is
+    "1101"              &   -- version
+    "1110101011011011"  &   -- part number
+    "11101110111"       &   -- manufacturer (placeholder)
+    "1";                    -- mandatory LSB
+
+  attribute REGISTER_ACCESS of cc_chip_top : entity is
+    "BOUNDARY  (EXTEST, INTEST, SAMPLE, PRELOAD), " &
+    "DEVICE_ID (IDCODE), "                          &
+    "BYPASS    (BYPASS)";
+
+  attribute BOUNDARY_LENGTH of cc_chip_top : entity is 29;
+
+  -- Cell 0 is next to TDO. GPIO control cells: 1 = output enabled.
+  attribute BOUNDARY_REGISTER of cc_chip_top : entity is
+  --  num  cell  port          function      safe  [ccell disval rslt]
+    "28   (BC_4, clk_i,        clock,        X),             " &
+    "27   (BC_4, rst_i,        observe_only, X),             " &
+    "26   (BC_1, uart0_rx_i,   input,        X),             " &
+    "25   (BC_1, gpio_io(7),   input,        X),             " &
+    "24   (BC_1, gpio_io(7),   output3,      X,   23, 0, Z), " &
+    "23   (BC_1, *,            control,      0),             " &
+    "22   (BC_1, gpio_io(6),   input,        X),             " &
+    "21   (BC_1, gpio_io(6),   output3,      X,   20, 0, Z), " &
+    "20   (BC_1, *,            control,      0),             " &
+    "19   (BC_1, gpio_io(5),   input,        X),             " &
+    "18   (BC_1, gpio_io(5),   output3,      X,   17, 0, Z), " &
+    "17   (BC_1, *,            control,      0),             " &
+    "16   (BC_1, gpio_io(4),   input,        X),             " &
+    "15   (BC_1, gpio_io(4),   output3,      X,   14, 0, Z), " &
+    "14   (BC_1, *,            control,      0),             " &
+    "13   (BC_1, gpio_io(3),   input,        X),             " &
+    "12   (BC_1, gpio_io(3),   output3,      X,   11, 0, Z), " &
+    "11   (BC_1, *,            control,      0),             " &
+    "10   (BC_1, gpio_io(2),   input,        X),             " &
+    "9    (BC_1, gpio_io(2),   output3,      X,    8, 0, Z), " &
+    "8    (BC_1, *,            control,      0),             " &
+    "7    (BC_1, gpio_io(1),   input,        X),             " &
+    "6    (BC_1, gpio_io(1),   output3,      X,    5, 0, Z), " &
+    "5    (BC_1, *,            control,      0),             " &
+    "4    (BC_1, gpio_io(0),   input,        X),             " &
+    "3    (BC_1, gpio_io(0),   output3,      X,    2, 0, Z), " &
+    "2    (BC_1, *,            control,      0),             " &
+    "1    (BC_1, cs_o,         output2,      X),             " &
+    "0    (BC_1, uart0_tx_o,   output2,      1)              ";
+
+  attribute DESIGN_WARNING of cc_chip_top : entity is
+    "clk_i and rst_i have observe-only cells: in INTEST the tester drives " &
+    "them at the pins. cs_o and uart0_tx_o are two-state outputs.";
+
+end cc_chip_top;

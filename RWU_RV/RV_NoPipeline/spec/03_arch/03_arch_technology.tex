@@ -168,6 +168,79 @@ A die that is just large enough for 26 pads would have a side below 1\,mm.
 the pad ring is mostly filled with filler cells. Additional supply pads
 cost no area.
 
+\subsection{Boundary Scan -- Variant A}
+\label{subsec:bscanA}
+
+Every system pin except the five JTAG pins has a boundary-scan cell
+(IEEE~1149.1). The register \texttt{cc\_bscan} (\texttt{src/cc\_bscan.sv},
+instance \texttt{core/bscan}) sits at the port boundary of
+\texttt{as\_top\_mem}, i.e.\ directly between the pads of
+\texttt{cc\_chip\_top} and the core logic; at that level the existing
+testbenches and the TAP signals are available without new ports.
+It is the TAP data register selected with \texttt{sel\_tdo} = 2
+(\texttt{bs\_tdi}/\texttt{bs\_tdo}) and clocked by \texttt{tck\_i}.
+Board test tools get the structure from the BSDL file
+\texttt{bsdl/cc\_chip\_top.bsd}.
+
+Each cell is a \texttt{dr\_cell} (capture/shift flip-flop and update
+flip-flop, BC\_1). Table~\ref{tab:asBscanCellsA} lists the 29 cells, cell~0
+is next to TDO.
+\texttt{clk\_i} and \texttt{rst\_i} get observe-only cells (BC\_4): a
+multiplexer there would put logic into the clock tree and the asynchronous
+reset network. They are the only places where \texttt{clk\_i} and
+\texttt{rst\_i} are used as data (marked \texttt{// BOUNDARY SCAN:}).
+
+\begin{table}[H]
+\caption{Variant A -- Boundary-Scan Cells}
+\label{tab:asBscanCellsA}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Cell & Pin & Type & Captures / drives \\
+  \hline
+  \hline
+  0 & \texttt{uart0\_tx\_o} & output2 & core TX / pin \\
+  \hline
+  1 & \texttt{cs\_o} & output2 & core CS / pin \\
+  \hline
+  $2+3g$ & \texttt{gpio\_io[g]} & control & core \texttt{gpio\_oe} / pad enable (1 = output) \\
+  \hline
+  $3+3g$ & \texttt{gpio\_io[g]} & output3 & core \texttt{gpio\_o} / pad output \\
+  \hline
+  $4+3g$ & \texttt{gpio\_io[g]} & input & pin / core \texttt{gpio\_i} (INTEST) \\
+  \hline
+  26 & \texttt{uart0\_rx\_i} & input & pin / core RX (INTEST) \\
+  \hline
+  27 & \texttt{rst\_i} & observe only & pin \\
+  \hline
+  28 & \texttt{clk\_i} & observe only (clock) & pin \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Instructions.}
+\begin{itemize}
+  \item \textbf{SAMPLE/PRELOAD} (\texttt{0x02}): transparent; the cells
+    capture the pin and core values and are preloaded.
+  \item \textbf{EXTEST} (\texttt{0x00}, \texttt{bs\_mode\_o}): the output and
+    control cells drive the pins; from Update-IR on with the preloaded values.
+  \item \textbf{INTEST} (\texttt{0x01}, new TAP output \texttt{bs\_intest\_o}):
+    as EXTEST, and the input cells drive the core inputs; \texttt{clk\_i}
+    and \texttt{rst\_i} are driven at the pins.
+  \item RUNBIST, USERCODE, CLAMP and HIGHZ (\texttt{0x03}, \texttt{0x05}--\texttt{0x07})
+    are not implemented and act as BYPASS, like every undecoded opcode.
+\end{itemize}
+
+In functional mode the SDC holds \texttt{bs\_mode\_o} and
+\texttt{bs\_intest\_o} at 0 (\texttt{set\_case\_analysis}), so STA times only
+the transparent path. The register is excluded from scan insertion
+(\texttt{dft\_dont\_scan}), like the TAP. The test
+\texttt{instr99bscan} checks SAMPLE/PRELOAD, EXTEST, INTEST and the return to
+functional mode.
+The IDCODE \texttt{0xDEADBEEF} is a placeholder without a JEDEC
+manufacturer code, and the BSDL pin map follows the port order until the
+pad ring order is fixed (TECH-06).
+
 \subsection{Open Items -- Technology}
 \label{subsec:techOpenA}
 
@@ -221,8 +294,9 @@ cost no area.
             clock mux and clock gate cell names in \texttt{\$XFAB\_PATHS},
             scan chain reordering in Innovus (scandef), ATPG. \\
   \hline
-  DFT-02 & Boundary-scan register at the pads, controlled by the existing
-            EXTEST / SAMPLE/PRELOAD / INTEST decoding of the TAP; BSDL file. \\
+  DFT-02 & Boundary scan (Section~\ref{subsec:bscanA}): RTL, test and BSDL
+            done 2026-11-26. Open: BSDL checker run, real IDCODE, BSDL pin map
+            after TECH-06, boundary-scan test of the gate-level netlist. \\
   \hline
 \end{tabularx}
 \end{table}
